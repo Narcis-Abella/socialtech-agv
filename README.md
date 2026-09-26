@@ -19,19 +19,28 @@ Flash JetPack 7.2.1, then on the Jetson:
 ```bash
 cd host
 cp robot.conf.example robot.conf   # edit: hostname, Livox link, hotspot SSID, ...
-sudo ./setup_host.sh               # interactive: hotspot password, Tailscale login, MAXN reboot
+sudo ./setup_host.sh               # interactive: hotspot password, sudo password check, Tailscale login, MAXN reboot
 sudo ./setup_host.sh --check       # verify; all checks should PASS
 ```
 
-Idempotent: re-run after changing `robot.conf` or after an L4T/kernel update (rebuilds the `gs_usb` CAN driver).
+Idempotent: re-run after changing `robot.conf` (emptying a feature removes/disables it) or after an
+L4T/kernel update (rebuilds the `gs_usb` CAN driver when the kernel ABI changed; `--check` flags a stale one).
+It also disables the passwordless sudo that SDK Manager leaves for the default user, after you confirm its password.
 
 ## Images
 
 ```bash
 cd docker
 docker build --target robot -t socialtech:robot .
-docker run --rm -it --network host socialtech:robot
+# DDS_IFACE: the robot's interface to talk DDS on (differs per board).
+# /dev/bus/usb + cgroup rule: USB devices (Orbbec camera).
+docker run --rm -it --network host \
+  -e DDS_IFACE=wlP1p1s0 \
+  -v /dev/bus/usb:/dev/bus/usb --device-cgroup-rule='c 189:* rmw' \
+  socialtech:robot
 ```
+
+On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=1`.
 
 | Stage | Contents |
 |---|---|
@@ -39,6 +48,8 @@ docker run --rm -it --network host socialtech:robot
 | `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP |
 
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
+Without `DDS_IFACE`, CycloneDDS picks a network interface arbitrarily and other machines may not see the robot's nodes.
+Shells opened with `docker exec -it <container> bash` get the same ROS environment as the entrypoint.
 
 ## Where changes go
 

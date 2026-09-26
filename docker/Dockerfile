@@ -6,7 +6,8 @@
 # Run with network_mode: host (DDS discovery, Livox raw sockets) and the GPU requested
 # via NVIDIA_VISIBLE_DEVICES (set below) or --device nvidia.com/gpu=all.
 
-FROM ros:jazzy-ros-base AS base
+# Pinned by digest (the tag moves with every ROS sync); the one built and tested on the Orin NX.
+FROM ros:jazzy-ros-base@sha256:c3706ef0a0aa45413c07803cf433602f543b22e45b4855f6fca955c2d8ecc4e8 AS base
 
 # The host (JetPack) provides only the driver via CDI; the CUDA runtime lives in the image and
 # must not be newer than the host driver. Bump together with the L4T version on the Jetsons.
@@ -34,6 +35,9 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     PATH=/usr/local/cuda-13.2/bin:${PATH} \
     RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
+# ROS environment shared by the entrypoint and interactive shells (`docker exec -it ... bash`).
+COPY ros_env.sh /ros_env.sh
+RUN echo 'source /ros_env.sh' >> /etc/bash.bashrc
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
@@ -61,7 +65,8 @@ RUN python3 fetch_repos.py robot.repos src \
  # Fixes to third-party code: patches/<repo name in robot.repos>/*.patch, applied in order.
  && shopt -s nullglob \
  && for p in patches/*/*.patch; do \
-      repo=$(basename "$(dirname "$p")"); echo "applying $p"; git -C "src/$repo" apply "/ws/$p"; \
+      repo=$(basename "$(dirname "$p")"); echo "applying $p"; \
+      git -C "src/$repo" apply "/ws/$p" || exit 1; \
     done
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -74,9 +79,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ros-jazzy-rosbag2-storage-mcap
 
-# build/ and log/ live in cache mounts: incremental rebuilds, and they never land in the image.
+# build/ and log/ live in cache mounts so they never land in the image. (A refetch gives sources
+# new mtimes, so it still rebuilds everything.) Few parallel packages: each already compiles with
+# -j$(nproc), and PCL-heavy packages side by side can exhaust RAM on an 8 GB Orin Nano.
+ARG COLCON_WORKERS=2
 RUN --mount=type=cache,target=/ws/build \
     --mount=type=cache,target=/ws/log \
     . /opt/ros/jazzy/setup.sh \
  && colcon build --merge-install --install-base /opt/socialtech \
+      --parallel-workers "${COLCON_WORKERS}" \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy
