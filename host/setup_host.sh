@@ -57,6 +57,8 @@ pkg_installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'insta
 in_group()      { id -nG "$TARGET_USER" | grep -qw "$1"; }
 nm_con_exists() { nmcli -t -f NAME connection show | grep -qx "$1"; }
 power_mode()    { nvpmodel -q | tail -n1; }
+# Canonical JSON of a file (key order/whitespace ignored); empty if missing or invalid.
+json_norm()     { python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), sort_keys=True))' "$1" 2>/dev/null || true; }
 
 # MAXN id differs per board; prefer MAXN_SUPER (Orin Nano/NX Super) when present.
 maxn_id() {
@@ -109,11 +111,12 @@ step_docker() {
   local cfg=/etc/docker/daemon.json before after g
   command -v docker >/dev/null || die "docker missing (install JetPack's Docker component)"
   command -v nvidia-ctk >/dev/null || die "nvidia-ctk missing (install nvidia-container-toolkit)"
-  before=$(sha256sum "$cfg" 2>/dev/null || true)
+  before=$(json_norm "$cfg")
   # Official tool: merges the nvidia runtime into daemon.json (creating it if absent) and sets it
-  # as default. Idempotent: an already-configured file is left byte-identical.
+  # as default. It may reformat the file, so compare content, not bytes: a needless docker restart
+  # would kill the running robot stack.
   nvidia-ctk runtime configure --runtime=docker --set-as-default --config="$cfg" >/dev/null 2>&1
-  after=$(sha256sum "$cfg")
+  after=$(json_norm "$cfg")
   if [[ $before != "$after" ]]; then log "docker default runtime -> nvidia"; systemctl restart docker; fi
   systemctl enable --quiet docker   # containers with restart: unless-stopped come back at boot
   for g in docker dialout; do
