@@ -1,5 +1,43 @@
 # Per-robot host config (copy of host/robot.conf.example)
 host/robot.conf
 
+# Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Native colcon builds (outside Docker) — only at the workspace root
+/build/
+/install/
+/log/
+
+# Robot data: rosbags and point cloud maps (per robot, go in mounted volumes).
+# Maps inside packages (e.g. sim fixtures) stay committable.
+/bags/
+*.mcap
+*.db3
+*.bag
+/maps/
+*.pcd
+!src/**/*.pcd
+
+# Python
+.venv/
+*.egg-info/
+.pytest_cache/
 __pycache__/
 *.pyc
+
+# C++ tooling / crashes
+compile_commands.json
+/core
+core.[0-9]*
+
+# Editors / OS (shared VS Code extension recommendations are allowed)
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
