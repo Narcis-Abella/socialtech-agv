@@ -1,5 +1,26 @@
 # Per-robot host config (copy of host/robot.conf.example)
 host/robot.conf
 
+# Secrets
+.env
+
+# Native colcon builds (outside Docker)
+build/
+install/
+log/
+
+# Robot data: rosbags, point cloud maps (per robot, go in mounted volumes)
+*.mcap
+*.db3
+*.pcd
+*.ply
+
+# Python
 __pycache__/
 *.pyc
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
