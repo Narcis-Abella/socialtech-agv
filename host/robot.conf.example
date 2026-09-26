@@ -1,0 +1,22 @@
+# Per-robot host config for setup_host.sh. Copy to robot.conf (git-ignored) and edit.
+# No secrets here: the hotspot password is prompted on first run (or HOTSPOT_PSK env var).
+
+ROBOT_HOSTNAME=socialtech-nx
+
+# Livox Mid-360 link on the onboard ethernet port. "auto" = first onboard port; empty = skip.
+# The port becomes lidar-only (static IP, no DHCP/internet over it).
+LIVOX_IFACE=auto
+LIVOX_HOST_IP=192.168.1.50
+
+# Wi-Fi AP raised at boot when no saved Wi-Fi connects. Empty = skip.
+HOTSPOT_SSID=socialtech-nx
+
+# Arduino joystick USB serial (udevadm info -q property /dev/ttyACM0 | grep ID_SERIAL_SHORT). Empty = skip.
+JOYSTICK_SERIAL=
+
+# 1 = lock clocks to max at boot. Off: MAXN + DVFS already scales on demand; pinning only
+# removes ms-level ramp-up at the cost of ~idle power and heat. Enable if latency jitter is measured.
+JETSON_CLOCKS=0
+
+# 1 = install Tailscale and log in (prints a login URL on first run).
+TAILSCALE=1

@@ -1,0 +1,5 @@
+# Per-robot host config (copy of host/robot.conf.example)
+host/robot.conf
+
+__pycache__/
+*.pyc

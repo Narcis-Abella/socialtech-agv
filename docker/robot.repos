@@ -1,0 +1,23 @@
+# Third-party sources for the `robot` image, pinned by commit (vcstool format).
+# Bump a version = change its commit here and rebuild.
+repositories:
+  livox_ros_driver2:
+    type: git
+    url: https://github.com/Livox-SDK/livox_ros_driver2.git
+    version: 21445540f0d100dc86a7e6df312dd70bbdb4afdf  # master 2026-09-21
+  FAST_LIO:
+    type: git
+    url: https://github.com/hku-mars/FAST_LIO.git
+    version: a4743b095409588842a5b30ddfa27e29d2f99164  # ROS2 branch 2025-01-15 (official)
+  ugv_sdk:
+    type: git
+    url: https://github.com/agilexrobotics/ugv_sdk.git
+    version: f2704eacdc90357078cd93ec60aae08bb4baab35  # main 2026-08-11
+  tracer_ros2:
+    type: git
+    url: https://github.com/agilexrobotics/tracer_ros2.git
+    version: 2c4938db6dadfa90054d385d9a21d86f7459222c  # jazzy branch (Tracer 1; tracer2.0 branch is for Tracer 2.0)
+  OrbbecSDK_ROS2:
+    type: git
+    url: https://github.com/orbbec/OrbbecSDK_ROS2.git
+    version: 8e7cad2bfa2c4a6ac4e779be99c64e72166043af  # v2-main 2026-08-07 (same as host udev rules)
