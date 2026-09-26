@@ -27,8 +27,12 @@ die()  { printf '\e[1;31mxx\e[0m  %s\n' "$*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "run as root: sudo $0"
 [[ -f $CONF ]] || die "missing $CONF (cp $HERE/robot.conf.example $HERE/robot.conf)"
-# shellcheck source=robot.conf.example
+# shellcheck source-path=SCRIPTDIR source=robot.conf.example
 source "$CONF"
+# Defaults, so an older robot.conf missing newer keys still works (set -u would abort cryptically).
+: "${LIVOX_IFACE=}" "${LIVOX_HOST_IP=192.168.1.50}" "${HOTSPOT_SSID=}" "${JOYSTICK_SERIAL=}"
+: "${JETSON_CLOCKS=0}" "${TAILSCALE=0}"
+[[ -n ${ROBOT_HOSTNAME:-} ]] || die "ROBOT_HOSTNAME missing in $CONF"
 
 # Validate config: values end up in hostnames, udev rules and nmcli calls.
 [[ $ROBOT_HOSTNAME =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || die "bad ROBOT_HOSTNAME: $ROBOT_HOSTNAME"
@@ -102,21 +106,15 @@ step_hostname() {
 }
 
 step_docker() {
-  local changed g
-  # Merge, don't overwrite: JetPack ships daemon.json with the nvidia runtime entry.
-  changed=$(python3 - <<'EOF'
-import json, shutil
-p = '/etc/docker/daemon.json'
-d = json.load(open(p))
-if d.get('default-runtime') != 'nvidia':
-    shutil.copy(p, p + '.bak')
-    d['default-runtime'] = 'nvidia'
-    with open(p, 'w') as f:
-        json.dump(d, f, indent=4)
-    print('yes')
-EOF
-)
-  if [[ $changed == yes ]]; then log "docker default runtime -> nvidia"; systemctl restart docker; fi
+  local cfg=/etc/docker/daemon.json before after g
+  command -v docker >/dev/null || die "docker missing (install JetPack's Docker component)"
+  command -v nvidia-ctk >/dev/null || die "nvidia-ctk missing (install nvidia-container-toolkit)"
+  before=$(sha256sum "$cfg" 2>/dev/null || true)
+  # Official tool: merges the nvidia runtime into daemon.json (creating it if absent) and sets it
+  # as default. Idempotent: an already-configured file is left byte-identical.
+  nvidia-ctk runtime configure --runtime=docker --set-as-default --config="$cfg" >/dev/null 2>&1
+  after=$(sha256sum "$cfg")
+  if [[ $before != "$after" ]]; then log "docker default runtime -> nvidia"; systemctl restart docker; fi
   systemctl enable --quiet docker   # containers with restart: unless-stopped come back at boot
   for g in docker dialout; do
     if ! in_group "$g"; then usermod -aG "$g" "$TARGET_USER"; log "$TARGET_USER added to $g (re-login)"; fi
@@ -134,11 +132,15 @@ EOF
   if ! swapon --noheadings --show=NAME | grep -q zram0; then systemctl start dev-zram0.swap; fi
 }
 
+symvers_hash() { sha256sum <"/lib/modules/$KVER/build/Module.symvers" | cut -d' ' -f1; }
+
 step_can() {
   local ko=/lib/modules/$KVER/updates/gs_usb.ko d
+  [[ -f /lib/modules/$KVER/build/Module.symvers ]] || die "kernel headers missing for $KVER (nvidia-l4t-kernel-headers)"
   # JetPack 7 kernel ships without CONFIG_CAN_GS_USB: build it from the matching stable source.
-  if [[ ! -f $ko ]]; then
-    [[ -f /lib/modules/$KVER/build/Makefile ]] || die "kernel headers missing for $KVER (nvidia-l4t-kernel-headers)"
+  # Rebuild also when the kernel ABI changed under the same `uname -r` (an L4T update can keep it):
+  # the module is outside any package, so a stale one would survive and refuse to load (modversions).
+  if [[ ! -f $ko || $(cat "$ko.symvers" 2>/dev/null) != "$(symvers_hash)" ]]; then
     log "building gs_usb for $KVER"
     d=$(mktemp -d)   # left in /tmp, cleared on reboot
     curl -fsSL -o "$d/gs_usb.c" \
@@ -146,6 +148,7 @@ step_can() {
     echo 'obj-m := gs_usb.o' >"$d/Makefile"
     make -s -C "/lib/modules/$KVER/build" M="$d" modules
     install -D -m 644 "$d/gs_usb.ko" "$ko"
+    symvers_hash >"$ko.symvers"
     depmod -a "$KVER"
   fi
 
@@ -184,18 +187,25 @@ EOF
 step_udev() {
   local reload=0
   if put /etc/udev/rules.d/99-obsensor-libusb.rules <"$HERE/99-obsensor-libusb.rules"; then reload=1; fi
+  local joy=/etc/udev/rules.d/99-arduino-joystick.rules
   if [[ -n $JOYSTICK_SERIAL ]]; then
-    if put /etc/udev/rules.d/99-arduino-joystick.rules <<EOF
+    if put "$joy" <<EOF
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="1002", ATTRS{serial}=="$JOYSTICK_SERIAL", SYMLINK+="arduino_joystick", GROUP="dialout", MODE="0660"
 EOF
     then reload=1; fi
+  elif [[ -f $joy ]]; then
+    rm -f "$joy"; reload=1; log "removed $joy (JOYSTICK_SERIAL empty)"
   fi
   if ((reload)); then udevadm control --reload-rules; udevadm trigger --subsystem-match=usb --subsystem-match=tty; fi
 }
 
 step_livox() {
   local ifc=$LIVOX_IFACE
-  if [[ -z $ifc ]]; then log "livox link: skipped"; return 0; fi
+  if [[ -z $ifc ]]; then
+    # Feature off: free the port (e.g. AGX using its ethernet for internet).
+    if nm_con_exists livox; then nmcli connection delete livox >/dev/null; log "removed livox link (LIVOX_IFACE empty)"; fi
+    return 0
+  fi
   if [[ $ifc == auto ]]; then
     ifc=$(first_iface ethernet)
     [[ -n $ifc ]] || die "no onboard ethernet interface for the Livox"
@@ -210,23 +220,34 @@ step_livox() {
 
 step_hotspot() {
   local wifi psk=${HOTSPOT_PSK:-}
-  if [[ -z $HOTSPOT_SSID ]]; then log "hotspot: skipped"; return 0; fi
+  if [[ -z $HOTSPOT_SSID ]]; then
+    # Feature off: stop the boot-time fallback (the Hotspot connection itself is harmless, autoconnect=no).
+    systemctl disable --quiet hotspot-fallback.timer 2>/dev/null || true
+    return 0
+  fi
   wifi=$(first_iface wifi)
   [[ -n $wifi ]] || die "no Wi-Fi interface for the hotspot"
 
-  if ! nm_con_exists Hotspot; then
-    if [[ -z $psk && -t 0 ]]; then read -rsp "Hotspot password for '$HOTSPOT_SSID' (>= 8 chars): " psk; echo; fi
-    [[ ${#psk} -ge 8 ]] || die "hotspot needs a password >= 8 chars (run with a TTY or HOTSPOT_PSK=...)"
-    nmcli connection add type wifi con-name Hotspot ifname "$wifi" ssid "$HOTSPOT_SSID" >/dev/null
+  if [[ -z $psk && -t 0 ]] && ! nm_con_exists Hotspot; then
+    read -rsp "Hotspot password for '$HOTSPOT_SSID' (8-63 chars): " psk; echo
   fi
+  # WPA2-PSK passphrases are 8-63 chars; NetworkManager rejects anything else.
+  if [[ -n $psk ]] && ((${#psk} < 8 || ${#psk} > 63)); then die "hotspot password must be 8-63 characters"; fi
+
   local args=(connection.interface-name "$wifi" connection.autoconnect no
     802-11-wireless.ssid "$HOTSPOT_SSID" 802-11-wireless.mode ap 802-11-wireless.band bg
     ipv4.method shared ipv6.method ignore wifi-sec.key-mgmt wpa-psk)
-  if [[ -n $psk ]]; then
-    [[ ${#psk} -ge 8 ]] || die "hotspot password must be >= 8 chars"
-    args+=(wifi-sec.psk "$psk")
+  if [[ -n $psk ]]; then args+=(wifi-sec.psk "$psk"); fi
+  if nm_con_exists Hotspot; then
+    if [[ -z $psk && -z $(nmcli -s -g 802-11-wireless-security.psk connection show Hotspot) ]]; then
+      die "Hotspot connection has no password: re-run with a TTY or 'sudo HOTSPOT_PSK=... $0'"
+    fi
+    nmcli connection modify Hotspot "${args[@]}"
+  else
+    [[ -n $psk ]] || die "hotspot needs a password: re-run with a TTY or 'sudo HOTSPOT_PSK=... $0'"
+    # One add with every setting: a rejected value leaves nothing behind (no open, half-made AP).
+    nmcli connection add type wifi con-name Hotspot ifname "$wifi" ssid "$HOTSPOT_SSID" "${args[@]}" >/dev/null
   fi
-  nmcli connection modify Hotspot "${args[@]}"
 
   put /usr/local/sbin/hotspot-fallback 755 <<'EOF' || true
 #!/bin/sh
@@ -283,6 +304,23 @@ EOF
   systemctl enable --now --quiet jetson-clocks.service
 }
 
+# SDK Manager's first-boot (cloud-init) leaves passwordless sudo for the default user: anything that
+# reaches the robot (Tailscale, hotspot, SSH keys) would get root without a password. Disabled only
+# after the user proves they know the password, so nobody gets locked out of sudo.
+SUDO_NOPASSWD=/etc/sudoers.d/90-cloud-init-users
+step_sudo() {
+  if [[ ! -f $SUDO_NOPASSWD ]]; then return 0; fi
+  if [[ ! -t 0 ]]; then warn "passwordless sudo still enabled ($SUDO_NOPASSWD): re-run with a TTY to disable it"; return 0; fi
+  log "disabling passwordless sudo: enter $TARGET_USER's password to confirm you know it"
+  # root can su without a password, so check as the user itself (su to self asks for it).
+  if runuser -u "$TARGET_USER" -- su "$TARGET_USER" -c true; then
+    mv "$SUDO_NOPASSWD" "$SUDO_NOPASSWD.disabled"   # sudo ignores names with a dot; mv back to revert
+    log "passwordless sudo disabled"
+  else
+    warn "password check failed: passwordless sudo left enabled"
+  fi
+}
+
 step_tailscale() {
   if [[ $TAILSCALE != 1 ]]; then return 0; fi
   systemctl enable --now --quiet tailscaled
@@ -327,7 +365,7 @@ run_checks() {
   check "$TARGET_USER in docker" in_group docker
   check "$TARGET_USER in dialout" in_group dialout
   check "zram swap active" sh -c 'swapon --noheadings --show=NAME | grep -q zram0'
-  check "gs_usb built for $KVER" modinfo -k "$KVER" gs_usb
+  check "gs_usb built for current kernel ABI" test "$(cat "/lib/modules/$KVER/updates/gs_usb.ko.symvers" 2>/dev/null)" = "$(symvers_hash)"
   check "gs_usb -> $CAN_IFACE rename rule" test -f /etc/systemd/network/10-tracer-can.link
   check "can-up@$CAN_IFACE enabled" systemctl is-enabled "can-up@$CAN_IFACE.service"
   check "orbbec udev rules" cmp -s "$HERE/99-obsensor-libusb.rules" /etc/udev/rules.d/99-obsensor-libusb.rules
@@ -343,6 +381,7 @@ run_checks() {
   fi
   if [[ $JETSON_CLOCKS == 1 ]]; then check "jetson-clocks enabled" systemctl is-enabled jetson-clocks.service; fi
   if [[ $TAILSCALE == 1 ]]; then check "tailscale logged in" tailscale status; fi
+  check "no passwordless sudo (cloud-init rule)" test ! -f "$SUDO_NOPASSWD"
   check "power mode = MAXN" test "$(power_mode)" = "$(maxn_id)"
   if ((FAILS)); then warn "$FAILS check(s) failed"; else log "all checks passed"; fi
 }
@@ -359,6 +398,7 @@ if [[ $MODE == apply ]]; then
   step_livox
   step_hotspot
   step_clocks
+  step_sudo
   step_tailscale
 fi
 run_checks

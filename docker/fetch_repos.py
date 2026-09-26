@@ -23,7 +23,7 @@ def main():
         repos = yaml.safe_load(f)["repositories"]
     for name, spec in repos.items():
         path = dest / name
-        path.mkdir(parents=True)
+        path.mkdir(parents=True, exist_ok=True)  # re-runnable: fetch + checkout are idempotent
         print(f"fetching {name} @ {spec['version'][:10]}", flush=True)
         git(path, "init", "-q")
         git(path, "fetch", "-q", "--depth", "1", spec["url"], spec["version"])

@@ -1,6 +1,9 @@
 #!/bin/bash
-# Source ROS 2 and the SocialTech overlay, then run the command.
+# Load the ROS environment, then run the command.
 set -e
-source "/opt/ros/${ROS_DISTRO}/setup.bash" --
-if [[ -f /opt/socialtech/setup.bash ]]; then source /opt/socialtech/setup.bash --; fi
+# shellcheck source-path=SCRIPTDIR source=ros_env.sh
+source /ros_env.sh
+if [[ -z ${DDS_IFACE:-} && -z ${CYCLONEDDS_URI:-} ]]; then
+  echo "warning: DDS_IFACE not set; CycloneDDS will pick a network interface arbitrarily" >&2
+fi
 exec "$@"
