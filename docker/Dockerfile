@@ -2,7 +2,7 @@
 # SocialTech robot images for Jetson Orin (JetPack 7.2.1 / L4T r39.2, arm64).
 # One file, layered stages; build one with: docker build --target <stage> .
 #   base   ROS 2 Jazzy + CycloneDDS + CUDA runtime matching the host driver
-#   robot  sensor/base drivers + FAST-LIO2 + GLIM (+ glim_ext) + rosbag2 (what runs on every robot)
+#   robot  sensor/base drivers + FAST-LIO2 + GLIM + rosbag2 (what runs on every robot)
 # Run with network_mode: host (DDS discovery, Livox raw sockets) and the GPU requested
 # via NVIDIA_VISIBLE_DEVICES (set below) or --device nvidia.com/gpu=all.
 
@@ -58,19 +58,14 @@ RUN --mount=type=tmpfs,target=/tmp/src \
 # GLIM (offline mapping on the robot's own Jetson) + gtsam_points + GTSAM from the author's PPA:
 # prebuilt arm64 for CUDA 13.1, which runs on the 13.2 runtime above; its GPU code targets sm_80,
 # which runs on Orin (sm_87). Kept above the workspace so source bumps don't re-download it.
-# nvcc + cudart headers: gtsam_points' CMake config requires CUDAToolkit, so building anything
-# against it (glim_ext, our own GLIM modules) needs them; pinned to the installed runtime.
 ARG GLIM_VERSION=1.2.2
 ADD --chmod=644 https://koide3.github.io/ppa/ubuntu2404/KEY.gpg /etc/apt/keyrings/koide3.asc
 RUN echo "deb [signed-by=/etc/apt/keyrings/koide3.asc] https://koide3.github.io/ppa/ubuntu2404 ./" \
       > /etc/apt/sources.list.d/koide3.list
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    cuda_version=$(dpkg-query -W -f='${Version}' cuda-cudart-13-2) \
- && apt-get update \
+    apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      cuda-nvcc-13-2="${cuda_version}" \
-      cuda-cudart-dev-13-2="${cuda_version}" \
       libgtsam-points-cuda13.1-dev="${GLIM_VERSION}" \
       ros-jazzy-glim-cuda13.1="${GLIM_VERSION}-0noble" \
       ros-jazzy-glim-ros-cuda13.1="${GLIM_VERSION}-0noble" \
@@ -95,9 +90,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update \
  && rosdep update --rosdistro jazzy \
  # ugv_sdk declares catkin (ROS 1) but is plain CMake that only uses catkin if found.
- # glim_ext declares glim, installed above from the PPA under a CUDA-suffixed name.
  && DEBIAN_FRONTEND=noninteractive rosdep install -y --from-paths src --ignore-src --rosdistro jazzy \
-      --skip-keys "catkin glim" \
+      --skip-keys catkin \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ros-jazzy-rosbag2-storage-mcap
 
@@ -110,5 +104,4 @@ RUN --mount=type=cache,target=/ws/build \
     . /opt/ros/jazzy/setup.sh \
  && colcon build --merge-install --install-base /opt/socialtech \
       --parallel-workers "${COLCON_WORKERS}" \
-      --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy \
-        -DENABLE_SCAN_CONTEXT=ON
+      --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy
