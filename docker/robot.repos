@@ -25,3 +25,7 @@ repositories:
     type: git
     url: https://github.com/koide3/glim_ext.git
     version: 2dd2193a45d36785168600cc17a31a17e0102d36  # master 2026-08-31 (no releases); ScanContext is CC BY-NC-SA
+    # Only what the enabled modules build; the others pull unused repos (ORB_SLAM3, a FAST_LIO copy
+    # by SSH URL) and scancontext's own nested example submodule is broken upstream.
+    submodules:
+      - modules/mapping/scan_context_loop_detector/thirdparty/scancontext
