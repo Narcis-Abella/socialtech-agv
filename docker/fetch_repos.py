@@ -4,9 +4,6 @@
 `vcs import` clones full histories (OrbbecSDK_ROS2 alone is ~800 MB) and cannot shallow-clone
 a commit SHA; `git fetch --depth 1 <sha>` downloads only that snapshot.
 
-An optional per-repo `submodules:` list (not part of vcstool) limits the fetch to those paths,
-non-recursively; without it every submodule is fetched recursively.
-
 Usage: fetch_repos.py <file.repos> <dest_dir>
 """
 import pathlib
@@ -31,10 +28,7 @@ def main():
         git(path, "init", "-q")
         git(path, "fetch", "-q", "--depth", "1", spec["url"], spec["version"])
         git(path, "checkout", "-q", "FETCH_HEAD")
-        if "submodules" in spec:
-            git(path, "submodule", "update", "-q", "--init", "--depth", "1", "--", *spec["submodules"])
-        else:
-            git(path, "submodule", "update", "-q", "--init", "--recursive", "--depth", "1")
+        git(path, "submodule", "update", "-q", "--init", "--recursive", "--depth", "1")
 
 
 if __name__ == "__main__":
