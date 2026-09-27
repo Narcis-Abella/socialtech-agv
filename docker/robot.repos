@@ -21,3 +21,7 @@ repositories:
     type: git
     url: https://github.com/orbbec/OrbbecSDK_ROS2.git
     version: 8e7cad2bfa2c4a6ac4e779be99c64e72166043af  # v2-main 2026-08-07 (same as host udev rules)
+  glim_ext:
+    type: git
+    url: https://github.com/koide3/glim_ext.git
+    version: 2dd2193a45d36785168600cc17a31a17e0102d36  # master 2026-08-31 (no releases); ScanContext is CC BY-NC-SA
