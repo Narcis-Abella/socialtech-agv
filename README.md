@@ -11,6 +11,7 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | `docker/` | Layered images built from one `Dockerfile` (`base` → `robot`) |
 | `docker/robot.repos` | Third-party ROS sources, pinned by commit |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
+| `tools/` | Offline helpers (e.g. `glim_dump_to_ply.py`: GLIM map dump to PLY without the GUI) |
 
 ## Jetson setup (once per board)
 
@@ -50,6 +51,16 @@ On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
 Without `DDS_IFACE`, CycloneDDS picks a network interface arbitrarily and other machines may not see the robot's nodes.
 Shells opened with `docker exec -it <container> bash` get the same ROS environment as the entrypoint.
+
+## Tools
+
+```bash
+# GLIM map dump (glim_rosbag -p dump_path:=...) -> PLY, same points as offline_viewer's Export Points.
+python3 tools/glim_dump_to_ply.py <dump_dir> map.ply
+python3 tools/test_glim_dump_to_ply.py   # self-check
+```
+
+Needs numpy (on JetPack and in the robot image). Differences from the GUI export are listed in the script's docstring.
 
 ## Where changes go
 
