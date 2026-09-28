@@ -66,11 +66,12 @@ RUN --mount=type=tmpfs,target=/tmp/src \
 # The repo and its key are removed after install so later apt/rosdep runs can't move the stack.
 # glim hard-depends on iridescence (its viewer), which pulls the GLFW/GL/X11 dev stack in even headless.
 # The libs land in /usr/local/lib without a dpkg ldconfig trigger, hence the explicit ldconfig.
-# ldd -r fails the build on a missing lib or symbol (e.g. libcudart.so.13 after a CUDA bump); it
-# checks libgtsam_points.so only, which loads the CUDA lib, as the latter uses its symbols unlinked.
+# ldd -r fails the build on a missing lib or symbol (e.g. libcudart.so.13 after a CUDA bump, or a
+# GTSAM rebuilt without glim) in gtsam_points and every glim/glim_ros lib. Not libgtsam_points_cuda.so
+# on its own: it uses libgtsam_points.so's symbols unlinked; checking the latter loads it.
 ARG KOIDE3_PPA_COMMIT=a21da6b120456c1b9a1ce15480b622c8ccbaa3ff
 ADD --chmod=644 --checksum=sha256:08c6f6bff0bf9b991398c693d44a16871932bc7de969848413e3066dc1acc77e \
-    https://koide3.github.io/ppa/ubuntu2404/KEY.gpg /etc/apt/keyrings/koide3.asc
+    https://raw.githubusercontent.com/koide3/ppa/${KOIDE3_PPA_COMMIT}/ubuntu2404/KEY.gpg /etc/apt/keyrings/koide3.asc
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     echo "deb [signed-by=/etc/apt/keyrings/koide3.asc]" \
@@ -85,7 +86,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-jazzy-glim-ros-cuda13.1=1.2.2-0noble \
  && rm /etc/apt/sources.list.d/koide3.list /etc/apt/keyrings/koide3.asc \
  && ldconfig \
- && ldd -r /usr/local/lib/libgtsam_points.so > /tmp/ldd.txt \
+ && . /opt/ros/jazzy/setup.sh \
+ && ldd -r /usr/local/lib/libgtsam_points.so \
+      $(dpkg -L ros-jazzy-glim-cuda13.1 ros-jazzy-glim-ros-cuda13.1 | grep '\.so$') > /tmp/ldd.txt \
  && if grep -E 'not found|undefined symbol' /tmp/ldd.txt; then exit 1; fi \
  && rm /tmp/ldd.txt
 
