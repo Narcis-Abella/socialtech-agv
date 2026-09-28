@@ -19,7 +19,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Keep downloaded .debs in the BuildKit cache mount instead of deleting them.
 RUN rm -f /etc/apt/apt.conf.d/docker-clean
 
-ADD --chmod=644 https://repo.download.nvidia.com/jetson/jetson-ota-public.asc /etc/apt/trusted.gpg.d/jetson-ota-public.asc
+ADD --chmod=644 --checksum=sha256:576f852981855e5c6cfb9b625ffb51b984ca451f1181b2e70435b005034fad55 \
+    https://repo.download.nvidia.com/jetson/jetson-ota-public.asc /etc/apt/trusted.gpg.d/jetson-ota-public.asc
 RUN echo "deb https://repo.download.nvidia.com/jetson/common ${L4T_RELEASE} main" \
       > /etc/apt/sources.list.d/nvidia-l4t.list
 
@@ -56,19 +57,24 @@ RUN --mount=type=tmpfs,target=/tmp/src \
  && ldconfig
 
 # GLIM (offline mapping on the robot's own Jetson) + gtsam_points + GTSAM from the author's PPA:
-# prebuilt arm64 for CUDA 13.1, which runs on the 13.2 runtime above; its GPU code targets sm_80,
-# which runs on Orin (sm_87). Kept above the workspace so source bumps don't re-download it.
-# The whole stack is pinned, dependencies included. Package versions are independent (glim_ros has a
-# 1.2.1, glim doesn't), so bump each against https://koide3.github.io/ppa/ubuntu2404/Packages.
-# The repo is removed after install so later apt/rosdep runs can't move the stack.
+# prebuilt arm64 for CUDA 13.1, which runs on the 13.2 runtime above; its GPU code includes sm_80
+# SASS, which Orin (sm_87) runs. Kept above the workspace so source bumps don't re-download it.
+# The PPA rebuilds and republishes debs under the same version (e.g. GTSAM 4.3.0), so apt reads a
+# fixed commit of its `ppa` branch, whose signed InRelease fixes every deb's SHA256; the versions
+# then pick among what that snapshot holds. They are independent per package (glim_ros has a 1.2.1,
+# glim doesn't): to bump, move the commit and check each package in its Packages file.
+# The repo and its key are removed after install so later apt/rosdep runs can't move the stack.
 # glim hard-depends on iridescence (its viewer), which pulls the GLFW/GL/X11 dev stack in even headless.
-# The libs land in /usr/local/lib without a dpkg ldconfig trigger, hence the explicit ldconfig; the
-# -cuda13.1 builds link libcudart.so.13, so ldd fails the build if a CUDA bump drops it.
+# The libs land in /usr/local/lib without a dpkg ldconfig trigger, hence the explicit ldconfig.
+# ldd -r fails the build on a missing lib or symbol (e.g. libcudart.so.13 after a CUDA bump); it
+# checks libgtsam_points.so only, which loads the CUDA lib, as the latter uses its symbols unlinked.
+ARG KOIDE3_PPA_COMMIT=a21da6b120456c1b9a1ce15480b622c8ccbaa3ff
 ADD --chmod=644 --checksum=sha256:08c6f6bff0bf9b991398c693d44a16871932bc7de969848413e3066dc1acc77e \
     https://koide3.github.io/ppa/ubuntu2404/KEY.gpg /etc/apt/keyrings/koide3.asc
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    echo "deb [signed-by=/etc/apt/keyrings/koide3.asc] https://koide3.github.io/ppa/ubuntu2404 ./" \
+    echo "deb [signed-by=/etc/apt/keyrings/koide3.asc]" \
+         "https://raw.githubusercontent.com/koide3/ppa/${KOIDE3_PPA_COMMIT}/ubuntu2404 ./" \
       > /etc/apt/sources.list.d/koide3.list \
  && apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -77,10 +83,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libgtsam-points-cuda13.1-dev=1.2.2 \
       ros-jazzy-glim-cuda13.1=1.2.2-0noble \
       ros-jazzy-glim-ros-cuda13.1=1.2.2-0noble \
- && rm /etc/apt/sources.list.d/koide3.list \
+ && rm /etc/apt/sources.list.d/koide3.list /etc/apt/keyrings/koide3.asc \
  && ldconfig \
- && ldd /usr/local/lib/libgtsam_points.so /usr/local/lib/libgtsam_points_cuda.so > /tmp/ldd.txt \
- && if grep 'not found' /tmp/ldd.txt; then exit 1; fi \
+ && ldd -r /usr/local/lib/libgtsam_points.so > /tmp/ldd.txt \
+ && if grep -E 'not found|undefined symbol' /tmp/ldd.txt; then exit 1; fi \
  && rm /tmp/ldd.txt
 
 WORKDIR /ws
