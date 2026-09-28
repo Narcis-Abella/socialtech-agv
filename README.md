@@ -84,9 +84,15 @@ one pass), `z_range_m` / `roll_range_deg` / `pitch_range_deg` (drift on a flat f
 |---|---|---|
 | `base.json` | defaults | Livox topics, Mid-360 `T_lidar_imu` (IMU pose in the LiDAR frame, Mid-360 manual), headless modules |
 | `legacy.json` | `base.json` | Previous (Humble, GLIM 1.0.x) config ported to 1.2.x, including its `T_lidar_imu`, to reproduce its results |
-| `loop_overlap.json` | `base.json` | `min_implicit_loop_overlap` 0.05: more loop constraints |
+| `mid360_T.json` | `legacy.json` | Restores the Mid-360 `T_lidar_imu` over the legacy one |
+| `keyframes.json` | `base.json` | Legacy `odometry_estimation` + `sub_mapping` only (keyframe and submap density) |
+| `loop_overlap.json` | `base.json` | `min_implicit_loop_overlap` 0.05: more loop constraints (needs dense keyframes to matter) |
 | `far_8m.json` | `base.json` | `distance_far_thresh` 8 m, as in the legacy config: more frequent keyframes/submaps? |
 | `density.json` | `base.json` | Denser submaps: more keyframes, 5 cm voxels, no point cap |
+
+`base.json` alone is not a usable map: GLIM's default keyframing gives ~3 submaps per 170 m (about 20x fewer
+points than the legacy config) and almost no backend optimization. `mme` is only comparable between maps of
+similar density (a sparse map scores "crisper").
 
 Not portable from the legacy config: its crop box kept only z in [-0.43, 1.23] m through a `crop_bbox_invert`
 parameter that upstream GLIM does not have (1.2.x only removes points inside the box). Left out: frame IDs,
