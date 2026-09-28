@@ -48,9 +48,9 @@ def export(dump):
     return (proc.stderr, *read_ply(out))
 
 
-def export_fails(dump):
+def export_fails(dump, out=None):
     """Run the script on `dump`; require a clean `error:` exit, not a traceback. Return stderr."""
-    proc = subprocess.run([sys.executable, str(SCRIPT), str(dump), str(dump / "map.ply")],
+    proc = subprocess.run([sys.executable, str(SCRIPT), str(dump), str(out or dump / "map.ply")],
                           capture_output=True, text=True)
     assert proc.returncode == 1 and proc.stderr.startswith("error:") and "Traceback" not in proc.stderr, proc
     return proc.stderr
@@ -152,6 +152,20 @@ def test_bad_input_exits_cleanly(tmp_path):
     np.array([1, 2, 3, 1], dtype="<f8").tofile(tmp_path / "000000" / "points.bin")
     (tmp_path / "000000" / "data.txt").write_text("id: 0\nT_world_origin: \n1 0 0\n")  # truncated
     assert "T_world_origin:" in export_fails(tmp_path)
+
+    (tmp_path / "000000" / "data.txt").write_bytes(b"T_world_origin: \xff\xfe\n")  # not UTF-8
+    assert "data.txt" in export_fails(tmp_path)
+
+    (tmp_path / "000000" / "data.txt").unlink()
+    (tmp_path / "000000" / "data.txt").mkdir()  # a directory where a file is expected
+    assert "data.txt" in export_fails(tmp_path)
+
+
+def test_unwritable_output_exits_cleanly(tmp_path):
+    write_submap(tmp_path / "000000", np.eye(4), np.array([[1, 2, 3, 1]], dtype=float), None, compact=False)
+    write_graph(tmp_path, 1)
+    assert "missing" in export_fails(tmp_path, out=tmp_path / "missing" / "map.ply")
+    assert str(tmp_path) in export_fails(tmp_path, out=tmp_path)  # a directory, not a file
 
 
 if __name__ == "__main__":

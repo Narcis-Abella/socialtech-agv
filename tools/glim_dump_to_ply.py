@@ -30,7 +30,10 @@ import numpy as np
 
 def read_matrix_after(path, label, rows=4, cols=4):
     """Read a row-major matrix that follows `label` in a whitespace-split text file (like GLIM's read_matrix)."""
-    tokens = path.read_text().split()
+    try:
+        tokens = path.read_text().split()
+    except (OSError, UnicodeDecodeError) as e:
+        sys.exit(f"error: cannot read {path}: {e}")
     try:
         i = tokens.index(label) + 1
         return np.array(tokens[i:i + rows * cols], dtype=np.float64).reshape(rows, cols)
@@ -121,10 +124,15 @@ def main():
     if len(sys.argv) != 3:
         sys.exit("usage: glim_dump_to_ply.py <dump_dir> <out.ply>")
     dump, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+    if out.is_dir() or not out.parent.is_dir():  # fail before loading the whole map
+        sys.exit(f"error: cannot write {out}: not a file in an existing directory")
     points, intensities = export_points(dump)
     if len(points) == 0:
         sys.exit("error: no points available for export")  # same condition offline_viewer refuses on
-    write_ply(out, points, intensities)
+    try:
+        write_ply(out, points, intensities)
+    except OSError as e:
+        sys.exit(f"error: cannot write {out}: {e}")
     print(f"wrote {len(points)} points{' with intensity' if intensities is not None else ''} to {out}")
 
 
