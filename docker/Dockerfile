@@ -58,18 +58,30 @@ RUN --mount=type=tmpfs,target=/tmp/src \
 # GLIM (offline mapping on the robot's own Jetson) + gtsam_points + GTSAM from the author's PPA:
 # prebuilt arm64 for CUDA 13.1, which runs on the 13.2 runtime above; its GPU code targets sm_80,
 # which runs on Orin (sm_87). Kept above the workspace so source bumps don't re-download it.
-ARG GLIM_VERSION=1.2.2
-ADD --chmod=644 https://koide3.github.io/ppa/ubuntu2404/KEY.gpg /etc/apt/keyrings/koide3.asc
-RUN echo "deb [signed-by=/etc/apt/keyrings/koide3.asc] https://koide3.github.io/ppa/ubuntu2404 ./" \
-      > /etc/apt/sources.list.d/koide3.list
+# The whole stack is pinned, dependencies included. Package versions are independent (glim_ros has a
+# 1.2.1, glim doesn't), so bump each against https://koide3.github.io/ppa/ubuntu2404/Packages.
+# The repo is removed after install so later apt/rosdep runs can't move the stack.
+# glim hard-depends on iridescence (its viewer), which pulls the GLFW/GL/X11 dev stack in even headless.
+# The libs land in /usr/local/lib without a dpkg ldconfig trigger, hence the explicit ldconfig; the
+# -cuda13.1 builds link libcudart.so.13, so ldd fails the build if a CUDA bump drops it.
+ADD --chmod=644 --checksum=sha256:08c6f6bff0bf9b991398c693d44a16871932bc7de969848413e3066dc1acc77e \
+    https://koide3.github.io/ppa/ubuntu2404/KEY.gpg /etc/apt/keyrings/koide3.asc
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+    echo "deb [signed-by=/etc/apt/keyrings/koide3.asc] https://koide3.github.io/ppa/ubuntu2404 ./" \
+      > /etc/apt/sources.list.d/koide3.list \
+ && apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      libgtsam-points-cuda13.1-dev="${GLIM_VERSION}" \
-      ros-jazzy-glim-cuda13.1="${GLIM_VERSION}-0noble" \
-      ros-jazzy-glim-ros-cuda13.1="${GLIM_VERSION}-0noble" \
- && ldconfig
+      libgtsam-notbb-dev=4.3.0 \
+      libiridescence-dev=1.0.2 \
+      libgtsam-points-cuda13.1-dev=1.2.2 \
+      ros-jazzy-glim-cuda13.1=1.2.2-0noble \
+      ros-jazzy-glim-ros-cuda13.1=1.2.2-0noble \
+ && rm /etc/apt/sources.list.d/koide3.list \
+ && ldconfig \
+ && ldd /usr/local/lib/libgtsam_points.so /usr/local/lib/libgtsam_points_cuda.so > /tmp/ldd.txt \
+ && if grep 'not found' /tmp/ldd.txt; then exit 1; fi \
+ && rm /tmp/ldd.txt
 
 WORKDIR /ws
 COPY robot.repos fetch_repos.py ./
