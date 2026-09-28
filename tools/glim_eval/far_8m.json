@@ -1,0 +1,7 @@
+{
+  "config_preprocess.json": {
+    "preprocess": {
+      "distance_far_thresh": 8.0
+    }
+  }
+}
