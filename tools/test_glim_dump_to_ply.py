@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Self-check for glim_dump_to_ply.py on synthetic dumps. Run: python3 test_glim_dump_to_ply.py (or pytest)"""
+import os
 import pathlib
 import subprocess
 import sys
@@ -154,18 +155,72 @@ def test_bad_input_exits_cleanly(tmp_path):
     assert "T_world_origin:" in export_fails(tmp_path)
 
     (tmp_path / "000000" / "data.txt").write_bytes(b"T_world_origin: \xff\xfe\n")  # not UTF-8
-    assert "data.txt" in export_fails(tmp_path)
+    assert "codec" in export_fails(tmp_path)
 
+    # Directories where files are expected, at every read site.
+    write_pose(tmp_path / "000001", np.eye(4))
+    write_graph(tmp_path, 2)
     (tmp_path / "000000" / "data.txt").unlink()
-    (tmp_path / "000000" / "data.txt").mkdir()  # a directory where a file is expected
+    (tmp_path / "000000" / "data.txt").mkdir()
     assert "data.txt" in export_fails(tmp_path)
+    write_graph(tmp_path, 1)
+    (tmp_path / "000000" / "data.txt").rmdir()
+    write_pose(tmp_path / "000000" / "sub", np.eye(4))  # keeps data.txt valid below
+    (tmp_path / "000000" / "sub" / "data.txt").rename(tmp_path / "000000" / "data.txt")
+    (tmp_path / "000000" / "points.bin").unlink()
+    (tmp_path / "000000" / "points.bin").mkdir()
+    assert "points.bin" in export_fails(tmp_path)
+    (tmp_path / "000000" / "points.bin").rmdir()
+    np.array([1, 2, 3, 1], dtype="<f8").tofile(tmp_path / "000000" / "points.bin")
+    (tmp_path / "000000" / "intensities.bin").mkdir()
+    assert "intensities.bin" in export_fails(tmp_path)
 
 
-def test_unwritable_output_exits_cleanly(tmp_path):
+def test_unreadable_submap_dir_exits_cleanly(tmp_path):
+    if os.geteuid() == 0:
+        return  # root ignores permissions
     write_submap(tmp_path / "000000", np.eye(4), np.array([[1, 2, 3, 1]], dtype=float), None, compact=False)
     write_graph(tmp_path, 1)
-    assert "missing" in export_fails(tmp_path, out=tmp_path / "missing" / "map.ply")
-    assert str(tmp_path) in export_fails(tmp_path, out=tmp_path)  # a directory, not a file
+    (tmp_path / "000000").chmod(0)
+    try:
+        assert "000000" in export_fails(tmp_path)
+    finally:
+        (tmp_path / "000000").chmod(0o755)
+
+
+def test_output_checked_before_loading(tmp_path):
+    # The dump is invalid too: the error reported must be the output's, so nothing was loaded first.
+    dump, outdir = tmp_path / "dump", tmp_path / "out"
+    dump.mkdir()
+    outdir.mkdir()
+    for out in [outdir / "missing" / "map.ply", outdir, pathlib.Path("/")]:  # parent missing / directories
+        stderr = export_fails(dump, out=out)
+        assert str(out) in stderr and "graph.txt" not in stderr, stderr
+    if os.geteuid() != 0:  # root ignores permissions
+        outdir.chmod(0o555)
+        try:
+            stderr = export_fails(dump, out=outdir / "map.ply")
+            assert str(outdir) in stderr and "graph.txt" not in stderr, stderr
+        finally:
+            outdir.chmod(0o755)
+
+
+def test_failed_export_keeps_previous_output(tmp_path):
+    dump, outdir = tmp_path / "dump", tmp_path / "out"
+    dump.mkdir()
+    outdir.mkdir()
+    (outdir / "map.ply").write_text("previous map")
+    export_fails(dump, out=outdir / "map.ply")
+    assert (outdir / "map.ply").read_text() == "previous map"
+    assert [f.name for f in outdir.iterdir()] == ["map.ply"]  # no temporary file left behind
+
+
+def test_output_gets_default_permissions(tmp_path):
+    write_submap(tmp_path / "000000", np.eye(4), np.array([[1, 2, 3, 1]], dtype=float), None, compact=False)
+    write_graph(tmp_path, 1)
+    export(tmp_path)
+    (tmp_path / "reference").touch()  # same umask as the script
+    assert (tmp_path / "map.ply").stat().st_mode == (tmp_path / "reference").stat().st_mode
 
 
 if __name__ == "__main__":

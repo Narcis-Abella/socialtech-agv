@@ -22,6 +22,7 @@ This replicates that export from the files GLIM saves (references: glim, gtsam_p
 Usage: glim_dump_to_ply.py <dump_dir> <out.ply>
 Needs numpy (apt: python3-numpy).
 """
+import os
 import pathlib
 import sys
 
@@ -31,8 +32,8 @@ import numpy as np
 def read_matrix_after(path, label, rows=4, cols=4):
     """Read a row-major matrix that follows `label` in a whitespace-split text file (like GLIM's read_matrix)."""
     try:
-        tokens = path.read_text().split()
-    except (OSError, UnicodeDecodeError) as e:
+        tokens = path.read_text(encoding="utf-8").split()
+    except UnicodeDecodeError as e:
         sys.exit(f"error: cannot read {path}: {e}")
     try:
         i = tokens.index(label) + 1
@@ -104,7 +105,7 @@ def export_points(dump):
     return points, intensities
 
 
-def write_ply(path, points, intensities):
+def write_ply(f, points, intensities):
     """glk::save_ply_binary layout for vertices (+ intensities)."""
     names = ["x", "y", "z"] + (["intensity"] if intensities is not None else [])
     record = np.empty(len(points), dtype=[(n, "<f4") for n in names])
@@ -115,24 +116,35 @@ def write_ply(path, points, intensities):
 
     header = ["ply", "format binary_little_endian 1.0", "comment generated with glim_dump_to_ply.py",
               f"element vertex {len(points)}"] + [f"property float {n}" for n in names] + ["end_header"]
-    with open(path, "wb") as f:
-        f.write(("\n".join(header) + "\n").encode())
-        f.write(record.tobytes())
+    f.write(("\n".join(header) + "\n").encode())
+    f.write(record.tobytes())
 
 
 def main():
     if len(sys.argv) != 3:
         sys.exit("usage: glim_dump_to_ply.py <dump_dir> <out.ply>")
     dump, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-    if out.is_dir() or not out.parent.is_dir():  # fail before loading the whole map
-        sys.exit(f"error: cannot write {out}: not a file in an existing directory")
-    points, intensities = export_points(dump)
-    if len(points) == 0:
-        sys.exit("error: no points available for export")  # same condition offline_viewer refuses on
+    # The map is written to a temporary file next to `out`, opened before loading so an unwritable
+    # destination fails fast, and renamed over `out` only once complete.
+    if os.path.isdir(out):
+        sys.exit(f"error: cannot write {out}: is a directory")
+    tmp = out.with_name(f".{out.name}.tmp")
     try:
-        write_ply(out, points, intensities)
+        f = open(tmp, "wb")
     except OSError as e:
         sys.exit(f"error: cannot write {out}: {e}")
+    try:
+        with f:
+            points, intensities = export_points(dump)
+            if len(points) == 0:
+                sys.exit("error: no points available for export")  # same condition offline_viewer refuses on
+            write_ply(f, points, intensities)
+        os.replace(tmp, out)
+    except OSError as e:
+        sys.exit(f"error: {e}")
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
     print(f"wrote {len(points)} points{' with intensity' if intensities is not None else ''} to {out}")
 
 
