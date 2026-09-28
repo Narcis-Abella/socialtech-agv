@@ -155,18 +155,15 @@ def test_bad_input_exits_cleanly(tmp_path):
     assert "T_world_origin:" in export_fails(tmp_path)
 
     (tmp_path / "000000" / "data.txt").write_bytes(b"T_world_origin: \xff\xfe\n")  # not UTF-8
-    assert "codec" in export_fails(tmp_path)
+    stderr = export_fails(tmp_path)
+    assert "data.txt" in stderr and "utf-8" in stderr, stderr
 
     # Directories where files are expected, at every read site.
-    write_pose(tmp_path / "000001", np.eye(4))
-    write_graph(tmp_path, 2)
     (tmp_path / "000000" / "data.txt").unlink()
     (tmp_path / "000000" / "data.txt").mkdir()
     assert "data.txt" in export_fails(tmp_path)
-    write_graph(tmp_path, 1)
     (tmp_path / "000000" / "data.txt").rmdir()
-    write_pose(tmp_path / "000000" / "sub", np.eye(4))  # keeps data.txt valid below
-    (tmp_path / "000000" / "sub" / "data.txt").rename(tmp_path / "000000" / "data.txt")
+    (tmp_path / "000000" / "data.txt").write_text("T_world_origin:\n1 0 0 0\n0 1 0 0\n0 0 1 0\n0 0 0 1\n")
     (tmp_path / "000000" / "points.bin").unlink()
     (tmp_path / "000000" / "points.bin").mkdir()
     assert "points.bin" in export_fails(tmp_path)
@@ -203,6 +200,12 @@ def test_output_checked_before_loading(tmp_path):
             assert str(outdir) in stderr and "graph.txt" not in stderr, stderr
         finally:
             outdir.chmod(0o755)
+        protected = outdir / "reference.ply"  # write-protected existing map: refused, left intact
+        protected.write_text("reference map")
+        protected.chmod(0o444)
+        stderr = export_fails(dump, out=protected)
+        assert str(protected) in stderr and "graph.txt" not in stderr, stderr
+        assert protected.read_text() == "reference map"
 
 
 def test_failed_export_keeps_previous_output(tmp_path):
@@ -212,7 +215,15 @@ def test_failed_export_keeps_previous_output(tmp_path):
     (outdir / "map.ply").write_text("previous map")
     export_fails(dump, out=outdir / "map.ply")
     assert (outdir / "map.ply").read_text() == "previous map"
-    assert [f.name for f in outdir.iterdir()] == ["map.ply"]  # no temporary file left behind
+
+
+def test_symlinked_output_is_written_through(tmp_path):
+    write_submap(tmp_path / "000000", np.eye(4), np.array([[1, 2, 3, 1]], dtype=float), None, compact=False)
+    write_graph(tmp_path, 1)
+    (tmp_path / "latest.ply").write_text("previous map, longer than the new one " * 10)
+    (tmp_path / "map.ply").symlink_to("latest.ply")
+    _, _, cloud = export(tmp_path)  # reads map.ply, through the link
+    assert (tmp_path / "map.ply").is_symlink() and np.allclose(xyz(cloud), [[1, 2, 3]]), cloud
 
 
 def test_output_gets_default_permissions(tmp_path):

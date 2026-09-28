@@ -22,7 +22,6 @@ This replicates that export from the files GLIM saves (references: glim, gtsam_p
 Usage: glim_dump_to_ply.py <dump_dir> <out.ply>
 Needs numpy (apt: python3-numpy).
 """
-import os
 import pathlib
 import sys
 
@@ -124,28 +123,28 @@ def main():
     if len(sys.argv) != 3:
         sys.exit("usage: glim_dump_to_ply.py <dump_dir> <out.ply>")
     dump, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-    # The map is written to a temporary file next to `out`, opened before loading so an unwritable
-    # destination fails fast, and renamed over `out` only once complete.
-    if os.path.isdir(out):
-        sys.exit(f"error: cannot write {out}: is a directory")
-    tmp = out.with_name(f".{out.name}.tmp")
+    # Opened before loading so an unwritable output fails fast; append mode keeps an existing map
+    # until the export has loaded, then it is truncated (if seekable: not a pipe) and rewritten.
     try:
-        f = open(tmp, "wb")
+        f = open(out, "ab")
     except OSError as e:
         sys.exit(f"error: cannot write {out}: {e}")
-    try:
-        with f:
+    with f:
+        try:
             points, intensities = export_points(dump)
-            if len(points) == 0:
-                sys.exit("error: no points available for export")  # same condition offline_viewer refuses on
+        except OSError as e:
+            sys.exit(f"error: cannot read the dump: {e}")
+        if len(points) == 0:
+            sys.exit("error: no points available for export")  # same condition offline_viewer refuses on
+        try:
+            if f.seekable():
+                f.seek(0)
+                f.truncate()
             write_ply(f, points, intensities)
-        os.replace(tmp, out)
-    except OSError as e:
-        sys.exit(f"error: {e}")
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-    print(f"wrote {len(points)} points{' with intensity' if intensities is not None else ''} to {out}")
+            f.flush()
+        except OSError as e:
+            sys.exit(f"error: cannot write {out}: {e}")
+    print(f"wrote {len(points)} points{' with intensity' if intensities is not None else ''} to {out}", file=sys.stderr)
 
 
 if __name__ == "__main__":
