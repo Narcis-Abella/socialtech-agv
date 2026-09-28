@@ -77,8 +77,8 @@ python3 tools/test_glim_config.py && python3 tools/test_glim_metrics.py   # self
 
 `glim_config.py` rejects overlay parameters that the installed GLIM does not have (GLIM itself ignores them silently).
 Metrics need no ground truth; definitions in `glim_metrics.py`. The main signals: `revisit_p90_m`
-(doubled walls where a place is passed again), `z_range_m` / `roll_range_deg` / `pitch_range_deg`
-(drift on a flat floor), run divergence (stability).
+(doubled walls where a place is passed again), `mme` (Mean Map Entropy: blur anywhere, also within
+one pass), `z_range_m` / `roll_range_deg` / `pitch_range_deg` (drift on a flat floor), run divergence (stability).
 
 | Overlay (`tools/glim_eval/`) | On top of | What |
 |---|---|---|

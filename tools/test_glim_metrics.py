@@ -29,15 +29,16 @@ def wall(x0):
     return np.stack([np.full(y.size, x0), y.ravel(), z.ravel()], axis=1)
 
 
-def make_dump(root, name, second_offset, traj_z=0.0, roll_deg=0.0):
+def make_dump(root, name, second_offset, traj_z=0.0, roll_deg=0.0, noise=0.0):
     """Two passes over the same wall, 100 s apart; the second pass is shifted by `second_offset` in x."""
     dump = root / name
     dump.mkdir()
     (dump / "graph.txt").write_text("num_submaps: 2\nnum_all_frames: 2\nnum_matching_cost_factors: 7\n")
     T1 = np.eye(4)
     T1[0, 3] = second_offset
-    write_submap(dump / "000000", np.eye(4), wall(1.0), [0.0, 1.0])
-    write_submap(dump / "000001", T1, wall(1.0), [100.0, 101.0])
+    rng = np.random.default_rng(1)
+    write_submap(dump / "000000", np.eye(4), wall(1.0) + rng.normal(0, noise, wall(1.0).shape), [0.0, 1.0])
+    write_submap(dump / "000001", T1, wall(1.0) + rng.normal(0, noise, wall(1.0).shape), [100.0, 101.0])
     q = [math.sin(math.radians(roll_deg) / 2), 0, 0, math.cos(math.radians(roll_deg) / 2)]
     write_traj(dump, [[0, 0, 0, 0, 0, 0, 0, 1], [50, 3, 4, traj_z, *q], [100, 0, 0, 0, 0, 0, 0, 1]])
     return dump
@@ -61,6 +62,23 @@ def test_metrics():
         assert good["submaps"] == 2 and good["matching_factors"] == 7, good
 
 
+def test_mme():
+    rng = np.random.default_rng(0)
+    base = np.vstack([wall(0.0), wall(2.0)])
+    crisp = base + rng.normal(0, 0.005, base.shape)
+    blurred = base + rng.normal(0, 0.05, base.shape)
+    m_crisp, m_blurred = glim_metrics.mme(crisp), glim_metrics.mme(blurred)
+    assert m_crisp < m_blurred, (m_crisp, m_blurred)
+    # Density-independent: more samples of the same surface give about the same value after voxelization.
+    dense = np.vstack([crisp, base + rng.normal(0, 0.005, base.shape)])
+    assert abs(glim_metrics.mme(dense) - m_crisp) < 0.3, (glim_metrics.mme(dense), m_crisp)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # An exact plane has a degenerate covariance (skipped); real surfaces are never exact.
+        m = glim_metrics.dump_metrics(make_dump(pathlib.Path(tmp), "d", 0.0, noise=0.005))
+        assert m["mme"] is not None and np.isfinite(m["mme"]), m
+
+
 def test_runs_divergence():
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
@@ -73,5 +91,6 @@ def test_runs_divergence():
 
 if __name__ == "__main__":
     test_metrics()
+    test_mme()
     test_runs_divergence()
     print("ok")

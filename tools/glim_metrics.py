@@ -7,6 +7,10 @@ Per dump:
   different densities compare equally. Only distances below REVISIT_CAP_M count (overlap region).
   A consistent map gives sampling-limited values (a few cm); a missed loop closure shows as doubled
   walls/floor, i.e. a larger median. revisit_fraction: share of later points that found a match.
+- mme: Mean Map Entropy over the whole map voxelized to VOXEL_M: mean over points of
+  0.5*ln(det(2*pi*e*cov)) of the neighbors within MME_RADIUS_M (points with fewer than
+  MME_MIN_NEIGHBORS, or a degenerate covariance, are skipped). Lower = crisper; catches blur within a
+  single pass (noise, deskew, odometry jitter), which the revisit metric does not see.
 - trajectory (traj_lidar.txt): the robot drives on a flat floor, so z, roll and pitch should barely
   change; their ranges measure drift. end_to_start_m is informative only (the bag may not end
   where it started).
@@ -32,6 +36,8 @@ from glim_dump_to_ply import load_submap, read_matrix_after
 VOXEL_M = 0.1
 REVISIT_GAP_S = 30.0
 REVISIT_CAP_M = 1.0
+MME_RADIUS_M = 0.3
+MME_MIN_NEIGHBORS = 5
 
 
 def voxelize(points, size):
@@ -50,15 +56,34 @@ def submap_stamp(path):
     return sum(stamps) / len(stamps)
 
 
-def revisit(dump, num_submaps):
+def load_world_submaps(dump, num_submaps):
+    """[(mean stamp, voxelized world points Nx3)] sorted by stamp."""
     submaps = []
     for i in range(num_submaps):
         path = dump / f"{i:06d}"
         T, points, _ = load_submap(path)
         world = (T @ points.T).T[:, :3]
         submaps.append((submap_stamp(path), voxelize(world, VOXEL_M)))
-    submaps.sort(key=lambda s: s[0])
+    return sorted(submaps, key=lambda s: s[0])
 
+
+def mme(points):
+    """Mean Map Entropy of `points` (Nx3) after voxelization; None if no point has enough neighbors."""
+    points = voxelize(points, VOXEL_M)
+    neighbors = cKDTree(points).query_ball_point(points, MME_RADIUS_M)
+    counts = np.array([len(n) for n in neighbors])
+    center = np.repeat(np.arange(len(points)), counts)
+    diff = points[np.concatenate(neighbors).astype(np.int64)] - points[center]  # local coords: no cancellation
+    n = len(points)
+    mean = np.stack([np.bincount(center, diff[:, a], n) for a in range(3)], axis=1) / counts[:, None]
+    outer = np.stack([np.bincount(center, diff[:, a] * diff[:, b], n) for a in range(3) for b in range(3)], axis=1)
+    cov = outer.reshape(n, 3, 3) / counts[:, None, None] - mean[:, :, None] * mean[:, None, :]
+    det = np.linalg.det(2 * np.pi * np.e * cov)
+    ok = (counts >= MME_MIN_NEIGHBORS) & (det > 0)
+    return float(np.mean(0.5 * np.log(det[ok]))) if ok.any() else None
+
+
+def revisit(submaps):
     distances, queried, tree, tree_size = [], 0, None, 0
     for stamp, points in submaps:
         past = [p for t, p in submaps if t < stamp - REVISIT_GAP_S]
@@ -112,7 +137,10 @@ def dump_metrics(dump):
         sys.exit(f"error: {dump} is not a GLIM dump (no graph.txt)")
     num_submaps = int(read_matrix_after(dump / "graph.txt", "num_submaps:", 1, 1)[0, 0])
     factors = int(read_matrix_after(dump / "graph.txt", "num_matching_cost_factors:", 1, 1)[0, 0])
-    return {"submaps": num_submaps, "matching_factors": factors, **trajectory(dump), **revisit(dump, num_submaps)}
+    submaps = load_world_submaps(dump, num_submaps)
+    world = np.vstack([p for _, p in submaps]) if submaps else np.empty((0, 3))
+    return {"submaps": num_submaps, "matching_factors": factors, **trajectory(dump), **revisit(submaps),
+            "mme": mme(world) if len(world) else None}
 
 
 def run_divergence(dumps):
