@@ -11,6 +11,15 @@ Per dump:
   0.5*ln(det(2*pi*e*cov)) of the neighbors within MME_RADIUS_M (points with fewer than
   MME_MIN_NEIGHBORS, or a degenerate covariance, are skipped). Lower = crisper; catches blur within a
   single pass (noise, deskew, odometry jitter), which the revisit metric does not see.
+- floor: per submap, the floor plane z = a*x + b*y + c fitted in the gravity-aligned world frame.
+  floor_tilt_*_deg: angle of that plane to horizontal (a level floor gives ~0; needs floor spread in
+  both directions, so narrow corridors give no tilt). floor_dz_*_m: for submaps >= REVISIT_GAP_S apart
+  that overlap on the floor, |height difference| between their planes over the overlap. The same
+  place is at the same height, so any difference is vertical drift (what a flat-floor constraint
+  such as glim_ext's flat_earther removes); unlike comparing distant places it cannot be a real step.
+  Noise floor (eco_-1_01, Mid-360 ~0.6 m above the floor, ~130 floor voxels per submap): submaps < 5 s
+  apart, where no drift is possible, differ by median 1.2 cm / p90 7 cm; compare floor_dz_* against that.
+  Needs the floor in the map: a crop that removes it (e.g. the legacy slab crop) gives meaningless values.
 - trajectory (traj_lidar.txt): the robot drives on a flat floor, so z, roll and pitch should barely
   change; their ranges measure drift. end_to_start_m is informative only (the bag may not end
   where it started).
@@ -38,6 +47,16 @@ REVISIT_GAP_S = 30.0
 REVISIT_CAP_M = 1.0
 MME_RADIUS_M = 0.3
 MME_MIN_NEIGHBORS = 5
+FLOOR_BIN_M = 0.05  # z histogram bin
+FLOOR_PEAK_MIN_POINTS = 40  # a z bin holding this many voxels counts as a surface (absolute: the ceiling dwarfs a sparse floor)
+FLOOR_BAND_M = 0.15  # initial floor band around the lowest peak
+FLOOR_INLIER_M = 0.1  # inliers of the fitted plane
+FLOOR_MIN_POINTS = 100
+FLOOR_MIN_FRACTION = 0.02  # of the submap's points
+FLOOR_TILT_MIN_SPREAD_M = 0.5  # std of the floor points along the narrower axis
+FLOOR_PAIR_MAX_M = 15.0  # submap centers farther apart cannot overlap much
+FLOOR_XY_VOXEL_M = 0.5
+FLOOR_MIN_OVERLAP = 8  # floor voxels in common (~2 m2)
 
 
 def voxelize(points, size):
@@ -102,6 +121,50 @@ def revisit(submaps):
             "revisit_fraction": len(d) / queried}
 
 
+def plane_z(plane, xy):
+    return xy @ plane[:2] + plane[2]
+
+
+def floor_plane(points):
+    """Floor of one submap: (plane (a, b, c) of z = a*x + b*y + c, floor xy voxels, tilt in degrees or None).
+    None if no clear floor. ponytail: the floor is the lowest significant z peak, so a submap that sees no
+    floor may pick a table top; add a sensor-height check if that shows up."""
+    z = points[:, 2]
+    hist, edges = np.histogram(z, bins=np.arange(z.min(), z.max() + FLOOR_BIN_M, FLOOR_BIN_M))
+    low = edges[np.flatnonzero(hist >= FLOOR_PEAK_MIN_POINTS)[0]] + FLOOR_BIN_M / 2
+    floor = points[np.abs(z - low) < FLOOR_BAND_M]
+    for _ in range(2):  # the second pass refits on the plane's inliers, which reach a tilted floor's far side
+        if len(floor) < max(FLOOR_MIN_POINTS, FLOOR_MIN_FRACTION * len(points)):
+            return None
+        plane = np.linalg.lstsq(np.c_[floor[:, :2], np.ones(len(floor))], floor[:, 2], rcond=None)[0]
+        floor = points[np.abs(z - plane_z(plane, points[:, :2])) < FLOOR_INLIER_M]
+    spread = np.linalg.svd(floor[:, :2] - floor[:, :2].mean(axis=0), compute_uv=False) / math.sqrt(len(floor))
+    tilt = math.degrees(math.atan(math.hypot(plane[0], plane[1]))) if spread[1] >= FLOOR_TILT_MIN_SPREAD_M else None
+    return plane, voxelize(floor[:, :2], FLOOR_XY_VOXEL_M), tilt
+
+
+def floor_metrics(submaps):
+    """floor_tilt_* over submaps with a floor, floor_dz_* over overlapping floors of submaps far apart in time."""
+    floors = [(t, *f) for t, p in submaps if (f := floor_plane(p)) is not None]
+    trees = [cKDTree(xy) for _, _, xy, _ in floors]
+    dz = []
+    for i, (ti, plane_i, xy_i, _) in enumerate(floors):
+        for j in range(i + 1, len(floors)):
+            tj, plane_j, xy_j, _ = floors[j]
+            if tj - ti < REVISIT_GAP_S or np.linalg.norm(xy_i.mean(axis=0) - xy_j.mean(axis=0)) > FLOOR_PAIR_MAX_M:
+                continue
+            near = np.isfinite(trees[i].query(xy_j, distance_upper_bound=FLOOR_XY_VOXEL_M)[0])
+            if near.sum() >= FLOOR_MIN_OVERLAP:
+                shared = xy_j[near]
+                dz.append(abs(float(np.median(plane_z(plane_j, shared) - plane_z(plane_i, shared)))))
+    tilts = [tilt for _, _, _, tilt in floors if tilt is not None]
+    return {"floor_dz_median_m": float(np.median(dz)) if dz else None,
+            "floor_dz_p90_m": float(np.percentile(dz, 90)) if dz else None,
+            "floor_dz_pairs": len(dz),
+            "floor_tilt_median_deg": float(np.median(tilts)) if tilts else None,
+            "floor_tilt_max_deg": max(tilts) if tilts else None}
+
+
 def read_traj(dump):
     """{stamp string: (x, y, z, qx, qy, qz, qw)} from traj_lidar.txt; stamps kept as text to match runs exactly."""
     path = dump / "traj_lidar.txt"
@@ -140,7 +203,7 @@ def dump_metrics(dump):
     submaps = load_world_submaps(dump, num_submaps)
     world = np.vstack([p for _, p in submaps]) if submaps else np.empty((0, 3))
     return {"submaps": num_submaps, "matching_factors": factors, **trajectory(dump), **revisit(submaps),
-            "mme": mme(world) if len(world) else None}
+            **floor_metrics(submaps), "mme": mme(world) if len(world) else None}
 
 
 def run_divergence(dumps):

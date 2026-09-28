@@ -89,8 +89,66 @@ def test_runs_divergence():
         assert abs(div["max_m"] - 0.5) < 1e-6 and abs(div["mean_m"] - 0.5 / 3) < 1e-6, div
 
 
+def room(z0, tilt_deg=0.0):
+    """10 m x 10 m floor tilted about y by `tilt_deg` and lifted by z0, plus a flat ceiling 2.5 m above z0."""
+    x, y = np.meshgrid(np.arange(0, 10, 0.1), np.arange(0, 10, 0.1))
+    x, y = x.ravel(), y.ravel()
+    floor = np.stack([x, y, z0 + np.tan(np.radians(tilt_deg)) * x], axis=1)
+    return np.vstack([floor, np.stack([x, y, np.full(x.size, z0 + 2.5)], axis=1)])
+
+
+def make_floor_dump(root, name, dz=0.0, tilt_deg=0.0):
+    """Two passes over the same room, 100 s apart; the second one has its floor lifted by dz and tilted."""
+    dump = root / name
+    dump.mkdir()
+    write_submap(dump / "000000", np.eye(4), room(0.0), [0.0, 1.0])
+    write_submap(dump / "000001", np.eye(4), room(dz, tilt_deg), [100.0, 101.0])
+    return dump
+
+
+def floor_of(dump):
+    return glim_metrics.floor_metrics(glim_metrics.load_world_submaps(dump, 2))
+
+
+def test_floor():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        flat = floor_of(make_floor_dump(root, "flat"))
+        assert flat["floor_dz_pairs"] == 1 and flat["floor_dz_median_m"] < 0.01, flat
+        assert flat["floor_tilt_max_deg"] < 0.1, flat
+
+        # Second pass 12 cm higher at the same place: pure vertical drift, no tilt.
+        lifted = floor_of(make_floor_dump(root, "lifted", dz=0.12))
+        assert abs(lifted["floor_dz_median_m"] - 0.12) < 0.01, lifted
+        assert lifted["floor_tilt_max_deg"] < 0.1, lifted
+
+        # Second pass tilted 2 degrees about y: shows as tilt, and as a height difference over the overlap.
+        tilted = floor_of(make_floor_dump(root, "tilted", tilt_deg=2.0))
+        assert abs(tilted["floor_tilt_max_deg"] - 2.0) < 0.1, tilted
+        assert tilted["floor_dz_median_m"] > 0.05, tilted
+
+        # No floor at all (a wall): reported as missing, not as a perfect floor.
+        wall_only = glim_metrics.floor_metrics(glim_metrics.load_world_submaps(make_dump(root, "wall", 0.0), 2))
+        assert wall_only["floor_dz_pairs"] == 0 and wall_only["floor_tilt_max_deg"] is None, wall_only
+
+
+def test_floor_sparse():
+    """Real submaps: few floor voxels (the Mid-360 sees the floor only beyond ~5 m) under a dense ceiling,
+    furniture above the floor and a few points below it. The floor is the lowest well-populated surface."""
+    rng = np.random.default_rng(3)
+    xy = lambda n: rng.uniform(0, 12, (n, 2))
+    floor = np.c_[xy(150), rng.normal(-0.75, 0.005, 150)]
+    ceiling = np.c_[xy(4000), rng.normal(2.3, 0.005, 4000)]
+    furniture = np.c_[xy(1500), rng.uniform(-0.6, 0.2, 1500)]
+    ghost = np.c_[xy(3), np.full(3, -0.95)]
+    plane, _, tilt = glim_metrics.floor_plane(np.vstack([floor, ceiling, furniture, ghost]))
+    assert abs(plane[2] - (-0.75)) < 0.02 and tilt is not None and tilt < 0.5, (plane, tilt)
+
+
 if __name__ == "__main__":
     test_metrics()
     test_mme()
     test_runs_divergence()
+    test_floor()
+    test_floor_sparse()
     print("ok")
