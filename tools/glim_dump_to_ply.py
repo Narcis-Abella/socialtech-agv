@@ -20,7 +20,7 @@ This replicates that export from the files GLIM saves (references: glim, gtsam_p
 - Output (iridescence glk::save_ply_binary): binary little-endian, float x,y,z[,intensity].
 
 Usage: glim_dump_to_ply.py <dump_dir> <out.ply>
-Needs numpy (present on JetPack and in the robot image).
+Needs numpy (apt: python3-numpy).
 """
 import pathlib
 import sys
@@ -28,10 +28,14 @@ import sys
 import numpy as np
 
 
-def read_matrix_after(tokens, label, rows=4, cols=4):
-    """Read a row-major matrix that follows `label` in whitespace-split text (like GLIM's read_matrix)."""
-    i = tokens.index(label) + 1
-    return np.array(tokens[i:i + rows * cols], dtype=np.float64).reshape(rows, cols)
+def read_matrix_after(path, label, rows=4, cols=4):
+    """Read a row-major matrix that follows `label` in a whitespace-split text file (like GLIM's read_matrix)."""
+    tokens = path.read_text().split()
+    try:
+        i = tokens.index(label) + 1
+        return np.array(tokens[i:i + rows * cols], dtype=np.float64).reshape(rows, cols)
+    except ValueError:
+        sys.exit(f"error: {path} has no {rows}x{cols} matrix after '{label}'")
 
 
 def read_array(path, dtype, count):
@@ -48,11 +52,11 @@ def load_submap(path):
     """Return (T_world_origin, points Nx4 double, intensities N double or None) for one submap dir."""
     if not (path / "data.txt").exists():
         sys.exit(f"error: {path}/data.txt not found")
-    T_world_origin = read_matrix_after((path / "data.txt").read_text().split(), "T_world_origin:")
+    T_world_origin = read_matrix_after(path / "data.txt", "T_world_origin:")
 
     if (path / "points.bin").exists():
         raw = np.fromfile(path / "points.bin", dtype="<f8")
-        points = raw[: len(raw) // 4 * 4].reshape(-1, 4).copy()  # a partial trailing record is ignored
+        points = raw[: len(raw) // 4 * 4].reshape(-1, 4)  # a partial trailing record is ignored
         intensity_file, intensity_dtype = path / "intensities.bin", "<f8"
     elif (path / "points_compact.bin").exists():
         raw = np.fromfile(path / "points_compact.bin", dtype="<f4")
@@ -62,11 +66,11 @@ def load_submap(path):
     else:
         sys.exit(f"error: {path} contains neither points.bin nor points_compact.bin")
 
+    # has_intensities() tests the buffer pointer: null only if the file held no points
+    # (the repair below removes points but keeps GLIM's intensity buffer allocated).
     intensities = None
-    if intensity_file.exists():
+    if len(points) and intensity_file.exists():
         intensities = read_array(intensity_file, intensity_dtype, len(points))
-
-    loaded = len(points)
 
     # SubMap::load repair of corrupted submaps, checked on the first and last point only.
     def valid(p):
@@ -79,18 +83,14 @@ def load_submap(path):
         if intensities is not None:
             # GLIM drops points but not their intensities, so the leading ones stay; mirrored as is.
             intensities = intensities[: len(points)]
-
-    if loaded == 0:
-        # has_intensities() tests the buffer pointer: null only if the file held no points
-        # (the repair above removes points but keeps GLIM's intensity buffer allocated).
-        intensities = None
     return T_world_origin, points, intensities
 
 
 def export_points(dump):
     """GlobalMapping::export_points over the submaps listed in graph.txt."""
-    tokens = (dump / "graph.txt").read_text().split()
-    num_submaps = int(tokens[tokens.index("num_submaps:") + 1])
+    if not (dump / "graph.txt").exists():
+        sys.exit(f"error: {dump} is not a GLIM dump (no graph.txt)")
+    num_submaps = int(read_matrix_after(dump / "graph.txt", "num_submaps:", 1, 1)[0, 0])
 
     submaps = [load_submap(dump / f"{i:06d}") for i in range(num_submaps)]
     with_intensities = bool(submaps) and all(s[2] is not None for s in submaps)

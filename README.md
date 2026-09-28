@@ -60,7 +60,7 @@ python3 tools/glim_dump_to_ply.py <dump_dir> map.ply
 python3 tools/test_glim_dump_to_ply.py   # self-check
 ```
 
-Needs numpy (on JetPack and in the robot image). Differences from the GUI export are listed in the script's docstring.
+Needs numpy (apt: `python3-numpy`). Differences from the GUI export are listed in the script's docstring.
 
 ## Where changes go
 
