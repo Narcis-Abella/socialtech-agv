@@ -6,7 +6,7 @@ and the ceiling as planes. On a level floor their normals are the true up direct
 is the accelerometer bias or IMU-LiDAR misalignment that tilts GLIM's map (GLIM takes "up" from the IMU at start).
 If it is a property of the sensor it is the same vector in every bag, whatever the robot heading or place.
 
-  static_offset.py extract <bag_dir> <out.json> [lidar_topic] [imu_topic]   (needs ROS 2: rosbag2_py; run in the robot image)
+  static_offset.py extract <bag_dir> <out.json> [lidar_topic] [imu_topic] [acc_std]   (needs ROS 2: rosbag2_py; run in the robot image)
   static_offset.py report <out.json>...                                      (numpy only: per-bag offsets + leave-one-bag-out)
   static_offset.py overlay <bag_to_exclude|-> <out.json>...                  (prints a glim_eval overlay: T_lidar_imu rotated by the pooled CEILING offset)
 
@@ -26,12 +26,12 @@ EDGE = 0.1         # s trimmed at each end of a window when picking LiDAR scans 
 DTYPE = {1: "i1", 2: "u1", 3: "i2", 4: "u2", 5: "i4", 6: "u4", 7: "f4", 8: "f8"}
 
 
-def static_windows(t, acc, gyr, win=WIN, min_gap=10.0, max_n=12):
+def static_windows(t, acc, gyr, win=WIN, min_gap=10.0, max_n=12, acc_std=0.004):
     """Index pairs (i0, i1) of non-overlapping windows where gyro and accelerometer std are tiny (the gyro bias is ~0.02 rad/s, so judge the std, not the level)."""
     n = int(win / np.median(np.diff(t)))
     out, last, i = [], -1e9, 0
     while i < len(t) - n and len(out) < max_n:  # slide by a quarter window: stops rarely line up with a fixed grid
-        if t[i] - last >= min_gap and gyr[i:i + n].std(0).max() < 0.004 and acc[i:i + n].std(0).max() < 0.004:
+        if t[i] - last >= min_gap and gyr[i:i + n].std(0).max() < 0.004 and acc[i:i + n].std(0).max() < acc_std:
             out.append((i, i + n))
             last = t[i]
             i += n
@@ -77,7 +77,7 @@ def cloud_xyz(msg):
     return xyz[np.isfinite(xyz).all(1) & (np.linalg.norm(xyz, axis=1) > 0.3)]
 
 
-def extract(bag, out, lidar_topic="/livox/lidar", imu_topic="/livox/imu"):
+def extract(bag, out, lidar_topic="/livox/lidar", imu_topic="/livox/imu", acc_std=0.004):
     import rosbag2_py
     from rclpy.serialization import deserialize_message
     from sensor_msgs.msg import Imu, PointCloud2
@@ -98,7 +98,7 @@ def extract(bag, out, lidar_topic="/livox/lidar", imu_topic="/livox/imu"):
         ts.append(t_ns * 1e-9)  # bag time: lets the LiDAR pass pick scans without decoding the others
         rows.append([m.linear_acceleration.x, m.linear_acceleration.y, m.linear_acceleration.z, m.angular_velocity.x, m.angular_velocity.y, m.angular_velocity.z])
     t, d = np.array(ts), np.array(rows)
-    wins = static_windows(t, d[:, :3], d[:, 3:])
+    wins = static_windows(t, d[:, :3], d[:, 3:], acc_std=float(acc_std))  # a robot standing with its motors on vibrates (acc std ~0.005 g): zero-mean, so 0.007 is fine there
     span = [(t[i] + EDGE, t[j - 1] - EDGE) for i, j in wins]
     clouds = [[] for _ in wins]
     r = reader(lidar_topic)
