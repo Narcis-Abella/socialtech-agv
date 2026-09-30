@@ -139,6 +139,24 @@ def test_rasterize_keeps_walls_drops_lintel_and_ceiling_and_marks_floor_free():
     assert occ < 0.05 * grid.size, occ                                   # the ceiling did not turn the room solid
 
 
+def test_small_gaps_in_explored_floor_are_filled_but_a_big_hole_is_not():
+    Q, _ = ply_to_map.level_to_floor(room())
+    raw, origin = ply_to_map.rasterize(Q, RES, fill=0)
+    filled, _ = ply_to_map.rasterize(Q, RES, fill=0.3)
+    open_floor = lambda g: np.mean([cell(g, origin, x, y) == ply_to_map.FREE for x in np.arange(-3, 1, 0.05) for y in np.arange(-2, 2, 0.05)])
+    assert open_floor(raw) < 0.9 and open_floor(filled) > 0.97, (open_floor(raw), open_floor(filled))  # the speckle is closed
+    assert cell(filled, origin, 2.5, -2.5) == ply_to_map.UNK            # a 1 m hole is not invented
+    assert ((raw == ply_to_map.OCC) == (filled == ply_to_map.OCC)).all()  # never touches obstacles
+
+
+def test_isolated_outliers_do_not_inflate_the_grid():
+    P = room()
+    far = np.r_[P, RNG.uniform([-100, -100, -0.5], [100, 100, 1.5], (30, 3))]  # 30 stray points scattered far away
+    Q, _ = ply_to_map.level_to_floor(far)
+    grid, _ = ply_to_map.rasterize(Q, RES)
+    assert grid.shape[0] < 300 and grid.shape[1] < 300, grid.shape      # the room is 202 x 162 cells, not 3000
+
+
 def test_write_map_makes_pgm_and_map_server_yaml():
     grid = np.full((6, 8), ply_to_map.UNK, dtype=np.uint8)
     grid[0, 0], grid[5, 7] = ply_to_map.OCC, ply_to_map.FREE
@@ -176,6 +194,8 @@ if __name__ == "__main__":
     test_a_rough_floor_is_refused()
     test_trajectory_gate_accepts_a_parallel_path_and_refuses_a_tilted_one()
     test_rasterize_keeps_walls_drops_lintel_and_ceiling_and_marks_floor_free()
+    test_small_gaps_in_explored_floor_are_filled_but_a_big_hole_is_not()
+    test_isolated_outliers_do_not_inflate_the_grid()
     test_write_map_makes_pgm_and_map_server_yaml()
     test_main_runs_end_to_end_with_an_optional_tum_trajectory()
     print("ok")

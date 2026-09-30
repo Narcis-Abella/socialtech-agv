@@ -1,6 +1,6 @@
 """2D occupancy map (map_server PGM + YAML) from a SLAM point cloud in PLY: finds and levels the floor, then drops floor and ceiling.
 
-  ply_to_map.py <in.ply> <out_prefix> [--res 0.05] [--ceil 1.80] [--floor-band 0.10] [--min-hits 2] [--min-floor 250] [--max-below 0.10] [--traj poses.tum]
+  ply_to_map.py <in.ply> <out_prefix> [--res 0.05] [--ceil 1.80] [--floor-band 0.10] [--min-hits 2] [--fill 0.3] [--min-floor 250] [--max-below 0.10] [--traj poses.tum]
 
 Needs numpy + scipy (host/laptop tool, like floor_tilt.py; scipy is not in the robot image). Input: x, y, z only, so it works for any SLAM.
 1. Floor: 10 cm voxels, PCA normals (k=16), planar voxels with |nz| > 0.9, sequential RANSAC (up to 6 planes); the LOWEST plane is the floor
@@ -15,13 +15,14 @@ Needs numpy + scipy (host/laptop tool, like floor_tilt.py; scipy is not in the r
 4. The cloud is rotated so the floor is horizontal (tilt printed) and heights become metres above the floor (the PLY origin is the sensor).
    Heights: < floor-band = floor (marks free), floor-band..ceil = obstacle, > ceil = dropped (ceiling, door frames).
 5. Cells: occupied (0) with >= min-hits obstacle points, else free (254) with floor points, else unknown (205).
-Free space comes only from floor points the sensor actually saw, so it is sparse where the LiDAR does not see the floor.
+Free space comes only from floor points the sensor actually saw (sparse: --fill closes gaps of about 0.3 m), so large areas the LiDAR never saw the floor of stay unknown.
 """
 import argparse
 import sys
 from pathlib import Path
 
 import numpy as np
+from scipy.ndimage import binary_closing
 from scipy.spatial import cKDTree
 
 import floor_tilt
@@ -34,6 +35,7 @@ K = 16              # neighbours for a voxel's normal
 PLANAR = 0.01       # smallest / total covariance eigenvalue of the neighbourhood: below this the voxel is on a plane
 MAX_PLANES = 6
 MIN_SEED = 50       # voxels: smallest plane considered while choosing the lowest; --min-floor is checked AFTER the choice
+STRAY_PTS = 5       # points a 1 m cell needs to count for the map extent (walls and floor have hundreds)
 BELOW = 0.3         # m: voxels this far under the chosen plane mean it is not the floor
 TRAJ_MIN_LEN, TRAJ_MIN_SHAPE, TRAJ_MAX_ANGLE = 20.0, 0.2, 1.0  # m, minor/major singular value, deg
 
@@ -119,21 +121,33 @@ def level_to_floor(P, min_floor=250, max_below=0.10, traj=None):
                "n_floor": n, "below": below, "traj": checked}
 
 
-def rasterize(Q, res, ceil=1.80, floor_band=0.10, min_hits=2):
-    """(grid, origin): grid[row, col] in OCC/FREE/UNK, row 0 = max y (PGM order); origin = (x, y) of the lower-left corner."""
-    origin = (np.floor(Q[:, 0].min() / res) * res, np.floor(Q[:, 1].min() / res) * res)
-    cols = ((Q[:, 0] - origin[0]) / res).astype(int)
-    rows = ((Q[:, 1] - origin[1]) / res).astype(int)
-    shape = (rows.max() + 1, cols.max() + 1)
+def rasterize(Q, res, ceil=1.80, floor_band=0.10, min_hits=2, fill=0.30):
+    """(grid, origin): grid[row, col] in OCC/FREE/UNK, row 0 = max y (PGM order); origin = (x, y) of the lower-left corner.
+    Only floor and obstacle points count; points alone in their 1 m cell (fewer than STRAY_PTS) are dropped: stray points far away would inflate the grid.
+    fill (m): free space is closed over gaps up to about this size (the floor is seen sparsely); obstacles are never overwritten, 0 = off."""
     h = Q[:, 2]
+    P = Q[(h > -floor_band) & (h <= ceil)]
+    ij = np.floor(P[:, :2]).astype(np.int64)
+    ij -= ij.min(0)
+    _, inv, cnt = np.unique(ij[:, 0] * (ij[:, 1].max() + 1) + ij[:, 1], return_inverse=True, return_counts=True)
+    P = P[cnt[inv.ravel()] >= STRAY_PTS]
+    origin = (np.floor(P[:, 0].min() / res) * res, np.floor(P[:, 1].min() / res) * res)
+    cols = ((P[:, 0] - origin[0]) / res).astype(int)
+    rows = ((P[:, 1] - origin[1]) / res).astype(int)
+    shape = (rows.max() + 1, cols.max() + 1)
 
     def count(sel):
         return np.bincount(rows[sel] * shape[1] + cols[sel], minlength=shape[0] * shape[1]).reshape(shape)
 
-    obstacle = count((h >= floor_band) & (h <= ceil))
-    floor = count(np.abs(h) < floor_band)
+    obstacle = count(P[:, 2] >= floor_band)
+    floor = count(np.abs(P[:, 2]) < floor_band)
     grid = np.full(shape, UNK, dtype=np.uint8)
     grid[floor > 0] = FREE
+    if fill > 0:
+        r = max(1, round(fill / res))
+        y, x = np.ogrid[-r:r + 1, -r:r + 1]
+        closed = binary_closing(grid == FREE, structure=(x * x + y * y <= r * r))
+        grid[closed & (grid == UNK)] = FREE
     grid[obstacle >= min_hits] = OCC
     return grid[::-1], origin
 
@@ -154,6 +168,7 @@ def main(argv):
     ap.add_argument("--ceil", type=float, default=1.80, help="m above the floor; points higher are dropped")
     ap.add_argument("--floor-band", type=float, default=0.10, help="m above the floor still counted as floor")
     ap.add_argument("--min-hits", type=int, default=2)
+    ap.add_argument("--fill", type=float, default=0.30, help="m: close gaps in the free space up to about this size (0 = off)")
     ap.add_argument("--min-floor", type=int, default=250, help="voxels (10 cm) the floor plane must have; smallest real floors seen: 193-300")
     ap.add_argument("--max-below", type=float, default=0.10, help="share of the map allowed > 0.3 m below the floor plane")
     ap.add_argument("--traj", help="TUM trajectory: cross-check that the floor is parallel to it (skipped if it is short or straight)")
@@ -162,7 +177,7 @@ def main(argv):
         Q, info = level_to_floor(read_ply(a.ply), a.min_floor, a.max_below, None if a.traj is None else read_traj(a.traj))
     except ValueError as e:
         sys.exit(f"error: {e}")
-    grid, origin = rasterize(Q, a.res, a.ceil, a.floor_band, a.min_hits)
+    grid, origin = rasterize(Q, a.res, a.ceil, a.floor_band, a.min_hits, a.fill)
     write_map(a.out_prefix, grid, a.res, origin)
     n = len(Q)
     print(f"floor tilt {info['tilt_deg']:.2f} deg (levelled), {info['n_floor']} floor voxels, residual {info['resid_std'] * 100:.1f} cm, "
