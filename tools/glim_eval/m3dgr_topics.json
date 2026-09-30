@@ -1,0 +1,8 @@
+{
+  "config_ros.json": {
+    "glim_ros": {
+      "imu_topic": "/livox/mid360/imu",
+      "points_topic": "/livox/mid360/lidar"
+    }
+  }
+}

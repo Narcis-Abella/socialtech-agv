@@ -1,0 +1,16 @@
+{
+  "config_global_mapping_gpu.json": {
+    "global_mapping": {
+      "create_between_factors": true,
+      "randomsampling_rate": 0.5,
+      "submap_voxel_resolution": 0.1,
+      "submap_voxel_resolution_max": 0.25,
+      "submap_voxel_resolution_dmin": 1.0,
+      "submap_voxel_resolution_dmax": 10.0,
+      "submap_voxelmap_levels": 3,
+      "max_implicit_loop_distance": 30.0,
+      "min_implicit_loop_overlap": 0.1,
+      "use_isam2_dogleg": true
+    }
+  }
+}
