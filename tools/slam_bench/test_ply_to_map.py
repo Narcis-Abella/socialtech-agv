@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 import ply_to_map
 
@@ -40,12 +41,16 @@ def room(tilt=TILT, floor_noise=0.01, floor_pts=60000, ceiling_pts=100000, dz=0.
     return P @ tilt_rot(tilt).T
 
 
-def path(tilt=TILT, extra=0.0, straight=False):
-    """LiDAR trajectory in the same tilted frame as room(): a 22 m circle at the sensor height (z=0 in the level frame), or a 10 m line.
-    extra tilts the trajectory plane further (a robot that is not parallel to the floor)."""
-    t = np.linspace(0, 2 * np.pi, 400)
-    P = np.c_[np.linspace(-5, 5, 400), np.zeros(400), np.zeros(400)] if straight else np.c_[3.5 * np.cos(t), 3.5 * np.sin(t), np.zeros(400)]
-    return P @ tilt_rot(extra).T @ tilt_rot(tilt).T
+def path(tilt=TILT, extra=0.0, straight=False, arc=None):
+    """LiDAR poses (positions (N, 3), quaternions xyzw (N, 4)) in the same tilted frame as room(): a 22 m circle at the sensor height
+    (z=0 in the level frame) with the robot heading along the path, a 10 m line, or an arc of `arc` degrees. The robot's yaw axis is the floor
+    normal; extra tilts the whole trajectory further (a robot that is not parallel to the floor)."""
+    yaw = np.linspace(0, np.radians(arc) if arc else 2 * np.pi, 400)
+    P = np.c_[np.linspace(-5, 5, 400), np.zeros(400), np.zeros(400)] if straight else np.c_[3.5 * np.cos(yaw), 3.5 * np.sin(yaw), np.zeros(400)]
+    if straight:
+        yaw = np.zeros(400)
+    R = Rotation.from_matrix(tilt_rot(tilt) @ tilt_rot(extra)) * Rotation.from_rotvec(np.c_[np.zeros(400), np.zeros(400), yaw])
+    return P @ tilt_rot(extra).T @ tilt_rot(tilt).T, R.as_quat()
 
 
 def write_ply(path, P, intensity=True):
@@ -120,10 +125,26 @@ def test_a_rough_floor_is_refused():
 def test_trajectory_gate_accepts_a_parallel_path_and_refuses_a_tilted_one():
     P = room()
     _, info = ply_to_map.level_to_floor(P, traj=path())
-    assert info["traj"]["angle_deg"] < 0.3 and info["traj"]["height"] > 0.5, info
+    pos, ori = info["traj"]["position"], info["traj"]["orientation"]
+    assert pos["angle_deg"] < 0.3 and pos["height"] > 0.5 and ori["angle_deg"] < 0.3, info
     expect_error(P, "trajectory", traj=path(extra=3.0))
-    _, info = ply_to_map.level_to_floor(P, traj=path(straight=True))  # a straight line defines no plane: the gate is skipped, not failed
-    assert info["traj"] == "skipped", info
+    _, info = ply_to_map.level_to_floor(P, traj=path(straight=True))  # a straight line defines no plane and no yaw axis: skipped, not failed
+    assert info["traj"] == {"position": "skipped", "orientation": "skipped"}, info
+
+
+def test_yaw_axis_is_the_floor_normal_whatever_the_sensor_mount():
+    _, quat = path()
+    axis, ratio, yaw = ply_to_map.yaw_axis(quat)
+    floor_normal = tilt_rot(TILT) @ [0, 0, 1]
+    assert abs(axis @ floor_normal) > np.cos(np.radians(0.05)) and ratio < 0.01 and abs(yaw - 360) < 2, (axis, ratio, yaw)
+    mount = Rotation.from_euler("xyz", [25, -40, 70], degrees=True)  # the LiDAR sits rotated on the robot: R_lidar = R_robot * M
+    axis2, _, _ = ply_to_map.yaw_axis((Rotation.from_quat(quat) * mount).as_quat())
+    assert abs(axis2 @ axis) > np.cos(np.radians(0.01)), (axis, axis2)
+
+
+def test_a_short_turn_does_not_vote_with_the_yaw_axis():
+    _, info = ply_to_map.level_to_floor(room(), traj=path(arc=60))
+    assert info["traj"]["orientation"] == "skipped", info  # under 90 deg of turning the axis is not trustworthy
 
 
 def test_rasterize_keeps_walls_drops_lintel_and_ceiling_and_marks_floor_free():
@@ -176,9 +197,9 @@ def test_main_runs_end_to_end_with_an_optional_tum_trajectory():
         write_ply(tmp / "room.ply", room())
         ply_to_map.main([str(tmp / "room.ply"), str(tmp / "room")])
         assert (tmp / "room.pgm").exists() and (tmp / "room.yaml").exists()
-        tum = np.c_[np.arange(400) * 0.1, path(), np.tile([0, 0, 0, 1.0], (400, 1))]
-        np.savetxt(tmp / "traj.txt", tum)
-        assert np.allclose(ply_to_map.read_traj(tmp / "traj.txt"), path())
+        xyz, quat = path()
+        np.savetxt(tmp / "traj.txt", np.c_[np.arange(400) * 0.1, xyz, quat])
+        assert all(np.allclose(a, b) for a, b in zip(ply_to_map.read_traj(tmp / "traj.txt"), (xyz, quat)))
         ply_to_map.main([str(tmp / "room.ply"), str(tmp / "room2"), "--traj", str(tmp / "traj.txt")])
         assert (tmp / "room2.pgm").exists()
 
@@ -193,6 +214,8 @@ if __name__ == "__main__":
     test_too_little_floor_is_refused_by_min_floor()
     test_a_rough_floor_is_refused()
     test_trajectory_gate_accepts_a_parallel_path_and_refuses_a_tilted_one()
+    test_yaw_axis_is_the_floor_normal_whatever_the_sensor_mount()
+    test_a_short_turn_does_not_vote_with_the_yaw_axis()
     test_rasterize_keeps_walls_drops_lintel_and_ceiling_and_marks_floor_free()
     test_small_gaps_in_explored_floor_are_filled_but_a_big_hole_is_not()
     test_isolated_outliers_do_not_inflate_the_grid()

@@ -10,8 +10,10 @@ Needs numpy + scipy (host/laptop tool, like floor_tilt.py; scipy is not in the r
    - more than --max-below of the map lies > 0.3 m BELOW the plane: it is a ceiling or a table (floors measured 0.00-0.06, ceilings 0.32+);
    - floor steeper than 10 deg (floor_tilt.MAX_TILT; checked after the fit, RANSAC alone only filters its hypotheses).
    Multi-level maps (lifts, ramps) are not supported and are not always detected.
-3. Optional --traj (TUM poses): when the path is >= 20 m and not a straight line, the floor must be parallel to the trajectory plane (< 1 deg)
-   and below it; otherwise the check is skipped. No sensor-height prior: a desk 0.60 m under the sensor would pass one.
+3. Optional --traj (TUM poses), two independent votes that the plane is the floor, each skipped when the trajectory cannot vote:
+   position: path >= 20 m and not a straight line -> floor parallel to the trajectory plane (< 1 deg) and below it;
+   orientation: >= 90 deg of turning about one clean axis -> the robot's yaw axis is the floor normal (< 1 deg), whatever the sensor mount.
+   No sensor-height prior: a desk 0.60 m under the sensor would pass one.
 4. The cloud is rotated so the floor is horizontal (tilt printed) and heights become metres above the floor (the PLY origin is the sensor).
    Heights: < floor-band = floor (marks free), floor-band..ceil = obstacle, > ceil = dropped (ceiling, door frames).
 5. Cells: occupied (0) with >= min-hits obstacle points, else free (254) with floor points, else unknown (205).
@@ -24,6 +26,7 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import binary_closing
 from scipy.spatial import cKDTree
+from scipy.spatial.transform import Rotation
 
 import floor_tilt
 from static_offset import rot_to_z
@@ -37,7 +40,8 @@ MAX_PLANES = 6
 MIN_SEED = 50       # voxels: smallest plane considered while choosing the lowest; --min-floor is checked AFTER the choice
 STRAY_PTS = 5       # points a 1 m cell needs to count for the map extent (walls and floor have hundreds)
 BELOW = 0.3         # m: voxels this far under the chosen plane mean it is not the floor
-TRAJ_MIN_LEN, TRAJ_MIN_SHAPE, TRAJ_MAX_ANGLE = 20.0, 0.2, 1.0  # m, minor/major singular value, deg
+TRAJ_MIN_LEN, TRAJ_MIN_SHAPE, TRAJ_MAX_ANGLE = 20.0, 0.2, 1.0  # position vote: m, minor/major singular value, deg
+YAW_POSES, YAW_MIN_RANGE, YAW_MAX_RATIO, YAW_MAX_ANGLE = 150, 90.0, 0.01, 1.0  # orientation vote: poses used, deg turned, eigenvalue ratio, deg
 
 
 def read_ply(path):
@@ -54,8 +58,9 @@ def read_ply(path):
 
 
 def read_traj(path):
-    """(N, 3) positions of a TUM trajectory (t x y z qx qy qz qw)."""
-    return np.loadtxt(path)[:, 1:4]
+    """(positions (N, 3), quaternions xyzw (N, 4)) of a TUM trajectory (t x y z qx qy qz qw)."""
+    a = np.loadtxt(path)
+    return a[:, 1:4], a[:, 4:8]
 
 
 def voxel_centroids(P, size):
@@ -74,18 +79,41 @@ def pca_normals(V):
     return v[:, :, 0], w[:, 0] / (w.sum(1) + 1e-12)
 
 
+def yaw_axis(quat):
+    """(axis, ratio, yaw_range_deg): the axis every rotation of the trajectory turns about. For a robot driving on a flat floor it is the floor normal,
+    whatever the LiDAR mount (the constant mount rotation cancels in R_j R_i^T). ratio = smallest / second eigenvalue (0 = one clean axis)."""
+    R = Rotation.from_quat(quat)
+    sub = R[np.linspace(0, len(R) - 1, min(len(R), YAW_POSES)).astype(int)]
+    i, j = np.triu_indices(len(sub), 1)
+    rel = (sub[j] * sub[i].inv()).as_matrix() - np.eye(3)
+    w, v = np.linalg.eigh(np.einsum("nki,nkj->ij", rel, rel))
+    axis = v[:, 0]
+    turn = np.unwrap((R * R[0].inv()).as_rotvec() @ axis)
+    return axis, float(w[0] / w[1]) if w[1] > 1e-12 else float("nan"), float(np.degrees(np.ptp(turn)))
+
+
 def check_trajectory(traj, v, d):
-    """'skipped' when the path cannot define a plane, else {"angle_deg", "height"} of the floor (v, d) against the trajectory; ValueError if inconsistent."""
-    length = np.linalg.norm(np.diff(traj, axis=0), axis=1).sum()
-    s, vt = np.linalg.svd(traj - traj.mean(0), full_matrices=False)[1:]
-    if length < TRAJ_MIN_LEN or s[1] / s[0] < TRAJ_MIN_SHAPE:
-        return "skipped"
-    angle = float(np.degrees(np.arccos(min(1.0, abs(vt[2] @ v)))))
-    height = float(np.median(traj @ v - d))  # how far the robot drove above the plane
-    if angle > TRAJ_MAX_ANGLE or height <= 0:
-        raise ValueError(f"trajectory check failed: the plane is {angle:.2f} deg from the trajectory plane and {height:.2f} m below it "
-                         f"(need < {TRAJ_MAX_ANGLE} deg and below the robot): not the floor")
-    return {"angle_deg": angle, "height": height}
+    """Two votes that the plane (v, d) is the floor: {"position": ..., "orientation": ...}, each "skipped" when the trajectory cannot vote, else a dict.
+    position: the path (>= 20 m, not a straight line) lies on a plane parallel to the floor, above it.
+    orientation: the robot's yaw axis (>= 90 deg turned, one clean axis) is the floor normal. ValueError if a voter that can vote disagrees."""
+    positions, quat = traj
+    out = {"position": "skipped", "orientation": "skipped"}
+    length = np.linalg.norm(np.diff(positions, axis=0), axis=1).sum()
+    s, vt = np.linalg.svd(positions - positions.mean(0), full_matrices=False)[1:]
+    if length >= TRAJ_MIN_LEN and s[1] / s[0] >= TRAJ_MIN_SHAPE:
+        angle = float(np.degrees(np.arccos(min(1.0, abs(vt[2] @ v)))))
+        height = float(np.median(positions @ v - d))  # how far the robot drove above the plane
+        if angle > TRAJ_MAX_ANGLE or height <= 0:
+            raise ValueError(f"trajectory check failed (position plane): the plane is {angle:.2f} deg from the trajectory plane and {height:.2f} m below it "
+                             f"(need < {TRAJ_MAX_ANGLE} deg and below the robot): not the floor")
+        out["position"] = {"angle_deg": angle, "height": height}
+    axis, ratio, yaw = yaw_axis(quat)
+    if yaw >= YAW_MIN_RANGE and ratio < YAW_MAX_RATIO:  # nan (no rotation at all) fails the comparison: skipped
+        angle = float(np.degrees(np.arccos(min(1.0, abs(axis @ v)))))
+        if angle > YAW_MAX_ANGLE:
+            raise ValueError(f"trajectory check failed (yaw axis): the robot turned about an axis {angle:.2f} deg from the plane normal (need < {YAW_MAX_ANGLE} deg): not the floor")
+        out["orientation"] = {"angle_deg": angle, "yaw_deg": yaw}
+    return out
 
 
 def level_to_floor(P, min_floor=250, max_below=0.10, traj=None):
