@@ -111,6 +111,15 @@ def test_level_rotation_puts_the_floor_normal_on_z_and_roundtrips_as_a_quaternio
         assert np.allclose(pe.quat_to_mat(pe.mat_to_quat(R)), R), R
 
 
+def test_initpose_message_carries_the_pose_and_an_explicit_covariance():
+    msg = json.loads(pe.initpose_json((1.0, 2.0, np.pi / 2), 0.5, 15.0))
+    assert msg["header"]["frame_id"] == "map" and msg["pose"]["pose"]["position"]["x"] == 1.0 and msg["pose"]["pose"]["position"]["y"] == 2.0
+    q = msg["pose"]["pose"]["orientation"]
+    assert abs(2 * np.arctan2(q["z"], q["w"]) - np.pi / 2) < 1e-6
+    c = msg["pose"]["covariance"]
+    assert len(c) == 36 and c[0] == c[7] == 0.25 and abs(c[35] - np.radians(15.0) ** 2) < 1e-9 and sum(1 for v in c if v) == 3, c
+
+
 def test_initial_pose_is_pushed_along_the_heading_and_turned():
     x, y, yaw = pe.initial_pose(np.array([[1.0, 2.0, np.pi / 2]]), 1.0, 20.0)
     assert np.allclose([x, y], [1.0, 3.0]) and abs(yaw - np.radians(110)) < 1e-9
@@ -152,7 +161,7 @@ def test_run_scripts_only_pass_flags_the_pose_eval_subcommands_accept():
     assert {"run_bench_a.sh", "run_amcl_only.sh"} <= set(scripts), scripts
     subs = pe.parser()._subparsers._group_actions[0].choices
     for name in scripts:
-        calls = re.findall(r"pose_eval\.py\"? (init|level|check|report)([^\n|]*)", open(os.path.join(here, name)).read())
+        calls = re.findall(r"pose_eval\.py\"? (init|initpose|level|check|report)([^\n|]*)", open(os.path.join(here, name)).read())
         assert calls, f"{name} never calls pose_eval.py"
         for cmd, rest in calls:
             for flag in re.findall(r"(--[a-z-]+)", rest):

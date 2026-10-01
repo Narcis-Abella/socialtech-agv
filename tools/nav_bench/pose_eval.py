@@ -2,6 +2,7 @@
 usage:
   pose_eval.py init   --ref alidarState.txt --map map.yaml [--dist 1.0] [--dyaw 20]   -> "x y yaw_rad" (map frame) of the deliberately wrong initial pose
   pose_eval.py check  --ref alidarState.txt --map map.yaml [--ref-dt 0]   -> JSON: share of the reference path on free / occupied map cells (same run as the map?)
+  pose_eval.py initpose --ref alidarState.txt --map map.yaml [--dist 1.0] [--dyaw 20] [--std 0.5] [--yaw-std 15]   -> /initialpose message (JSON) with an explicit covariance
   pose_eval.py level  --ref alidarState.txt --map map.yaml   -> "qx qy qz qw" of R_L, the rotation from FAST-LIO2's world frame to the floor-levelled, wall-aligned frame
   pose_eval.py report --est amcl.tum --odom odom.tum --ref alidarState.txt --map map.yaml [--ref-dt 0] [thresholds]   -> JSON
 Pose files: "t x y z qx qy qz qw [cov_xx cov_yy cov_yawyaw]" (record_poses.py); alidarState.txt has the same first 8 columns.
@@ -172,6 +173,17 @@ def reference_map(path, T, dt=0.0):
     return t + dt, planar(xyz, quat, T)
 
 
+def initpose_json(pose, std, yaw_std_deg):
+    """geometry_msgs/PoseWithCovarianceStamped for /initialpose as JSON (valid YAML for `ros2 topic pub`): the pose with an explicit covariance, like a click in
+    RViz. With the set_initial_pose parameter AMCL builds that message with a ZERO covariance, i.e. every particle starts on the same pose."""
+    x, y, yaw = pose
+    cov = [0.0] * 36
+    cov[0] = cov[7] = std ** 2
+    cov[35] = np.radians(yaw_std_deg) ** 2
+    return json.dumps({"header": {"frame_id": "map"}, "pose": {"pose": {"position": {"x": float(x), "y": float(y), "z": 0.0},
+                       "orientation": {"x": 0.0, "y": 0.0, "z": float(np.sin(yaw / 2)), "w": float(np.cos(yaw / 2))}}, "covariance": cov}})
+
+
 def level_quat(ref_path, T):
     """Quaternion of R_L = T_R @ R(q0): FAST-LIO2's world frame is the IMU frame at start (NOT gravity-aligned), Voxel-SLAM's is, and its first pose q0 is
     that IMU frame in it. Vectors of FAST-LIO2's frame go to Voxel-SLAM's world with R(q0) and from there to the map frame with T_R (ply_to_map's
@@ -220,6 +232,13 @@ def parser():
     i.add_argument("--map", required=True)
     i.add_argument("--dist", type=float, default=1.0)
     i.add_argument("--dyaw", type=float, default=20.0)
+    ip = sub.add_parser("initpose")
+    ip.add_argument("--ref", required=True)
+    ip.add_argument("--map", required=True)
+    ip.add_argument("--dist", type=float, default=1.0)
+    ip.add_argument("--dyaw", type=float, default=20.0)
+    ip.add_argument("--std", type=float, default=0.5)
+    ip.add_argument("--yaw-std", type=float, default=15.0)
     lv = sub.add_parser("level")
     lv.add_argument("--ref", required=True)
     lv.add_argument("--map", required=True)
@@ -239,7 +258,10 @@ def parser():
 
 if __name__ == "__main__":
     a = parser().parse_args()
-    if a.cmd == "level":
+    if a.cmd == "initpose":
+        _, ref = reference_map(a.ref, read_map_yaml(a.map)["T_map_world"])
+        print(initpose_json(initial_pose(ref, a.dist, a.dyaw), a.std, a.yaw_std))
+    elif a.cmd == "level":
         print(*level_quat(a.ref, read_map_yaml(a.map)["T_map_world"]))
     elif a.cmd == "check":
         print(json.dumps(ref_vs_map(a.ref, a.map, a.ref_dt), indent=2))
