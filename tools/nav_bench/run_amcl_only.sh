@@ -18,15 +18,15 @@ echo "initial pose (map frame): $x $y $yaw; overrides: $*" | tee "$out/initial_p
 
 ros2 launch "$tools/launch/amcl_only.launch.py" map:="$map" init_x:="$x" init_y:="$y" init_yaw:="$yaw" overrides:="$out/overrides.yaml" > "$out/launch.log" 2>&1 &
 launch=$!
-python3 "$tools/record_poses.py" /amcl_pose amcl "$out/amcl.tum" > "$out/rec_amcl.log" 2>&1 & rec_a=$!
-python3 "$tools/record_poses.py" /Odometry odom "$out/odom.tum" > "$out/rec_odom.log" 2>&1 & rec_o=$!
+python3 "$tools/record_poses.py" /amcl_pose amcl "$out/amcl.tum" --idle 0 > "$out/rec_amcl.log" 2>&1 & rec_a=$!
+python3 "$tools/record_poses.py" /Odometry odom "$out/odom.tum" --idle 0 > "$out/rec_odom.log" 2>&1 & rec_o=$!
 sleep 8   # lifecycle bring-up
 if [ -n "${INIT_STD:-}" ]; then
   msg=$(python3 "$tools/pose_eval.py" initpose --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}" --std "$INIT_STD" --yaw-std "${INIT_YAW_STD:-15}")
   ros2 topic pub --once -w 1 /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$msg" > "$out/initpose.log" 2>&1
 fi
 ros2 bag play "$bag" --clock --rate "${RATE:-5}" --topics /scan /tf /Odometry > "$out/play.log" 2>&1
-wait "$rec_a" "$rec_o" || true
+sleep 3; kill -TERM "$rec_a" "$rec_o" 2>/dev/null || true; wait "$rec_a" "$rec_o" 2>/dev/null || true   # see run_bench_a.sh: AMCL is silent while the robot is still
 kill -TERM "$launch" 2>/dev/null || true   # background jobs ignore SIGINT; see run_bench_a.sh
 for _ in $(seq 20); do kill -0 "$launch" 2>/dev/null || break; sleep 1; done
 kill -KILL "$launch" 2>/dev/null || true

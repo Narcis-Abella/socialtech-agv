@@ -1,5 +1,5 @@
 """Record poses from a ROS topic to a text file (t x y z qx qy qz qw [cov_xx cov_yy cov_yawyaw]), t = header.stamp; stops when the topic goes quiet.
-usage: record_poses.py <topic> <odom|amcl> <out.txt> [--idle 15] [--max-wait 120]
+usage: record_poses.py <topic> <odom|amcl> <out.txt> [--idle 15 (0 = until killed)] [--max-wait 120]
 odom = nav_msgs/Odometry (FAST-LIO2 /Odometry); amcl = geometry_msgs/PoseWithCovarianceStamped (/amcl_pose). Exit 1 if nothing arrives within --max-wait."""
 import argparse
 import sys
@@ -11,7 +11,7 @@ def main():
     ap.add_argument("topic")
     ap.add_argument("kind", choices=("odom", "amcl"))
     ap.add_argument("out")
-    ap.add_argument("--idle", type=float, default=15.0)
+    ap.add_argument("--idle", type=float, default=15.0, help="stop after this many seconds without messages; 0 = never (the caller stops it)")
     ap.add_argument("--max-wait", type=float, default=120.0)
     a = ap.parse_args()
 
@@ -45,7 +45,7 @@ def main():
         if last[0] is None and now - t0 > a.max_wait:
             print(f"no message on {a.topic} within {a.max_wait:.0f} s", file=sys.stderr)
             sys.exit(1)
-        if last[0] is not None and now - last[0] > a.idle:
+        if a.idle > 0 and last[0] is not None and now - last[0] > a.idle:
             break
     f.close()
 

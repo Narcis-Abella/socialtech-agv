@@ -144,9 +144,19 @@ def test_report_end_to_end_with_a_rotated_map_frame():
         assert r["converged"] and abs(r["pos_err_m"]["median"] - 0.05) < 1e-6 and r["yaw_err_deg"]["max"] < 1e-6, r
         assert r["losses"] == 0 and r["map_odom_jumps"] == 0 and r["ref_on_free_pct"] == 100.0, r  # constant map->odom: no jumps
         assert abs(r["amcl_std_xy_m"]["median"] - np.sqrt(0.02)) < 1e-9, r
+        assert r["amcl_covers_run_pct"] > 95, r
         c = pe.ref_vs_map(f"{d}/ref.txt", f"{d}/map.yaml")  # what `pose_eval.py check` prints, without AMCL
         assert c["ref_poses"] == 300 and c["ref_on_free_pct"] == 100.0 and abs(c["sensor_height_m"] - 0.5) < 1e-9, c  # RZ90 lifts z by 0.5
         json.dumps(r)
+
+
+def test_report_flags_amcl_poses_that_stop_before_the_run_ends():
+    with tempfile.TemporaryDirectory() as d:
+        scene(d, 254)
+        rows = open(f"{d}/amcl.tum").read().splitlines()
+        open(f"{d}/amcl.tum", "w").write("\n".join(rows[: len(rows) // 3]) + "\n")  # the recorder died / AMCL went silent after a third of the run
+        r = pe.report(f"{d}/amcl.tum", f"{d}/odom.tum", f"{d}/ref.txt", f"{d}/map.yaml")
+        assert r["amcl_covers_run_pct"] < 50, r
 
 
 def test_reference_inside_walls_is_flagged():

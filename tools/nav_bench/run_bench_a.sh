@@ -22,8 +22,8 @@ echo "initial pose (map frame): $x $y $yaw; level quaternion: $qx $qy $qz $qw" |
 ros2 launch "$tools/launch/bench_a.launch.py" fastlio_params:="$out/fastlio.yaml" map:="$map" init_x:="$x" init_y:="$y" init_yaw:="$yaw" \
     sensor_height:="$h" level_qx:="$qx" level_qy:="$qy" level_qz:="$qz" level_qw:="$qw" > "$out/launch.log" 2>&1 &
 launch=$!
-python3 "$tools/record_poses.py" /amcl_pose amcl "$out/amcl.tum" > "$out/rec_amcl.log" 2>&1 & rec_a=$!
-python3 "$tools/record_poses.py" /Odometry odom "$out/odom.tum" > "$out/rec_odom.log" 2>&1 & rec_o=$!
+python3 "$tools/record_poses.py" /amcl_pose amcl "$out/amcl.tum" --idle 0 > "$out/rec_amcl.log" 2>&1 & rec_a=$!
+python3 "$tools/record_poses.py" /Odometry odom "$out/odom.tum" --idle 0 > "$out/rec_odom.log" 2>&1 & rec_o=$!
 if [ -n "${RECORD:-}" ]; then   # python resets SIGINT (ignored in background jobs) before exec, so the recorder can close the bag cleanly
   python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \
     ros2 bag record -o "$out/inputs" -s mcap /scan /tf /tf_static /Odometry > "$out/record.log" 2>&1 &
@@ -32,7 +32,8 @@ fi
 sleep 15   # lifecycle bring-up (map_server, AMCL) before the first scan
 # shellcheck disable=SC2086
 ros2 bag play "$bag" --clock --rate "${PLAY_RATE:-1.0}" ${PLAY_ARGS:-} > "$out/play.log" 2>&1
-wait "$rec_a" "$rec_o" || true   # each recorder ends itself after 15 s without messages
+# AMCL publishes only after moving, so a recorder cannot tell "bag over" from "robot stopped": stop them here, after a short grace period
+sleep 5; kill -TERM "$rec_a" "$rec_o" 2>/dev/null || true; wait "$rec_a" "$rec_o" 2>/dev/null || true
 if [ -n "${bagrec:-}" ]; then kill -INT "$bagrec" 2>/dev/null || true; wait "$bagrec" 2>/dev/null || true; fi
 # background jobs of a non-interactive shell start with SIGINT ignored, so ask the launch to stop with SIGTERM and force it after 20 s
 kill -TERM "$launch" 2>/dev/null || true

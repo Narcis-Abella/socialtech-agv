@@ -217,6 +217,7 @@ def report(est_path, odom_path, ref_path, map_yaml, ref_dt=0.0, **thr):
     est = planar(xyz, quat)
     t_od, oxyz, oquat, _ = read_poses(odom_path)
     out = evaluate(t_est, est, interp(t_od, planar(oxyz, oquat), t_est), interp(t_ref, ref, t_est), **thr)
+    out["amcl_covers_run_pct"] = float(100 * (t_est[-1] - t_est[0]) / (t_od[-1] - t_od[0]))  # AMCL only publishes after moving: well below 100 means the poses stop early
     out.update(ref_vs_map(ref_path, map_yaml, ref_dt))
     if extra.shape[1] >= 2:
         sd = np.sqrt(extra[:, 0] + extra[:, 1])
