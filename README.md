@@ -49,6 +49,7 @@ On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=
 
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
 Without `DDS_IFACE`, CycloneDDS picks a network interface arbitrarily and other machines may not see the robot's nodes.
+The images ask CycloneDDS for a 10 MB socket receive buffer (`docker/cyclone_uri.sh`) and refuse to start, with a clear error, when the host did not raise `net.core.rmem_max`; `host/setup_host.sh` does it (`/etc/sysctl.d/99-socialtech-dds.conf`). Without it a LiDAR scan that overflows a UDP buffer is dropped with no warning (measured: 24 % of the scans on an Orin Nano). An explicit `CYCLONEDDS_URI` replaces this configuration.
 Shells opened with `docker exec -it <container> bash` get the same ROS environment as the entrypoint.
 
 ## Where changes go

@@ -36,6 +36,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 # ROS environment shared by the entrypoint and interactive shells (`docker exec -it ... bash`).
+COPY cyclone_uri.sh /cyclone_uri.sh
 COPY ros_env.sh /ros_env.sh
 RUN echo 'source /ros_env.sh' >> /etc/bash.bashrc
 COPY --chmod=755 entrypoint.sh /entrypoint.sh

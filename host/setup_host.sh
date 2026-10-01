@@ -135,6 +135,17 @@ EOF
   if ! swapon --noheadings --show=NAME | grep -q zram0; then systemctl start dev-zram0.swap; fi
 }
 
+# DDS splits a Livox scan (~400 KB) into UDP datagrams; when a socket's receive buffer is full the kernel drops one
+# and the whole scan is lost without any warning (Orin Nano, Voxel-SLAM at 1x: 24 % of the scans lost at the 208 KB
+# default, 0 % at 64 MB). Cyclone asks for its own buffer (docker/cyclone_uri.sh) but the kernel grants at most rmem_max.
+RMEM_MAX=67108864
+step_net_buffers() {
+  put /etc/sysctl.d/99-socialtech-dds.conf <<EOF || true
+net.core.rmem_max = $RMEM_MAX
+EOF
+  sysctl -q -p /etc/sysctl.d/99-socialtech-dds.conf
+}
+
 symvers_hash() { sha256sum <"/lib/modules/$KVER/build/Module.symvers" | cut -d' ' -f1; }
 
 step_can() {
@@ -368,6 +379,7 @@ run_checks() {
   check "$TARGET_USER in docker" in_group docker
   check "$TARGET_USER in dialout" in_group dialout
   check "zram swap active" sh -c 'swapon --noheadings --show=NAME | grep -q zram0'
+  check "UDP receive buffer limit >= $RMEM_MAX (no silent scan loss)" test "$(sysctl -n net.core.rmem_max)" -ge "$RMEM_MAX"
   check "gs_usb built for current kernel ABI" test "$(cat "/lib/modules/$KVER/updates/gs_usb.ko.symvers" 2>/dev/null)" = "$(symvers_hash)"
   check "gs_usb -> $CAN_IFACE rename rule" test -f /etc/systemd/network/10-tracer-can.link
   check "can-up@$CAN_IFACE enabled" systemctl is-enabled "can-up@$CAN_IFACE.service"
@@ -396,6 +408,7 @@ if [[ $MODE == apply ]]; then
   step_hostname
   step_docker
   step_zram
+  step_net_buffers
   step_can
   step_udev
   step_livox
