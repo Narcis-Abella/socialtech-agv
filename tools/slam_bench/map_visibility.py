@@ -2,7 +2,7 @@
 
   map_visibility.py <bag> <poses.txt> <world.ply> <out_prefix> [--topic /livox/lidar] [--min-ratio 0.10] [--min-component 10] [--no-fill] [--ply-out cloud.ply]
 
-Needs numpy + scipy (+ rosbags to read the bag). Inputs: the ROS 2 bag of the mapping run (sensor_msgs/PointCloud2), the SLAM poses (t x y z qx qy qz qw, the IMU pose at the END of each
+Needs numpy + scipy (+ rosbags to read the bag). Inputs: the ROS 2 bag of the mapping run (sensor_msgs/PointCloud2 or livox_ros_driver2/CustomMsg), the SLAM poses (t x y z qx qy qz qw, the IMU pose at the END of each
 scan, as Voxel-SLAM's alidarState.txt) and the SLAM cloud in the same world (x y z PLY). The cloud is levelled and aligned like ply_to_map does; the bag is read twice.
 Every check is a beam test: with a range image per scan (1 deg bins, nearest return), a point is HIT when a beam ends within a margin (+1 % of the range) of it, and PASSED when the beam ends farther away.
 1. Ghosts (--min-ratio): cloud points in the obstacle band (0.10-1.80 m) are grouped in 10 cm voxels; a voxel with >= 10 observations and hits / (hits + passes) < 0.10 is dropped (margin 15 cm):
@@ -12,6 +12,7 @@ Every check is a beam test: with a range image per scan (1 deg bins, nearest ret
    what would stay unknown, and Nav2's live sensors still see obstacles.
 Measured on eco_-1_01: 27 387 cells (7.8 % of the map) freed by step 2. The lidar -> IMU translation is Voxel-SLAM's mid360.yaml (rotation = identity)."""
 import argparse
+import struct
 import sys
 from pathlib import Path
 
@@ -156,19 +157,41 @@ def pose_at(poses, t):
     return Rotation.from_quat((1 - f) * q0 + f * q1).as_matrix(), (1 - f) * poses[j - 1, 1:4] + f * poses[j, 1:4]
 
 
+CUSTOM_POINT = np.dtype([("t", "<u4"), ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("r", "u1"), ("tag", "u1"), ("line", "u1"), ("pad", "u1")])   # 19 bytes + 1 of CDR padding between elements
+
+
+def custom_points(raw):
+    """(header stamp in s, (n, 3) xyz) from the CDR bytes of a livox_ros_driver2/CustomMsg. Read straight from the bytes: a Python object per point (20 000 per scan) is far too slow."""
+    b = bytes(raw)
+    if b[1] != 1:
+        raise ValueError("big-endian CDR is not supported")
+    sec, nsec, nstr = struct.unpack_from("<iiI", b, 4)                  # header.stamp, then the length of frame_id (with its NUL)
+    off = 16 + nstr
+    off += (-(off - 4)) % 8                                               # timebase (uint64) is aligned to 8 counting from after the 4-byte CDR header
+    off += 16                                                             # timebase, point_num, lidar_id, rsvd[3]
+    (n,) = struct.unpack_from("<I", b, off)
+    off += 4
+    b += b"\0" * max(0, off + n * CUSTOM_POINT.itemsize - len(b))         # the last element may come without its padding byte
+    pts = np.frombuffer(b, CUSTOM_POINT, n, off)
+    return sec + nsec * 1e-9, np.column_stack([pts["x"], pts["y"], pts["z"]]).astype(float)
+
+
 def bag_scans(bag, poses, topic="/livox/lidar"):
-    """(points in the sensor frame, R, t) for each scan of a ROS 2 bag of sensor_msgs/PointCloud2, with the pose at its middle; scans without a pose are skipped. Needs rosbags."""
+    """(points in the sensor frame, R, t) for each scan of a ROS 2 bag of sensor_msgs/PointCloud2 or livox_ros_driver2/CustomMsg, with the pose at its middle; scans without a pose are skipped. Needs rosbags."""
     from rosbags.highlevel import AnyReader
     with AnyReader([Path(bag)]) as r:
         for c, _, raw in r.messages(connections=[c for c in r.connections if c.topic == topic]):
-            msg = r.deserialize(raw, c.msgtype)
-            p = pose_at(poses, msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9 + SCAN_MID)
-            if p is None:
-                continue
-            off = {f.name: f.offset for f in msg.fields}
-            d = np.asarray(msg.data).reshape(-1, msg.point_step)
-            xyz = np.column_stack([d[:, off[k]:off[k] + 4].copy().view("<f4")[:, 0] for k in "xyz"]).astype(float)
-            yield xyz[np.isfinite(xyz).all(1)], p[0], p[1]
+            if c.msgtype == "livox_ros_driver2/msg/CustomMsg":
+                stamp, xyz = custom_points(raw)
+            else:
+                msg = r.deserialize(raw, c.msgtype)
+                stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+                off = {f.name: f.offset for f in msg.fields}
+                d = np.asarray(msg.data).reshape(-1, msg.point_step)
+                xyz = np.column_stack([d[:, off[k]:off[k] + 4].copy().view("<f4")[:, 0] for k in "xyz"]).astype(float)
+            p = pose_at(poses, stamp + SCAN_MID)
+            if p is not None:
+                yield xyz[np.isfinite(xyz).all(1)], p[0], p[1]
 
 
 def main(argv):

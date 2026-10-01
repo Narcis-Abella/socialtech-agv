@@ -8,6 +8,13 @@ from scipy.spatial.transform import Rotation
 import map_visibility as mv
 import ply_to_map as pm
 
+try:
+    from rosbags.rosbag2 import StoragePlugin, Writer
+    from rosbags.typesys import Stores, get_typestore, get_types_from_msg
+except ImportError:                      # the rest of the suite needs only numpy + scipy
+    Writer = None
+
+
 RES = 0.05
 SENSOR_H = 0.5
 ORIGIN = (-1.0, -2.0)                 # map frame, lower-left corner of the grid
@@ -201,6 +208,64 @@ def test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag():
         mv.bag_scans = read_bag
 
 
+LIVOX = {"livox_ros_driver2/msg/CustomPoint": "uint32 offset_time\nfloat32 x\nfloat32 y\nfloat32 z\nuint8 reflectivity\nuint8 tag\nuint8 line\n",
+         "livox_ros_driver2/msg/CustomMsg": "std_msgs/Header header\nuint64 timebase\nuint32 point_num\nuint8 lidar_id\nuint8[3] rsvd\nCustomPoint[] points\n"}
+
+
+def livox_typestore():
+    ts = get_typestore(Stores.ROS2_JAZZY)
+    for name, text in LIVOX.items():
+        ts.register(get_types_from_msg(text, name))
+    return ts
+
+
+def custom_msg(ts, xyz, stamp=(12, 340_000_000), frame="livox_frame"):
+    T, H = ts.types["builtin_interfaces/msg/Time"], ts.types["std_msgs/msg/Header"]
+    P = ts.types["livox_ros_driver2/msg/CustomPoint"]
+    pts = [P(offset_time=i * 1000, x=float(x), y=float(y), z=float(z), reflectivity=10, tag=0, line=1) for i, (x, y, z) in enumerate(xyz)]
+    return ts.types["livox_ros_driver2/msg/CustomMsg"](header=H(stamp=T(sec=stamp[0], nanosec=stamp[1]), frame_id=frame), timebase=7, point_num=len(pts), lidar_id=0, rsvd=np.zeros(3, np.uint8), points=pts)
+
+
+def point_cloud2(ts, xyz, stamp=(12, 340_000_000)):
+    T, H, F = ts.types["builtin_interfaces/msg/Time"], ts.types["std_msgs/msg/Header"], ts.types["sensor_msgs/msg/PointField"]
+    data = np.asarray(xyz, "<f4").tobytes()
+    return ts.types["sensor_msgs/msg/PointCloud2"](header=H(stamp=T(sec=stamp[0], nanosec=stamp[1]), frame_id="livox_frame"), height=1, width=len(xyz),
+                                                   fields=[F(name=n, offset=4 * i, datatype=7, count=1) for i, n in enumerate("xyz")], is_bigendian=False, point_step=12,
+                                                   row_step=12 * len(xyz), data=np.frombuffer(data, np.uint8), is_dense=True)
+
+
+def test_custom_points_reads_the_cdr_bytes_whatever_the_frame_id_and_the_padding():
+    if Writer is None:
+        return                           # rosbags missing: skipped
+    ts = livox_typestore()
+    for frame in ("livox_frame", "", "a", "lidar_link_0"):
+        for n in (1, 2, 7, 50):
+            xyz = np.random.default_rng(n).uniform(-20, 20, (n, 3)).astype(np.float32)
+            stamp, got = mv.custom_points(ts.serialize_cdr(custom_msg(ts, xyz, frame=frame), "livox_ros_driver2/msg/CustomMsg"))
+            assert abs(stamp - 12.34) < 1e-9 and np.allclose(got, xyz, atol=1e-6), (frame, n)
+
+
+def test_bag_scans_gives_the_same_scans_from_a_custommsg_bag_and_a_pointcloud2_bag():
+    if Writer is None:
+        return
+    ts = livox_typestore()
+    clouds = [np.random.default_rng(k).uniform(-9, 9, (30, 3)).astype(np.float32) for k in range(3)]
+    t = np.arange(0, 4.01, 0.4)
+    poses = np.c_[t, 0.5 * t, np.zeros((len(t), 2)), np.zeros((len(t), 3)), np.ones(len(t))]    # t x y z qx qy qz qw: 0.5 m/s along x
+    out = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        for kind, build, msgtype in (("custom", custom_msg, "livox_ros_driver2/msg/CustomMsg"), ("pc2", point_cloud2, "sensor_msgs/msg/PointCloud2")):
+            with Writer(Path(tmp) / kind, version=8, storage_plugin=StoragePlugin.MCAP) as w:
+                conn = w.add_connection("/livox/lidar", msgtype, typestore=ts)
+                for k, c in enumerate(clouds):
+                    w.write(conn, (1 + k) * 10**9, ts.serialize_cdr(build(ts, c, stamp=(1 + k, 0)), msgtype))
+            out[kind] = list(mv.bag_scans(Path(tmp) / kind, poses, "/livox/lidar"))
+    assert len(out["custom"]) == len(out["pc2"]) == 3
+    for (xa, Ra, ta), (xb, Rb, tb), c in zip(out["custom"], out["pc2"], clouds):
+        assert np.allclose(xa, c, atol=1e-6) and np.allclose(xb, c, atol=1e-6) and np.allclose(Ra, Rb) and np.allclose(ta, tb)
+    assert np.allclose(out["custom"][1][2], [(2 + 0.05) * 0.5, 0, 0])                           # the pose at header + 0.05 s
+
+
 if __name__ == "__main__":
     test_unknown_floor_the_beams_crossed_is_freed_and_the_outside_stays_unknown()
     test_a_cell_the_beams_keep_hitting_is_not_freed()
@@ -214,4 +279,6 @@ if __name__ == "__main__":
     test_build_map_drops_the_phantom_and_frees_the_unknown_without_touching_the_rest()
     test_occupied_points_are_the_band_points_over_occupied_cells()
     test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag()
+    test_custom_points_reads_the_cdr_bytes_whatever_the_frame_id_and_the_padding()
+    test_bag_scans_gives_the_same_scans_from_a_custommsg_bag_and_a_pointcloud2_bag()
     print("ok")
