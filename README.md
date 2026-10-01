@@ -11,7 +11,7 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | `docker/` | Layered images built from one `Dockerfile` (`base` → `robot`) |
 | `docker/robot.repos` | Third-party ROS sources, pinned by commit |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
-| `tools/` | Offline helpers: GLIM map dump to PLY without the GUI, GLIM config evaluation (see Tools) |
+| `tools/` | Offline research helpers: SLAM benchmark, 2D map from a PLY, GLIM dump to PLY and config evaluation (see Tools) |
 
 ## Jetson setup (once per board)
 
@@ -53,6 +53,11 @@ Without `DDS_IFACE`, CycloneDDS picks a network interface arbitrarily and other 
 Shells opened with `docker exec -it <container> bash` get the same ROS environment as the entrypoint.
 
 ## Tools
+
+The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; its integration into the `robot` image is still to do). The tools below are offline research helpers used for that comparison and for the maps; none of them is part of the image. The GLIM ones are kept as reference and comparison tooling.
+
+- `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
+- `tools/slam_bench/ply_to_map.py`: levelled, wall-aligned 2D map (`map_server` PGM + YAML) from a PLY of any SLAM; `--ply-out` saves the cloud it was made from.
 
 ```bash
 # GLIM map dump (glim_rosbag -p dump_path:=...) -> PLY, same points as offline_viewer's Export Points.

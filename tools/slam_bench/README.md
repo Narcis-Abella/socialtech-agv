@@ -16,6 +16,9 @@ Not deployment code: research tooling, run by hand on a laptop and a Jetson AGX 
 | `eval_all.py` | One markdown table from `<root>/<method>/<sequence>/*.tum`: APE (SE(3) alignment, offset 0 and best offset) for mocap sequences, ArUco closure for Corridor01 / Elevator01 |
 | `traj_metrics.py` | Ground-truth-free table for our own bags (flat floor, return to start): path, end-start distance, z / roll / pitch range, divergence between runs |
 | `collect_results.sh` | Copy all trajectories from the AGX into the layout `eval_all.py` reads (GLIM runs, competitors at 0.5x; skips contaminated runs) |
+| `floor_tilt.py` | Ground-truth-free flatness of GLIM dumps: floor plane per submap, global floor tilt from x-y, floor residual (`floor_tilt.py [-v] <run_dir>...`) |
+| `static_offset.py` | IMU-vs-floor/ceiling offset of the Livox from raw bags (still windows); prints a `T_lidar_imu` overlay that cancels the GLIM map tilt |
+| `ply_to_map.py` | PLY map -> levelled floor -> `map_server` PGM + YAML (floor and everything above 1.80 m removed). XYZ only, any SLAM; refuses when the floor cannot be trusted. Needs scipy (host/laptop, not in the robot image). Choices and evidence: `notes/ply_to_map_suelo.md` in the SocialTech repo |
 | `agx/` | wrappers and queues as run on the AGX (`docker run` lines, DDS domain per method) |
 
 Rules learned the hard way:
