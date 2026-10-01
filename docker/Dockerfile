@@ -89,3 +89,10 @@ RUN --mount=type=cache,target=/ws/build \
  && colcon build --merge-install --install-base /opt/socialtech \
       --parallel-workers "${COLCON_WORKERS}" \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy
+
+# Navigation bench (tools/nav_bench): localization and scan conversion. After the colcon build so a change here does not rebuild the workspace.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ros-jazzy-nav2-amcl ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan
