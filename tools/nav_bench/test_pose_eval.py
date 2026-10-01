@@ -72,6 +72,14 @@ def test_evaluate_finds_convergence_loss_and_jumps():
     assert abs(r["initial_pos_err_m"] - 1.0) < 1e-9 and abs(r["pos_err_m"]["max"] - 1.0) < 0.01, r
 
 
+def test_jumps_while_converging_are_not_counted_as_map_odom_jumps():
+    t = np.arange(0, 60, 0.5)
+    ref = np.zeros((len(t), 3))
+    early = np.where((t * 2).astype(int) % 2 == 0, 1.0, 0.5) * (t < 4)  # error flips 1.0 / 0.5 m every step until 4 s, then 0
+    r = pe.evaluate(t, ref + np.c_[early, np.zeros_like(t), np.zeros_like(t)], ref.copy(), ref)
+    assert r["converged"] and r["map_odom_jumps"] == 0 and r["map_odom_jumps_before_convergence"] == 8, r
+
+
 def test_never_converging_run_is_reported_as_such():
     t = np.arange(0, 20, 0.5)
     ref = np.zeros((len(t), 3))

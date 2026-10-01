@@ -160,7 +160,10 @@ def evaluate(t, est, odom, ref, conv_pos=CONV_POS, conv_yaw_deg=CONV_YAW_DEG, co
             "converged": conv is not None, "convergence_s": None if conv is None else float(t[conv] - t[0]),
             "pos_err_m": {"median": float(np.median(perr[a])), "p95": float(np.percentile(perr[a], 95)), "max": float(perr[a].max())},
             "yaw_err_deg": {"median": float(np.median(yerr[a])), "p95": float(np.percentile(yerr[a], 95)), "max": float(yerr[a].max())},
-            "losses": sum(1 for s, e in bad if e - s >= loss_s), "map_odom_jumps": int(jumps.sum()),
+            "losses": sum(1 for s, e in bad if e - s >= loss_s),
+            # a correction while AMCL is still converging is not a jump: count the steps before convergence apart (all steps when it never converged)
+            "map_odom_jumps": int(jumps[conv or 0:].sum()) if conv is not None else int(jumps.sum()),
+            "map_odom_jumps_before_convergence": int(jumps[:conv].sum()) if conv is not None else 0,
             "initial_pos_err_m": float(perr[0])}
 
 
