@@ -14,7 +14,7 @@ mkdir -p "$out"
 sed -e "s|lid_topic:.*|lid_topic: \"${LIDAR:-/livox/lidar}\"|" -e "s|imu_topic:.*|imu_topic: \"${IMU:-/livox/imu}\"|" \
     -e "s|pcd_save_en:.*|pcd_save_en: false|" -e "s|map_en:.*|map_en: false|" -e "s|path_en:.*|path_en: false|" \
     "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" > "$out/fastlio.yaml"
-read -r x y yaw < <(python3 "$tools/pose_eval.py" init --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}" --ref-dt "${REF_DT:-0}")
+read -r x y yaw < <(python3 "$tools/pose_eval.py" init --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}")
 read -r qx qy qz qw < <(python3 "$tools/pose_eval.py" level --ref "$ref" --map "$map")
 echo "initial pose (map frame): $x $y $yaw; level quaternion: $qx $qy $qz $qw" | tee "$out/initial_pose.txt"
 

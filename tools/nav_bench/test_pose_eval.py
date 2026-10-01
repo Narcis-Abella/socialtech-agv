@@ -1,6 +1,7 @@
 """Checks pose_eval.py on synthetic trajectories with known answers. Run: python3 test_pose_eval.py"""
 import json
 import os
+import re
 import tempfile
 
 import numpy as np
@@ -135,6 +136,16 @@ def test_reference_inside_walls_is_flagged():
     with tempfile.TemporaryDirectory() as d:  # map and poses from different runs show up as a trajectory through occupied cells
         r = scene(d, 0)
         assert r["ref_on_occupied_pct"] == 100.0 and r["ref_on_free_pct"] == 0.0, r
+
+
+def test_run_bench_a_only_passes_flags_the_subcommands_accept():
+    script = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_bench_a.sh")).read()
+    subs = pe.parser()._subparsers._group_actions[0].choices
+    calls = re.findall(r"pose_eval\.py\"? (init|level|check|report)([^\n|]*)", script)
+    assert {c for c, _ in calls} == {"init", "level", "report"}, calls
+    for cmd, rest in calls:
+        for flag in re.findall(r"(--[a-z-]+)", rest):
+            assert flag in subs[cmd]._option_string_actions, f"run_bench_a.sh passes {flag} to `pose_eval.py {cmd}`, which does not take it"
 
 
 if __name__ == "__main__":

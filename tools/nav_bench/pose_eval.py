@@ -209,7 +209,7 @@ def report(est_path, odom_path, ref_path, map_yaml, ref_dt=0.0, **thr):
     return out
 
 
-if __name__ == "__main__":
+def parser():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     i = sub.add_parser("init")
@@ -231,7 +231,11 @@ if __name__ == "__main__":
     for k, v in (("conv-pos", CONV_POS), ("conv-yaw-deg", CONV_YAW_DEG), ("conv-hold-s", CONV_HOLD_S), ("loss-pos", LOSS_POS), ("loss-s", LOSS_S),
                  ("jump-pos", JUMP_POS), ("jump-yaw-deg", JUMP_YAW_DEG)):
         r.add_argument(f"--{k}", type=float, default=v)
-    a = ap.parse_args()
+    return ap
+
+
+if __name__ == "__main__":
+    a = parser().parse_args()
     if a.cmd == "level":
         print(*level_quat(a.ref, read_map_yaml(a.map)["T_map_world"]))
     elif a.cmd == "check":
