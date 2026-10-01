@@ -161,7 +161,7 @@ def test_run_scripts_only_pass_flags_the_pose_eval_subcommands_accept():
     assert {"run_bench_a.sh", "run_amcl_only.sh"} <= set(scripts), scripts
     subs = pe.parser()._subparsers._group_actions[0].choices
     for name in scripts:
-        calls = re.findall(r"pose_eval\.py\"? (init|initpose|level|check|report)([^\n|]*)", open(os.path.join(here, name)).read())
+        calls = re.findall(r"pose_eval\.py\"? (initpose|init|level|check|report)\b([^\n|]*)", open(os.path.join(here, name)).read())
         assert calls, f"{name} never calls pose_eval.py"
         for cmd, rest in calls:
             for flag in re.findall(r"(--[a-z-]+)", rest):
