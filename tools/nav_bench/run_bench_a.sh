@@ -27,8 +27,10 @@ sleep 15   # lifecycle bring-up (map_server, AMCL) before the first scan
 # shellcheck disable=SC2086
 ros2 bag play "$bag" --clock --rate "${PLAY_RATE:-1.0}" ${PLAY_ARGS:-} > "$out/play.log" 2>&1
 wait "$rec_a" "$rec_o" || true   # each recorder ends itself after 15 s without messages
-kill -INT "$launch" 2>/dev/null || true
-wait "$launch" 2>/dev/null || true
+# background jobs of a non-interactive shell start with SIGINT ignored, so ask the launch to stop with SIGTERM and force it after 20 s
+kill -TERM "$launch" 2>/dev/null || true
+for _ in $(seq 20); do kill -0 "$launch" 2>/dev/null || break; sleep 1; done
+kill -KILL "$launch" 2>/dev/null || true
 
 [ -s "$out/amcl.tum" ] || { echo "FAIL: AMCL published no pose (see $out/launch.log)"; exit 1; }
 python3 "$tools/pose_eval.py" report --est "$out/amcl.tum" --odom "$out/odom.tum" --ref "$ref" --map "$map" --ref-dt "${REF_DT:-0}" | tee "$out/report.json"

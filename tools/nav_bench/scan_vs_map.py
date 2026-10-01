@@ -26,6 +26,8 @@ def main():
     t_ref, ref = pe.reference_map(a.ref, m["T_map_world"], a.ref_dt)
 
     import rclpy
+    from rclpy.executors import ExternalShutdownException
+    from rclpy.qos import qos_profile_sensor_data
     from sensor_msgs.msg import LaserScan
 
     rclpy.init()
@@ -48,8 +50,11 @@ def main():
             print(f"MEAN {np.mean(shares):.1f} % over {len(shares)} scans")
             rclpy.shutdown()
 
-    node.create_subscription(LaserScan, "/scan", cb, 10)
-    rclpy.spin(node)
+    node.create_subscription(LaserScan, "/scan", cb, qos_profile_sensor_data)  # /scan is best-effort: a reliable subscriber never matches
+    try:
+        rclpy.spin(node)
+    except ExternalShutdownException:  # rclpy.shutdown() in the callback ends the spin this way
+        pass
 
 
 if __name__ == "__main__":
