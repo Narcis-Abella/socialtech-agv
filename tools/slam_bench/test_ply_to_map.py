@@ -19,10 +19,10 @@ def tilt_rot(deg):
     return np.array([[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]])
 
 
-def room(tilt=TILT, floor_noise=0.01, floor_pts=60000, ceiling_pts=100000, dz=0.0):
+def room(tilt=TILT, floor_noise=0.01, floor_pts=60000, ceiling_pts=100000, dz=0.0, yaw=0.0):
     """Points of a 10 x 8 m room in its level frame, then tilted as a whole. Walls at x=+-5 and y=+-4; the y=+4 wall has a
     doorway (|x|<1) that only keeps its lintel above 2.0 m. More ceiling than floor points: the ceiling is the bigger plane.
-    The floor has a 1 m hole at (2..3, -3..-2): the LiDAR saw nothing there. dz shifts the whole cloud (origin below the floor when dz > 0.6)."""
+    The floor has a 1 m hole at (2..3, -3..-2): the LiDAR saw nothing there. dz shifts the whole cloud (origin below the floor when dz > 0.6). yaw turns the building about z (before the tilt): a SLAM world not aligned with the walls."""
     pts = []
     f = RNG.uniform([-5, -4], [5, 4], (floor_pts, 2))
     f = f[~((f[:, 0] > 2) & (f[:, 0] < 3) & (f[:, 1] > -3) & (f[:, 1] < -2))]
@@ -38,7 +38,7 @@ def room(tilt=TILT, floor_noise=0.01, floor_pts=60000, ceiling_pts=100000, dz=0.
             z = np.where(np.abs(along) < 1.0, FLOOR_Z + RNG.uniform(2.0, ROOM_H, n), z)  # doorway: only the lintel
         pts.append(np.c_[np.full(n, val), along, z] if axis == 0 else np.c_[along, np.full(n, val), z])
     P = np.vstack(pts) + [0, 0, dz]
-    return P @ tilt_rot(tilt).T
+    return P @ Rotation.from_euler("z", yaw, degrees=True).as_matrix().T @ tilt_rot(tilt).T
 
 
 def path(tilt=TILT, extra=0.0, straight=False, arc=None):
@@ -53,6 +53,23 @@ def path(tilt=TILT, extra=0.0, straight=False, arc=None):
     return P @ tilt_rot(extra).T @ tilt_rot(tilt).T, R.as_quat()
 
 
+def round_room(tilt=TILT):
+    """A cylindrical room (walls at every angle), radius 4, with a floor and a ceiling: not a Manhattan building."""
+    a = RNG.uniform(0, 2 * np.pi, 20000)
+    z = FLOOR_Z + RNG.uniform(0, ROOM_H, 20000)
+    wall = np.c_[4 * np.cos(a), 4 * np.sin(a), z]
+    disc = lambda n, zz: np.c_[RNG.uniform(-4, 4, (n * 2, 2)), np.full(n * 2, zz)]
+    floor, ceiling = disc(30000, FLOOR_Z), disc(50000, FLOOR_Z + ROOM_H)
+    keep = lambda d: d[np.hypot(d[:, 0], d[:, 1]) < 4]
+    return np.vstack([wall, keep(floor), keep(ceiling)]) @ tilt_rot(tilt).T
+
+
+def column_sharpness(grid):
+    """How concentrated the occupied cells are in few columns/rows (aligned walls pile up in single columns)."""
+    occ = grid == ply_to_map.OCC
+    return sum((c.astype(float) ** 2).sum() for c in (occ.sum(0), occ.sum(1))) / occ.sum() ** 2
+
+
 def write_ply(path, P, intensity=True):
     cols = [("x", "<f4"), ("y", "<f4"), ("z", "<f4")] + ([("intensity", "<f4")] if intensity else [])
     a = np.zeros(len(P), dtype=cols)
@@ -64,6 +81,11 @@ def write_ply(path, P, intensity=True):
 def cell(grid, origin, x, y, res=RES):
     """Value of the cell containing (x, y); image row 0 is the top (max y), as in map_server PGMs."""
     return grid[grid.shape[0] - 1 - int((y - origin[1]) / res), int((x - origin[0]) / res)]
+
+
+def occupied_near(grid, origin, x, y):
+    """Is any cell within one cell of (x, y) occupied? A wall sits on a cell border, so a tiny turn moves it to the neighbour cell."""
+    return any(cell(grid, origin, x + dx, y + dy) == ply_to_map.OCC for dx in (-RES, 0, RES) for dy in (-RES, 0, RES))
 
 
 def test_read_ply_roundtrip_with_and_without_intensity():
@@ -147,12 +169,44 @@ def test_a_short_turn_does_not_vote_with_the_yaw_axis():
     assert info["traj"]["orientation"] == "skipped", info  # under 90 deg of turning the axis is not trustworthy
 
 
+def test_manhattan_yaw_recovers_the_rotation_and_reports_how_manhattan_it_is():
+    th0 = np.radians(23.0)
+    normals = np.concatenate([np.c_[np.cos(th0 + k * np.pi / 2 + RNG.normal(0, 0.01, 500)), np.sin(th0 + k * np.pi / 2 + RNG.normal(0, 0.01, 500))] for k in range(4)])
+    yaw, strength = ply_to_map.manhattan_yaw(normals)
+    assert abs(yaw + 23.0) < 0.2 and strength > 0.95, (yaw, strength)   # turn the cloud by -23 deg and the walls are axis-aligned
+    a = RNG.uniform(0, 2 * np.pi, 4000)
+    assert ply_to_map.manhattan_yaw(np.c_[np.cos(a), np.sin(a)])[1] < 0.1  # walls at every angle: nothing to align to
+
+
+def test_walls_end_up_on_pixel_rows_and_columns():
+    P = room(yaw=23.0)
+    Q, info = ply_to_map.level_to_floor(P)
+    assert abs(info["yaw_deg"] + 23.0) < 0.3 and info["manhattan"] > 0.8, info
+    aligned, _ = ply_to_map.rasterize(Q, RES)
+    Q0, info0 = ply_to_map.level_to_floor(P, align=False)
+    skewed, _ = ply_to_map.rasterize(Q0, RES)
+    assert info0["yaw_deg"] == 0 and column_sharpness(aligned) > 3 * column_sharpness(skewed), (column_sharpness(aligned), column_sharpness(skewed))
+
+
+def test_a_round_room_is_not_turned():
+    _, info = ply_to_map.level_to_floor(round_room())
+    assert info["yaw_deg"] == 0 and info["manhattan"] < 0.5, info
+
+
+def test_transform_maps_the_input_cloud_onto_the_output():
+    P = room(yaw=23.0)
+    Q, info = ply_to_map.level_to_floor(P)
+    T = info["T"]
+    assert np.allclose(P @ T[:3, :3].T + T[:3, 3], Q, atol=1e-9), "T_map_world must reproduce the output cloud"
+    assert np.allclose(T[3], [0, 0, 0, 1]) and abs(np.linalg.det(T[:3, :3]) - 1) < 1e-9
+
+
 def test_rasterize_keeps_walls_drops_lintel_and_ceiling_and_marks_floor_free():
     Q, _ = ply_to_map.level_to_floor(room())
     grid, origin = ply_to_map.rasterize(Q, RES, ceil=1.80, floor_band=0.10, min_hits=2)
-    assert cell(grid, origin, 5.0 - 0.02, 0.0) == ply_to_map.OCC        # side wall
-    assert cell(grid, origin, 3.0, 4.0 - 0.02) == ply_to_map.OCC        # wall beside the doorway
-    assert cell(grid, origin, 0.0, 4.0 - 0.02) != ply_to_map.OCC        # doorway: the lintel is above 1.80 m
+    assert occupied_near(grid, origin, 5.0, 0.0)                        # side wall
+    assert occupied_near(grid, origin, 3.0, 4.0)                        # wall beside the doorway
+    assert not occupied_near(grid, origin, 0.0, 4.0)                    # doorway: the lintel is above 1.80 m
     open_floor = [cell(grid, origin, x, y) for x in np.arange(-3, 1, 0.05) for y in np.arange(-2, 2, 0.05)]
     assert np.mean(np.array(open_floor) == ply_to_map.FREE) > 0.7        # open floor: free where a floor point fell (about 1.9 per 5 cm cell)
     assert cell(grid, origin, 2.5, -2.5) == ply_to_map.UNK             # the floor hole: nothing seen there
@@ -182,11 +236,12 @@ def test_write_map_makes_pgm_and_map_server_yaml():
     grid = np.full((6, 8), ply_to_map.UNK, dtype=np.uint8)
     grid[0, 0], grid[5, 7] = ply_to_map.OCC, ply_to_map.FREE
     with tempfile.TemporaryDirectory() as tmp:
-        ply_to_map.write_map(Path(tmp) / "m", grid, RES, (-1.5, 2.0))
+        ply_to_map.write_map(Path(tmp) / "m", grid, RES, (-1.5, 2.0), T=np.diag([1.0, 1.0, 1.0, 1.0]))
         raw = (Path(tmp) / "m.pgm").read_bytes()
         assert raw.startswith(b"P5\n8 6\n255\n") and raw[-48:] == grid.tobytes()
         y = (Path(tmp) / "m.yaml").read_text()
         # map_server reads a pixel as free when (255 - pixel) / 255 <= free_thresh: 205 (unknown) is 0.19608, so 0.25 would load unknown as free
+        assert "# T_map_world" in y and "[1.0, 0.0, 0.0, 0.0]" in y, y  # the transform from the SLAM world, as a comment (map_server ignores it)
         for line in ("image: m.pgm", "resolution: 0.05", "origin: [-1.5, 2.0, 0.0]", "negate: 0", "occupied_thresh: 0.65", "free_thresh: 0.196"):
             assert line in y, (line, y)
 
@@ -213,6 +268,10 @@ if __name__ == "__main__":
     test_no_floor_fails_loudly_instead_of_returning_the_ceiling()
     test_too_little_floor_is_refused_by_min_floor()
     test_a_rough_floor_is_refused()
+    test_manhattan_yaw_recovers_the_rotation_and_reports_how_manhattan_it_is()
+    test_walls_end_up_on_pixel_rows_and_columns()
+    test_a_round_room_is_not_turned()
+    test_transform_maps_the_input_cloud_onto_the_output()
     test_trajectory_gate_accepts_a_parallel_path_and_refuses_a_tilted_one()
     test_yaw_axis_is_the_floor_normal_whatever_the_sensor_mount()
     test_a_short_turn_does_not_vote_with_the_yaw_axis()
