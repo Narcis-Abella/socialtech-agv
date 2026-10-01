@@ -1,0 +1,10 @@
+# Only what differs from the Nav2 AMCL defaults. initial_pose.{x,y,yaw} come from the launch file (pose_eval.py init).
+/**:
+  ros__parameters:
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    global_frame_id: map
+    scan_topic: scan
+    robot_model_type: nav2_amcl::DifferentialMotionModel
+    set_initial_pose: true
+    tf_broadcast: true

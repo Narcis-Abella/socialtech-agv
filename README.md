@@ -11,6 +11,7 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | `docker/` | Layered images built from one `Dockerfile` (`base` → `robot`) |
 | `docker/robot.repos` | Third-party ROS sources, pinned by commit |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
+| `tools/nav_bench/` | Localization bench (stage A): FAST-LIO2 + AMCL over a bag's own map, scored against Voxel-SLAM (see its README) |
 
 ## Jetson setup (once per board)
 
