@@ -1,6 +1,6 @@
 """2D occupancy map (map_server PGM + YAML) from a SLAM point cloud in PLY: finds and levels the floor, then drops floor and ceiling.
 
-  ply_to_map.py <in.ply> <out_prefix> [--res 0.05] [--ceil 1.80] [--floor-band 0.10] [--min-hits 2] [--fill 0.3] [--no-align] [--min-manhattan 0.7] [--min-floor 250] [--max-below 0.10] [--traj poses.tum]
+  ply_to_map.py <in.ply> <out_prefix> [--res 0.05] [--ceil 1.80] [--floor-band 0.10] [--min-hits 2] [--fill 0.3] [--no-align] [--keep-portrait] [--ply-out cloud.ply] [--min-manhattan 0.7] [--min-floor 250] [--max-below 0.10] [--traj poses.tum]
 
 Needs numpy + scipy (host/laptop tool, like floor_tilt.py; scipy is not in the robot image). Input: x, y, z only, so it works for any SLAM.
 1. Floor: 10 cm voxels, PCA normals (k=16), planar voxels with |nz| > 0.9, sequential RANSAC (up to 6 planes); the LOWEST plane is the floor
@@ -16,7 +16,7 @@ Needs numpy + scipy (host/laptop tool, like floor_tilt.py; scipy is not in the r
    No sensor-height prior: a desk 0.60 m under the sensor would pass one.
 4. The cloud is rotated so the floor is horizontal (tilt printed) and heights become metres above the floor (the PLY origin is the sensor). Then the
    map is turned about z so the walls lie on the pixel rows/columns (Manhattan: circular mean of 4*theta of the wall normals; only if the walls are
-   Manhattan enough, --min-manhattan; --no-align to keep the SLAM world's yaw). The transform PLY -> map is written in the YAML as a comment.
+   Manhattan enough, --min-manhattan; --no-align to keep the SLAM world's yaw). The map is then turned another 90 deg if it is taller than wide, so the long side is horizontal (--keep-portrait to skip). The transform PLY -> map is written in the YAML as a comment.
    Heights: < floor-band = floor (marks free), floor-band..ceil = obstacle, > ceil = dropped (ceiling, door frames).
 5. Cells: occupied (0) with >= min-hits obstacle points, else free (254) with floor points, else unknown (205).
 Free space comes only from floor points the sensor actually saw (sparse: --fill closes gaps of about 0.3 m), so large areas the LiDAR never saw the floor of stay unknown.
@@ -42,6 +42,8 @@ MAX_PLANES = 6
 MIN_SEED = 50       # voxels: smallest plane considered while choosing the lowest; --min-floor is checked AFTER the choice
 STRAY_PTS = 5       # points a 1 m cell needs to count for the map extent (walls and floor have hundreds)
 WALL_NZ, WALL_LO, WALL_HI, MIN_WALL = 0.1, 0.2, 1.6, 50  # a wall voxel: |nz| below, metres above the floor between, at least this many voxels to estimate
+LANDSCAPE_RATIO = 1.1  # the map is turned to landscape only if it is this much taller than wide (a square one stays as it is)
+OBST_LO, OBST_HI = 0.10, 1.80  # m above the floor: the obstacle band measured to pick landscape (the rasterize defaults)
 BELOW = 0.3         # m: voxels this far under the chosen plane mean it is not the floor
 TRAJ_MIN_LEN, TRAJ_MIN_SHAPE, TRAJ_MAX_ANGLE = 20.0, 0.2, 1.0  # position vote: m, minor/major singular value, deg
 YAW_POSES, YAW_MIN_RANGE, YAW_MAX_RATIO, YAW_MAX_ANGLE = 150, 90.0, 0.01, 1.0  # orientation vote: poses used, deg turned, eigenvalue ratio, deg
@@ -127,9 +129,9 @@ def manhattan_yaw(n):
     return float(np.degrees(-np.angle(z) / 4)), float(abs(z))
 
 
-def level_to_floor(P, min_floor=250, max_below=0.10, traj=None, align=True, min_manhattan=0.7):
+def level_to_floor(P, min_floor=250, max_below=0.10, traj=None, align=True, min_manhattan=0.7, landscape=True):
     """(Q, info): P rotated so the floor is horizontal and shifted so the floor is z = 0, then (align, if the walls are Manhattan enough) turned about z
-    so the walls lie on the x/y axes. info: tilt_deg, resid_std (m), n_floor, below, traj, yaw_deg (turn applied), manhattan (wall strength),
+    so the walls lie on the x/y axes (landscape: and the longer side of the map is x, turning another 90 deg if needed). info: tilt_deg, resid_std (m), n_floor, below, traj, yaw_deg (turn applied), manhattan (wall strength),
     T (4x4, input frame -> output frame)."""
     V = voxel_centroids(P, VOXEL)
     nrm, planar = pca_normals(V)
@@ -164,6 +166,13 @@ def level_to_floor(P, min_floor=250, max_below=0.10, traj=None, align=True, min_
     T = np.eye(4)
     T[:3, :3] = Rotation.from_euler("z", turn, degrees=True).as_matrix() @ Rl
     T[2, 3] = -d
+    if landscape and align and strength >= min_manhattan:
+        o = P @ T[:3, :3].T + T[:3, 3]
+        o = o[(o[:, 2] > OBST_LO) & (o[:, 2] <= OBST_HI)][:, :2]
+        ex, ey = np.ptp(np.percentile(o, [1, 99], axis=0), axis=0)
+        if ey > LANDSCAPE_RATIO * ex:  # Manhattan fixes the yaw only modulo 90 deg: one more quarter turn keeps the walls on the axes
+            turn += 90.0
+            T[:3, :3] = Rotation.from_euler("z", turn, degrees=True).as_matrix() @ Rl
     return P @ T[:3, :3].T + T[:3, 3], {"tilt_deg": tilt, "resid_std": float(dist[np.abs(dist) < floor_tilt.TOL].std()), "n_floor": n, "below": below,
                                         "traj": checked, "yaw_deg": turn, "manhattan": strength, "T": T}
 
@@ -199,6 +208,11 @@ def rasterize(Q, res, ceil=1.80, floor_band=0.10, min_hits=2, fill=0.30):
     return grid[::-1], origin
 
 
+def write_ply(path, P):
+    """Binary little-endian PLY with x, y, z (float32)."""
+    Path(path).write_bytes(b"ply\nformat binary_little_endian 1.0\nelement vertex %d\nproperty float x\nproperty float y\nproperty float z\nend_header\n" % len(P) + P.astype("<f4").tobytes())
+
+
 def write_map(prefix, grid, res, origin, T=None):
     """PGM + map_server YAML. T (4x4, the PLY's frame -> the map's frame) goes in as a comment: map_server ignores it, you need it to relate waypoints to the SLAM world."""
     prefix = Path(prefix)
@@ -221,15 +235,19 @@ def main(argv):
     ap.add_argument("--min-floor", type=int, default=250, help="voxels (10 cm) the floor plane must have; smallest real floors seen: 193-300")
     ap.add_argument("--max-below", type=float, default=0.10, help="share of the map allowed > 0.3 m below the floor plane")
     ap.add_argument("--no-align", action="store_true", help="keep the SLAM world's yaw (by default the map is turned so the walls lie on the pixel rows/columns)")
+    ap.add_argument("--ply-out", help="also save the levelled, aligned cloud (the PGM's frame) between --floor-band and --ceil, to inspect the map's source points")
+    ap.add_argument("--keep-portrait", action="store_true", help="do not turn a map taller than wide by another 90 deg (the default puts the long side horizontal, better on a screen)")
     ap.add_argument("--min-manhattan", type=float, default=0.7, help="minimum wall strength (0-1) to turn the map; round or diagonal buildings stay as they are. Measured: our 9 maps 0.89-0.99, other datasets 0.33-0.57")
     ap.add_argument("--traj", help="TUM trajectory: cross-check that the floor is parallel to it (skipped if it is short or straight)")
     a = ap.parse_args(argv)
     try:
-        Q, info = level_to_floor(read_ply(a.ply), a.min_floor, a.max_below, None if a.traj is None else read_traj(a.traj), not a.no_align, a.min_manhattan)
+        Q, info = level_to_floor(read_ply(a.ply), a.min_floor, a.max_below, None if a.traj is None else read_traj(a.traj), not a.no_align, a.min_manhattan, not a.keep_portrait)
     except ValueError as e:
         sys.exit(f"error: {e}")
     grid, origin = rasterize(Q, a.res, a.ceil, a.floor_band, a.min_hits, a.fill)
     write_map(a.out_prefix, grid, a.res, origin, info["T"])
+    if a.ply_out:
+        write_ply(a.ply_out, Q[(Q[:, 2] > a.floor_band) & (Q[:, 2] <= a.ceil)])
     n = len(Q)
     print(f"floor tilt {info['tilt_deg']:.2f} deg (levelled), {info['n_floor']} floor voxels, residual {info['resid_std'] * 100:.1f} cm, "
           f"{info['below']:.1%} of the map below it, trajectory check: {info['traj']}; map turned {info['yaw_deg']:+.1f} deg (wall strength {info['manhattan']:.2f}); "

@@ -188,6 +188,39 @@ def test_walls_end_up_on_pixel_rows_and_columns():
     assert info0["yaw_deg"] == 0 and column_sharpness(aligned) > 3 * column_sharpness(skewed), (column_sharpness(aligned), column_sharpness(skewed))
 
 
+def extent(Q):
+    """(x, y) range of the obstacle points (0.10-1.80 m), 1st-99th percentile."""
+    o = Q[(Q[:, 2] > 0.1) & (Q[:, 2] <= 1.8)]
+    return np.ptp(np.percentile(o[:, :2], [1, 99], axis=0), axis=0)
+
+
+def test_the_long_side_ends_up_horizontal():
+    for yaw in (0.0, 90.0, 90.0 + 23.0, -90.0 + 7.0):  # the 10 x 8 m room as SLAM saw it along x or along y, and skewed
+        P = room(yaw=yaw)
+        Q, info = ply_to_map.level_to_floor(P)
+        ex, ey = extent(Q)
+        assert ex > 9 and ey < 9, (yaw, ex, ey)  # long side along x, walls still on the axes
+        T = info["T"]
+        assert np.allclose(P @ T[:3, :3].T + T[:3, 3], Q, atol=1e-9)
+
+
+def test_a_square_room_is_not_turned_and_portrait_can_be_kept():
+    P = room(tilt=0.0)
+    P[:, 1] *= 1.25  # 10 x 10 m
+    _, info = ply_to_map.level_to_floor(P)
+    assert abs(info["yaw_deg"]) < 1.0, info
+    Q, _ = ply_to_map.level_to_floor(room(yaw=90.0), landscape=False)
+    ex, ey = extent(Q)
+    assert ey > 9 and ex < 9, (ex, ey)
+
+
+def test_no_landscape_turn_when_the_map_is_not_aligned():
+    Q, info = ply_to_map.level_to_floor(room(yaw=90.0), align=False)
+    assert info["yaw_deg"] == 0
+    ex, ey = extent(Q)
+    assert ey > ex  # the SLAM world's yaw is left alone
+
+
 def test_a_round_room_is_not_turned():
     _, info = ply_to_map.level_to_floor(round_room())
     assert info["yaw_deg"] == 0 and info["manhattan"] < 0.5, info
@@ -259,6 +292,17 @@ def test_main_runs_end_to_end_with_an_optional_tum_trajectory():
         assert (tmp / "room2.pgm").exists()
 
 
+def test_ply_out_is_the_levelled_aligned_cloud_without_floor_and_ceiling():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        write_ply(tmp / "room.ply", room(yaw=90.0))
+        ply_to_map.main([str(tmp / "room.ply"), str(tmp / "room"), "--ply-out", str(tmp / "out.ply")])
+        Q = ply_to_map.read_ply(tmp / "out.ply")
+        assert len(Q) > 1000 and Q[:, 2].min() > 0.10 and Q[:, 2].max() <= 1.80, (len(Q), Q[:, 2].min(), Q[:, 2].max())  # floor band and ceiling gone
+        ex, ey = extent(Q)
+        assert ex > 9 and ey < 9, (ex, ey)  # same frame as the PGM: levelled, aligned, landscape
+
+
 if __name__ == "__main__":
     test_read_ply_roundtrip_with_and_without_intensity()
     test_level_to_floor_measures_tilt_and_puts_the_floor_at_zero()
@@ -270,6 +314,9 @@ if __name__ == "__main__":
     test_a_rough_floor_is_refused()
     test_manhattan_yaw_recovers_the_rotation_and_reports_how_manhattan_it_is()
     test_walls_end_up_on_pixel_rows_and_columns()
+    test_the_long_side_ends_up_horizontal()
+    test_a_square_room_is_not_turned_and_portrait_can_be_kept()
+    test_no_landscape_turn_when_the_map_is_not_aligned()
     test_a_round_room_is_not_turned()
     test_transform_maps_the_input_cloud_onto_the_output()
     test_trajectory_gate_accepts_a_parallel_path_and_refuses_a_tilted_one()
@@ -280,4 +327,5 @@ if __name__ == "__main__":
     test_isolated_outliers_do_not_inflate_the_grid()
     test_write_map_makes_pgm_and_map_server_yaml()
     test_main_runs_end_to_end_with_an_optional_tum_trajectory()
+    test_ply_out_is_the_levelled_aligned_cloud_without_floor_and_ceiling()
     print("ok")
