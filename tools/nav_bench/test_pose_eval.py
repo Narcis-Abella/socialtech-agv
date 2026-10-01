@@ -146,14 +146,17 @@ def test_reference_inside_walls_is_flagged():
         assert r["ref_on_occupied_pct"] == 100.0 and r["ref_on_free_pct"] == 0.0, r
 
 
-def test_run_bench_a_only_passes_flags_the_subcommands_accept():
-    script = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_bench_a.sh")).read()
+def test_run_scripts_only_pass_flags_the_pose_eval_subcommands_accept():
+    here = os.path.dirname(os.path.abspath(__file__))
+    scripts = sorted(f for f in os.listdir(here) if f.startswith("run_") and f.endswith(".sh"))
+    assert {"run_bench_a.sh", "run_amcl_only.sh"} <= set(scripts), scripts
     subs = pe.parser()._subparsers._group_actions[0].choices
-    calls = re.findall(r"pose_eval\.py\"? (init|level|check|report)([^\n|]*)", script)
-    assert {c for c, _ in calls} == {"init", "level", "report"}, calls
-    for cmd, rest in calls:
-        for flag in re.findall(r"(--[a-z-]+)", rest):
-            assert flag in subs[cmd]._option_string_actions, f"run_bench_a.sh passes {flag} to `pose_eval.py {cmd}`, which does not take it"
+    for name in scripts:
+        calls = re.findall(r"pose_eval\.py\"? (init|level|check|report)([^\n|]*)", open(os.path.join(here, name)).read())
+        assert calls, f"{name} never calls pose_eval.py"
+        for cmd, rest in calls:
+            for flag in re.findall(r"(--[a-z-]+)", rest):
+                assert flag in subs[cmd]._option_string_actions, f"{name} passes {flag} to `pose_eval.py {cmd}`, which does not take it"
 
 
 if __name__ == "__main__":

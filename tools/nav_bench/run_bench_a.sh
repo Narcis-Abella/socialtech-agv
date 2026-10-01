@@ -4,6 +4,7 @@
 # usage: run_bench_a.sh <bag_dir> <map.yaml> <alidarState.txt> <sensor_height_m> <out_dir>
 # env:   PLAY_RATE (1.0)  DIST (1.0 m) and DYAW (20 deg): how far the initial pose is pushed  REF_DT (0 s)  PLAY_ARGS (e.g. "--playback-duration 60")
 #        LIDAR (/livox/lidar)  IMU (/livox/imu)  ROS_DOMAIN_ID (79: GLIM 11, FAST-LIO2/iG-LIO 77, Voxel-SLAM 78)
+#        RECORD=1: also record /scan /tf /tf_static /Odometry to <out_dir>/inputs, the input of run_amcl_only.sh
 set -eo pipefail
 bag=$1; map=$2; ref=$3; h=$4; out=$5
 tools=$(dirname "$(readlink -f "$0")")
@@ -23,10 +24,16 @@ ros2 launch "$tools/launch/bench_a.launch.py" fastlio_params:="$out/fastlio.yaml
 launch=$!
 python3 "$tools/record_poses.py" /amcl_pose amcl "$out/amcl.tum" > "$out/rec_amcl.log" 2>&1 & rec_a=$!
 python3 "$tools/record_poses.py" /Odometry odom "$out/odom.tum" > "$out/rec_odom.log" 2>&1 & rec_o=$!
+if [ -n "${RECORD:-}" ]; then   # python resets SIGINT (ignored in background jobs) before exec, so the recorder can close the bag cleanly
+  python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp(sys.argv[1], sys.argv[1:])' \
+    ros2 bag record -o "$out/inputs" -s mcap /scan /tf /tf_static /Odometry > "$out/record.log" 2>&1 &
+  bagrec=$!
+fi
 sleep 15   # lifecycle bring-up (map_server, AMCL) before the first scan
 # shellcheck disable=SC2086
 ros2 bag play "$bag" --clock --rate "${PLAY_RATE:-1.0}" ${PLAY_ARGS:-} > "$out/play.log" 2>&1
 wait "$rec_a" "$rec_o" || true   # each recorder ends itself after 15 s without messages
+if [ -n "${bagrec:-}" ]; then kill -INT "$bagrec" 2>/dev/null || true; wait "$bagrec" 2>/dev/null || true; fi
 # background jobs of a non-interactive shell start with SIGINT ignored, so ask the launch to stop with SIGTERM and force it after 20 s
 kill -TERM "$launch" 2>/dev/null || true
 for _ in $(seq 20); do kill -0 "$launch" 2>/dev/null || break; sleep 1; done
