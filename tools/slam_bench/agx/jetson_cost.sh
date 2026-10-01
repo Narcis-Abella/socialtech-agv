@@ -6,6 +6,8 @@ cd ~
 name=$1; bag=$2; rate=$3; lidar=${4:-/livox/lidar}; imu=${5:-/livox/imu}
 out=~/bench_out; mkdir -p $out
 if [ -n "$(docker ps -q)" ]; then echo "abort: a container is running" | tee -a $out/cost.log; exit 1; fi
+if [ ! -d ~/rosbags/$bag ]; then echo "abort $name: no bag ~/rosbags/$bag" | tee -a $out/cost.log; exit 1; fi
+if [ -e $out/voxelslam_$name ]; then echo "abort $name: $out/voxelslam_$name already exists (rename it: the node refuses to write into it)" | tee -a $out/cost.log; exit 1; fi
 tegrastats --interval 1000 > $out/mon_$name.log & tp=$!
 ( while true; do echo "$(date +%s) $(docker stats --no-stream --format '{{.CPUPerc}} {{.MemUsage}}' 2>/dev/null)" >> $out/dstats_$name.log; sleep 5; done ) & dp=$!
 s=$(date +%s)
