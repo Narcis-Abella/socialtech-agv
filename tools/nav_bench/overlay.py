@@ -13,7 +13,7 @@ def value(v):
 
 
 def overlay(pairs):
-    out = ["/**:", "  ros__parameters:"]
+    out = ["/**:", "  ros__parameters:", "    use_sim_time: true"]  # never an empty block: it is a YAML null and rcl fails to parse it
     for p in pairs:
         k, v = p.split("=", 1)
         out.append(f"    {k}: {json.dumps(value(v))}")  # JSON scalars are valid YAML and keep int / float / bool / string apart

@@ -9,9 +9,10 @@ import summarize
 
 def test_overlay_keeps_types_and_is_a_ros_parameter_yaml():
     y = overlay.overlay(["alpha1=0.05", "max_beams=120", "update_min_d=1.0", "do_beamskip=false", "robot_model_type=nav2_amcl::DifferentialMotionModel"])
-    assert y == ('/**:\n  ros__parameters:\n    alpha1: 0.05\n    max_beams: 120\n    update_min_d: 1.0\n    do_beamskip: false\n'
+    assert y == ('/**:\n  ros__parameters:\n    use_sim_time: true\n    alpha1: 0.05\n    max_beams: 120\n    update_min_d: 1.0\n    do_beamskip: false\n'
                  '    robot_model_type: "nav2_amcl::DifferentialMotionModel"\n'), y
-    assert overlay.overlay([]) == "/**:\n  ros__parameters:\n"  # no overrides: an empty parameter block, still valid for the launch file
+    # no overrides: `ros__parameters:` with nothing under it is a YAML null that rcl refuses to parse ("No value at line 2"), so a real parameter is always emitted
+    assert overlay.overlay([]) == "/**:\n  ros__parameters:\n    use_sim_time: true\n"
 
 
 def test_summarize_makes_one_row_per_run_and_marks_a_run_without_report():
