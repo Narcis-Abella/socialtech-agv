@@ -58,7 +58,7 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 
 - `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
 - `tools/slam_bench/ply_to_map.py`: levelled, wall-aligned 2D map (`map_server` PGM + YAML) from a PLY of any SLAM; `--ply-out` saves the cloud it was made from; `--min-component N` frees occupied specks smaller than N cells.
-- `tools/slam_bench/map_visibility.py`: frees the unknown cells of such a map that the LiDAR beams crossed (needs the bag and the SLAM poses).
+- `tools/slam_bench/map_visibility.py`: the same map cleaned with the raw scans: drops cloud points the beams mostly pass through (thin or dim specks) and frees the unknown cells the beams crossed (needs the bag and the SLAM poses).
 
 ```bash
 # GLIM map dump (glim_rosbag -p dump_path:=...) -> PLY, same points as offline_viewer's Export Points.

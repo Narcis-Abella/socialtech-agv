@@ -1,7 +1,4 @@
 """Checks map_visibility.py on a synthetic corridor whose beams are cast analytically. Run: python3 test_map_visibility.py"""
-import tempfile
-from pathlib import Path
-
 import numpy as np
 from scipy.spatial.transform import Rotation
 
@@ -118,12 +115,48 @@ def test_pose_at_interpolates_between_poses_and_refuses_gaps():
     assert mv.pose_at(poses, -1.0) is None and mv.pose_at(poses, 9.0) is None
 
 
-def test_read_map_returns_what_write_map_wrote():
-    g = np.random.default_rng(1).choice([0, 205, 254], (6, 9)).astype(np.uint8)
-    with tempfile.TemporaryDirectory() as tmp:
-        pm.write_map(Path(tmp) / "m", g, 0.05, (-1.5, 2.0), T)
-        g2, res, origin, T2 = mv.read_map(Path(tmp) / "m.yaml")
-    assert (g2 == g).all() and res == 0.05 and tuple(origin) == (-1.5, 2.0) and np.allclose(T2, T)
+PHANTOM = np.random.default_rng(3).uniform([4.85, 0.35, 0.8], [5.15, 0.65, 1.1], (300, 3))   # map frame: 30 x 30 cm in the middle of the corridor where nothing is
+
+
+def world_cloud(scans, extra=None):
+    """The SLAM cloud in the SLAM world: every scan point, plus points given in the map frame that no beam ever hit. Also returns the count of real points and Q (the map-frame cloud)."""
+    Rm, tm = T[:3, :3], T[:3, 3]
+    P = np.vstack([pts @ Rm + t for pts, _, t in scans])
+    n = len(P)
+    if extra is not None:
+        P = np.vstack([P, (extra - tm) @ Rm])
+    return P, n, P @ Rm.T + tm
+
+
+def test_the_ghost_rule_needs_enough_observations_and_a_hit_ratio_under_the_threshold():
+    hit, passed = np.array([0, 1, 5, 0]), np.array([20, 9, 5, 5])      # observations 20, 10, 10, 5; ratios 0, 0.1, 0.5, 0
+    assert mv.ghost_voxels(hit, passed, 0.10).tolist() == [True, False, False, False]
+
+
+def test_points_the_beams_pass_through_are_flagged_and_the_walls_are_not():
+    scans, _ = drive(planes())
+    P, n, Q = world_cloud(scans, PHANTOM)
+    ghost = mv.ghost_points(P, Q, scans, extr=(0, 0, 0))
+    assert ghost[n:].all()                              # the phantom: every beam went through it
+    assert ghost[:n].mean() < 0.02, ghost[:n].mean()    # the real surfaces: the beams end there
+
+
+def test_voxels_seen_in_few_scans_are_not_flagged():
+    scans, _ = drive(planes())
+    P, n, Q = world_cloud(scans, PHANTOM)
+    assert not mv.ghost_points(P, Q, scans[:3], extr=(0, 0, 0))[n:].any()   # 3 scans = at most 3 observations of a voxel
+
+
+def test_build_map_drops_the_phantom_and_frees_the_unknown_without_touching_the_rest():
+    scans, traj = drive(planes())
+    P, n, Q = world_cloud(scans, PHANTOM)
+    args = (P, Q, T, lambda: scans, traj)
+    raw, _ = mv.build_map(*args, min_ratio=0, fill=False, extr=(0, 0, 0))
+    clean, _ = mv.build_map(*args, fill=False, extr=(0, 0, 0))
+    filled, _ = mv.build_map(*args, extr=(0, 0, 0))
+    assert (raw == pm.OCC).sum() - (clean == pm.OCC).sum() >= 20       # the 30 x 30 cm phantom is about 36 cells
+    assert (filled == pm.UNK).sum() < (clean == pm.UNK).sum()
+    assert ((filled == pm.OCC) == (clean == pm.OCC)).all()
 
 
 if __name__ == "__main__":
@@ -133,5 +166,8 @@ if __name__ == "__main__":
     test_pass_evidence_is_only_required_at_the_heights_that_were_observed()
     test_only_cells_connected_to_known_free_space_are_kept()
     test_pose_at_interpolates_between_poses_and_refuses_gaps()
-    test_read_map_returns_what_write_map_wrote()
+    test_the_ghost_rule_needs_enough_observations_and_a_hit_ratio_under_the_threshold()
+    test_points_the_beams_pass_through_are_flagged_and_the_walls_are_not()
+    test_voxels_seen_in_few_scans_are_not_flagged()
+    test_build_map_drops_the_phantom_and_frees_the_unknown_without_touching_the_rest()
     print("ok")
