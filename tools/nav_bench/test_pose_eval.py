@@ -80,6 +80,16 @@ def test_jumps_while_converging_are_not_counted_as_map_odom_jumps():
     assert r["converged"] and r["map_odom_jumps"] == 0 and r["map_odom_jumps_before_convergence"] == 8, r
 
 
+def test_a_small_yaw_wobble_far_from_the_odom_origin_is_not_a_jump():
+    t = np.arange(0, 60, 0.5)
+    ref = np.c_[0.5 * t, np.zeros_like(t), np.zeros_like(t)]  # drives 30 m away from the odom origin
+    wobble = np.radians(0.5) * np.where(np.arange(len(t)) % 2 == 0, 1.0, -1.0)  # position exact, yaw +-0.5 deg every update
+    est = ref + np.c_[np.zeros_like(t), np.zeros_like(t), wobble]
+    r = pe.evaluate(t, est, ref.copy(), ref)
+    # map->odom itself moves ~26 cm per update at 30 m (lever arm of the yaw), but at the ROBOT the correction is 1 deg and ~1 cm
+    assert r["map_odom_jumps"] == 0 and r["correction_at_robot_cm"]["p95"] < 5, r
+
+
 def test_never_converging_run_is_reported_as_such():
     t = np.arange(0, 20, 0.5)
     ref = np.zeros((len(t), 3))

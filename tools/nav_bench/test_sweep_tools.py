@@ -19,11 +19,11 @@ def test_summarize_makes_one_row_per_run_and_marks_a_run_without_report():
     with tempfile.TemporaryDirectory() as d:
         os.makedirs(f"{d}/a"), os.makedirs(f"{d}/b")
         json.dump({"converged": True, "convergence_s": 31.0, "pos_err_m": {"median": 0.14, "p95": 0.28, "max": 0.31}, "yaw_err_deg": {"median": 2.5, "p95": 7.5, "max": 9.0},
-                   "losses": 0, "map_odom_jumps": 44, "amcl_std_xy_m": {"median": 0.79, "max": 1.06}}, open(f"{d}/a/report.json", "w"))
+                   "losses": 0, "map_odom_jumps": 44, "correction_at_robot_cm": {"median": 3.0, "p95": 9.0}, "amcl_std_xy_m": {"median": 0.79, "max": 1.06}}, open(f"{d}/a/report.json", "w"))
         open(f"{d}/a/launch.log", "w").write("x\n[amcl-1] [WARN] Message Filter dropping message: frame 'base_footprint'\nx\n[amcl-1] [WARN] Message Filter dropping message: frame 'base_footprint'\n")
         t = summarize.table(d).splitlines()
         assert t[0].split()[:3] == ["run", "conv_s", "pos_med"] and t[0].split()[-1] == "drops", t[0]
-        assert t[1].split() == ["a", "31", "0.14", "0.28", "0.31", "7.5", "0", "44", "0.79", "2"], t[1]
+        assert t[1].split() == ["a", "31", "0.14", "0.28", "0.31", "7.5", "0", "44", "9.0", "0.79", "2"], t[1]
         assert t[2].split() == ["b", "NO", "REPORT"], t[2]
 
 

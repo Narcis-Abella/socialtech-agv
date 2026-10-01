@@ -153,9 +153,15 @@ def evaluate(t, est, odom, ref, conv_pos=CONV_POS, conv_yaw_deg=CONV_YAW_DEG, co
     conv = next((i for i in range(len(t)) if t[-1] - t[i] >= conv_hold_s and good[(t >= t[i]) & (t <= t[i] + conv_hold_s)].all()), None)
     after = slice(conv, None) if conv is not None else slice(0, 0)
     bad = runs(perr[after] > loss_pos, t[after])
+    # the correction AMCL applies AT THE ROBOT at each update: where the previous map->odom would have put the base now vs where AMCL puts it. (The step of
+    # map->odom itself grows with the distance from the odom origin: a yaw change of 0.75 deg is 26 cm of translation at 20 m although the robot barely moves.)
     mo = map_to_odom(est, odom)
-    dmo = np.diff(mo, axis=0)
-    jumps = (np.hypot(dmo[:, 0], dmo[:, 1]) > jump_pos) | (np.degrees(np.abs(wrap(dmo[:, 2]))) > jump_yaw_deg)
+    c, s_ = np.cos(mo[:-1, 2]), np.sin(mo[:-1, 2])
+    pred_x = mo[:-1, 0] + c * odom[1:, 0] - s_ * odom[1:, 1]
+    pred_y = mo[:-1, 1] + s_ * odom[1:, 0] + c * odom[1:, 1]
+    dpos = np.hypot(est[1:, 0] - pred_x, est[1:, 1] - pred_y)
+    dyaw = np.degrees(np.abs(wrap(est[1:, 2] - (odom[1:, 2] + mo[:-1, 2]))))
+    jumps = (dpos > jump_pos) | (dyaw > jump_yaw_deg)
     a = slice(conv, None) if conv is not None else slice(0, None)  # error statistics: after convergence when it happened, else the whole run
     return {"samples": int(len(t)), "duration_s": float(t[-1] - t[0]),
             "converged": conv is not None, "convergence_s": None if conv is None else float(t[conv] - t[0]),
@@ -165,6 +171,7 @@ def evaluate(t, est, odom, ref, conv_pos=CONV_POS, conv_yaw_deg=CONV_YAW_DEG, co
             # a correction while AMCL is still converging is not a jump: count the steps before convergence apart (all steps when it never converged)
             "map_odom_jumps": int(jumps[conv or 0:].sum()) if conv is not None else int(jumps.sum()),
             "map_odom_jumps_before_convergence": int(jumps[:conv].sum()) if conv is not None else 0,
+            "correction_at_robot_cm": {"median": float(np.median(dpos[conv or 0:]) * 100), "p95": float(np.percentile(dpos[conv or 0:], 95) * 100)},
             "initial_pos_err_m": float(perr[0])}
 
 
