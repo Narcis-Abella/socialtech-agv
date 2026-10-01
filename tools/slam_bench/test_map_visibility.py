@@ -1,4 +1,7 @@
 """Checks map_visibility.py on a synthetic corridor whose beams are cast analytically. Run: python3 test_map_visibility.py"""
+import tempfile
+from pathlib import Path
+
 import numpy as np
 from scipy.spatial.transform import Rotation
 
@@ -82,6 +85,12 @@ def test_a_cell_the_beams_keep_hitting_is_not_freed():
     assert g[cell_at(3.0, 0.5)] == pm.FREE       # the same distance from the path, nothing there
 
 
+def occupied_pixels(pgm):
+    b = Path(pgm).read_bytes()
+    w, h = map(int, b.split(b"\n")[1].split())
+    return int((np.frombuffer(b[-w * h:], np.uint8) == pm.OCC).sum())
+
+
 def test_a_few_stray_hits_are_tolerated_but_a_real_share_is_not():
     passed = np.array([[100, 100, 100], [100, 100, 100]])
     hit = np.array([[1, 0, 0], [4, 4, 0]])       # 1 of 301 observations vs 8 of 308
@@ -151,12 +160,45 @@ def test_build_map_drops_the_phantom_and_frees_the_unknown_without_touching_the_
     scans, traj = drive(planes())
     P, n, Q = world_cloud(scans, PHANTOM)
     args = (P, Q, T, lambda: scans, traj)
-    raw, _ = mv.build_map(*args, min_ratio=0, fill=False, extr=(0, 0, 0))
-    clean, _ = mv.build_map(*args, fill=False, extr=(0, 0, 0))
-    filled, _ = mv.build_map(*args, extr=(0, 0, 0))
+    raw, _, _ = mv.build_map(*args, min_ratio=0, fill=False, extr=(0, 0, 0))
+    clean, org, Qk = mv.build_map(*args, fill=False, extr=(0, 0, 0))
+    filled, _, _ = mv.build_map(*args, extr=(0, 0, 0))
     assert (raw == pm.OCC).sum() - (clean == pm.OCC).sum() >= 20       # the 30 x 30 cm phantom is about 36 cells
     assert (filled == pm.UNK).sum() < (clean == pm.UNK).sum()
     assert ((filled == pm.OCC) == (clean == pm.OCC)).all()
+    pts = mv.occupied_points(Qk, clean, org)               # the cloud of the map: no phantom point is left in it
+    assert len(pts) > 1000 and not ((np.abs(pts[:, 0] - 5.0) < 0.2) & (np.abs(pts[:, 1] - 0.5) < 0.2) & (pts[:, 2] > 0.7) & (pts[:, 2] < 1.2)).any()
+
+
+def test_occupied_points_are_the_band_points_over_occupied_cells():
+    grid = np.full((4, 6), pm.FREE, np.uint8)
+    grid[0, 1] = pm.OCC                                    # row 0 = max y: the cell x 0.05..0.10, y 0.15..0.20
+    Q = np.array([[0.07, 0.17, 0.5],                       # over the occupied cell, in the band
+                  [0.07, 0.17, 0.05],                      # same cell, below the band (floor)
+                  [0.07, 0.17, 2.0],                       # same cell, above the band (ceiling)
+                  [0.12, 0.17, 0.5],                       # in the band over a free cell
+                  [9.0, 9.0, 0.5]])                        # outside the grid
+    assert mv.occupied_points(Q, grid, (0.0, 0.0), 0.05).tolist() == [[0.07, 0.17, 0.5]]
+
+
+def test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag():
+    scans, traj = drive(planes(pillar=True))
+    P, n, Q = world_cloud(scans, PHANTOM)
+    poses = np.c_[np.arange(len(traj)) * 0.1, traj, np.tile([0, 0, 0, 1.0], (len(traj), 1))]
+    read_bag, mv.bag_scans = mv.bag_scans, lambda bag, poses, topic: scans         # a synthetic bag
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            pm.write_ply(tmp / "world.ply", P)
+            np.savetxt(tmp / "poses.txt", poses)
+            args = ["bag", str(tmp / "poses.txt"), str(tmp / "world.ply")]
+            mv.main(args + [str(tmp / "a"), "--ply-out", str(tmp / "a.ply")])
+            mv.main(args + [str(tmp / "b"), "--min-ratio", "0", "--no-fill"])
+            assert (tmp / "a.pgm").exists() and (tmp / "a.yaml").exists()
+            assert occupied_pixels(tmp / "b.pgm") > occupied_pixels(tmp / "a.pgm")         # the ghosts are gone from a
+            assert len(pm.read_ply(tmp / "a.ply")) > 1000
+    finally:
+        mv.bag_scans = read_bag
 
 
 if __name__ == "__main__":
@@ -170,4 +212,6 @@ if __name__ == "__main__":
     test_points_the_beams_pass_through_are_flagged_and_the_walls_are_not()
     test_voxels_seen_in_few_scans_are_not_flagged()
     test_build_map_drops_the_phantom_and_frees_the_unknown_without_touching_the_rest()
+    test_occupied_points_are_the_band_points_over_occupied_cells()
+    test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag()
     print("ok")

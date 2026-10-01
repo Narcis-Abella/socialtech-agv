@@ -1,6 +1,6 @@
 """2D map of a SLAM cloud cleaned with the raw scans: drops points beams pass through, and frees unknown cells beams crossed.
 
-  map_visibility.py <bag> <poses.txt> <world.ply> <out_prefix> [--topic /livox/lidar] [--min-ratio 0.10] [--min-component 10] [--no-fill]
+  map_visibility.py <bag> <poses.txt> <world.ply> <out_prefix> [--topic /livox/lidar] [--min-ratio 0.10] [--min-component 10] [--no-fill] [--ply-out cloud.ply]
 
 Needs numpy + scipy (+ rosbags to read the bag). Inputs: the ROS 2 bag of the mapping run (sensor_msgs/PointCloud2), the SLAM poses (t x y z qx qy qz qw, the IMU pose at the END of each
 scan, as Voxel-SLAM's alidarState.txt) and the SLAM cloud in the same world (x y z PLY). The cloud is levelled and aligned like ply_to_map does; the bag is read twice.
@@ -123,14 +123,25 @@ def fill_unknown(grid, res, origin, T, scans, traj, extr=EXTR, heights=HEIGHTS):
 
 
 def build_map(P, Q, T, scans, traj, res=0.05, min_ratio=MIN_RATIO, min_component=MIN_COMPONENT, fill=True, extr=EXTR):
-    """(grid, origin) of the cleaned map. P: SLAM cloud in the PLY frame; Q = the same points levelled and aligned by ply_to_map (T: P -> Q); scans: zero-argument function returning
-    the scans (the bag is read twice); traj: (n, 3) path in the PLY frame. min_ratio 0 skips the ghost step."""
+    """(grid, origin, Q) of the cleaned map; Q is the cloud without the ghosts. P: SLAM cloud in the PLY frame; Q = the same points levelled and aligned by ply_to_map (T: P -> Q);
+    scans: zero-argument function returning the scans (the bag is read twice); traj: (n, 3) path in the PLY frame. min_ratio 0 skips the ghost step."""
     if min_ratio > 0:
         Q = Q[~ghost_points(P, Q, scans(), min_ratio, extr)]
     grid, origin = pm.rasterize(Q, res, min_component=min_component)
     if fill:
         grid = fill_unknown(grid, res, origin, T, scans(), traj, extr)
-    return grid, origin
+    return grid, origin, Q
+
+
+def occupied_points(Q, grid, origin, res=0.05):
+    """The points of Q in the obstacle band that lie over an occupied cell of grid (row 0 = max y): the cloud the map shows."""
+    Q = Q[(Q[:, 2] > pm.OBST_LO) & (Q[:, 2] <= pm.OBST_HI)]
+    c = np.floor((Q[:, 0] - origin[0]) / res).astype(int)
+    r = grid.shape[0] - 1 - np.floor((Q[:, 1] - origin[1]) / res).astype(int)
+    ok = (r >= 0) & (r < grid.shape[0]) & (c >= 0) & (c < grid.shape[1])
+    keep = np.zeros(len(Q), bool)
+    keep[ok] = grid[r[ok], c[ok]] == pm.OCC
+    return Q[keep]
 
 
 def pose_at(poses, t):
@@ -170,6 +181,7 @@ def main(argv):
     ap.add_argument("--min-ratio", type=float, default=MIN_RATIO, help="hit ratio under which a voxel of 10 cm is a ghost (0 = skip the step)")
     ap.add_argument("--min-component", type=int, default=MIN_COMPONENT, help="cells: occupied islands smaller than this are freed (0 = off)")
     ap.add_argument("--no-fill", action="store_true", help="skip freeing the unknown cells the beams crossed")
+    ap.add_argument("--ply-out", help="also save the cloud the map shows (obstacle band, over occupied cells, in the map's frame), to inspect it")
     a = ap.parse_args(argv)
     P = pm.read_ply(a.world_ply)
     try:
@@ -177,8 +189,10 @@ def main(argv):
     except ValueError as e:
         sys.exit(f"error: {e}")
     poses = np.loadtxt(a.poses, usecols=range(8))
-    grid, origin = build_map(P, Q, info["T"], lambda: bag_scans(a.bag, poses, a.topic), poses[:, 1:4], min_ratio=a.min_ratio, min_component=a.min_component, fill=not a.no_fill)
+    grid, origin, Qk = build_map(P, Q, info["T"], lambda: bag_scans(a.bag, poses, a.topic), poses[:, 1:4], min_ratio=a.min_ratio, min_component=a.min_component, fill=not a.no_fill)
     pm.write_map(a.out_prefix, grid, 0.05, origin, info["T"])
+    if a.ply_out:
+        pm.write_ply(a.ply_out, occupied_points(Qk, grid, origin))
     print(f"{grid.shape[1]}x{grid.shape[0]} cells: {(grid == pm.OCC).mean():.1%} occupied, {(grid == pm.FREE).mean():.1%} free, {(grid == pm.UNK).mean():.1%} unknown")
 
 
