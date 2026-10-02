@@ -96,3 +96,36 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       python3-numpy python3-scipy
+
+# Offline mapping (`docker build --target mapper`): Voxel-SLAM + GTSAM + the tools/slam_bench pipeline (make_map.sh). A separate stage: the robot image
+# runs the navigation stack and carries neither GTSAM (with Boost) nor Voxel-SLAM. Without --target, the last stage is the one that gets built.
+FROM robot AS mapper
+# GTSAM 4.3.0 from koide3's PPA, the build Voxel-SLAM was validated against. The PPA republishes debs under the same version, so apt reads a fixed commit of its
+# `ppa` branch (signed InRelease -> every deb's SHA256); to bump, move the commit. The repo and its key are removed after the install so later apt runs cannot move it.
+ARG KOIDE3_PPA_COMMIT=a21da6b120456c1b9a1ce15480b622c8ccbaa3ff
+ADD --chmod=644 --checksum=sha256:08c6f6bff0bf9b991398c693d44a16871932bc7de969848413e3066dc1acc77e \
+    https://raw.githubusercontent.com/koide3/ppa/${KOIDE3_PPA_COMMIT}/ubuntu2404/KEY.gpg /etc/apt/keyrings/koide3.asc
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    echo "deb [signed-by=/etc/apt/keyrings/koide3.asc]" \
+         "https://raw.githubusercontent.com/koide3/ppa/${KOIDE3_PPA_COMMIT}/ubuntu2404 ./" \
+      > /etc/apt/sources.list.d/koide3.list \
+ && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      libgtsam-notbb-dev=4.3.0 libmetis-dev python3-numpy python3-scipy python3-pip \
+ && rm /etc/apt/sources.list.d/koide3.list /etc/apt/keyrings/koide3.asc \
+ && ldconfig
+# map_visibility.py reads the bag with rosbags (mcap and sqlite3); the version it was written against.
+RUN pip3 install --no-cache-dir --break-system-packages rosbags==0.11.5
+
+WORKDIR /ws
+COPY mapper.repos ./
+ARG COLCON_WORKERS=2
+RUN python3 fetch_repos.py mapper.repos src_mapper \
+ && . /opt/ros/jazzy/setup.sh && . /opt/socialtech/setup.sh \
+ && colcon --log-base /tmp/log_mapper build --base-paths src_mapper --packages-select voxel_slam \
+      --merge-install --install-base /opt/socialtech --build-base /tmp/build_mapper \
+      --parallel-workers "${COLCON_WORKERS}" --cmake-args -DCMAKE_BUILD_TYPE=Release \
+ && ldd -r /opt/socialtech/lib/voxel_slam/voxelslam > /tmp/ldd.txt \
+ && if grep -E 'not found|undefined symbol' /tmp/ldd.txt; then exit 1; fi \
+ && rm /tmp/ldd.txt
