@@ -183,6 +183,9 @@ def test_run_scripts_only_pass_flags_the_pose_eval_subcommands_accept():
     for name in scripts:
         calls = re.findall(r"pose_eval\.py\"? (initpose|init|level|check|report)\b([^\n|]*)", open(os.path.join(here, name)).read())
         assert calls, f"{name} never calls pose_eval.py"
+        text = open(os.path.join(here, name)).read()
+        if "set_initial_pose=false" in text:  # it switches the parameter off: it must publish the pose itself, or AMCL never starts
+            assert any(c == "initpose" for c, _ in calls) and "/initialpose" in text, f"{name} turns set_initial_pose off but never publishes /initialpose"
         for cmd, rest in calls:
             for flag in re.findall(r"(--[a-z-]+)", rest):
                 assert flag in subs[cmd]._option_string_actions, f"{name} passes {flag} to `pose_eval.py {cmd}`, which does not take it"
