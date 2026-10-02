@@ -192,6 +192,9 @@ def test_run_scripts_only_pass_flags_the_pose_eval_subcommands_accept():
         calls = re.findall(r"pose_eval\.py\"? (initpose|init|level|check|report)\b([^\n|]*)", open(os.path.join(here, name)).read())
         assert calls, f"{name} never calls pose_eval.py"
         text = open(os.path.join(here, name)).read()
+        for line in text.splitlines():  # a bare `ros2 topic pub -w` waits for a subscriber forever and hangs the whole run (and every later one in the same container)
+            if "ros2 topic pub" in line and not line.strip().startswith("#"):
+                assert "timeout " in line, f"{name}: `ros2 topic pub` without a timeout: {line.strip()[:80]}"
         if "set_initial_pose=false" in text:  # it switches the parameter off: it must publish the pose itself, or AMCL never starts
             assert any(c == "initpose" for c, _ in calls) and "/initialpose" in text, f"{name} turns set_initial_pose off but never publishes /initialpose"
         for cmd, rest in calls:

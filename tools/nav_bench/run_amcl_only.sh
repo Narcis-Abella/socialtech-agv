@@ -18,21 +18,23 @@ python3 "$tools/overlay.py" "$@" ${INIT_STD:+set_initial_pose=false} > "$out/ove
 read -r x y yaw < <(python3 "$tools/pose_eval.py" init --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}" ${WIN_T0:+--at-time $WIN_T0})
 echo "initial pose (map frame): $x $y $yaw; overrides: $*" | tee "$out/initial_pose.txt"
 
-ros2 launch "$tools/launch/amcl_only.launch.py" map:="$map" init_x:="$x" init_y:="$y" init_yaw:="$yaw" overrides:="$out/overrides.yaml" > "$out/launch.log" 2>&1 &
+setsid ros2 launch "$tools/launch/amcl_only.launch.py" map:="$map" init_x:="$x" init_y:="$y" init_yaw:="$yaw" overrides:="$out/overrides.yaml" > "$out/launch.log" 2>&1 &
 launch=$!
 python3 "$tools/record_poses.py" /amcl_pose amcl "$out/amcl.tum" --idle 0 > "$out/rec_amcl.log" 2>&1 & rec_a=$!
 python3 "$tools/record_poses.py" /Odometry odom "$out/odom.tum" --idle 0 > "$out/rec_odom.log" 2>&1 & rec_o=$!
 sleep 8   # lifecycle bring-up
 if [ -n "${INIT_STD:-}" ]; then
   msg=$(python3 "$tools/pose_eval.py" initpose --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}" --std "$INIT_STD" --yaw-std "${INIT_YAW_STD:-15}" ${WIN_T0:+--at-time $WIN_T0})
-  ros2 topic pub --once -w 1 /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$msg" > "$out/initpose.log" 2>&1
+  timeout 30 ros2 topic pub --once -w 1 /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$msg" > "$out/initpose.log" 2>&1 \
+    || { kill -KILL -- "-$launch" 2>/dev/null; echo "FAIL: /initialpose not delivered in 30 s (AMCL never became active; see $out/launch.log)"; exit 1; }
 fi
 # shellcheck disable=SC2086
 ros2 bag play "$bag" --clock --rate "${RATE:-5}" --topics /scan /tf /Odometry ${WIN_START:+--start-offset $WIN_START} ${WIN_DUR:+--playback-duration $WIN_DUR} > "$out/play.log" 2>&1
 sleep 3; kill -TERM "$rec_a" "$rec_o" 2>/dev/null || true; wait "$rec_a" "$rec_o" 2>/dev/null || true   # see run_bench_a.sh: AMCL is silent while the robot is still
-kill -TERM "$launch" 2>/dev/null || true   # background jobs ignore SIGINT; see run_bench_a.sh
+# the launch runs in its own session (setsid): signal the whole group, or a KILLed launch leaves its nodes behind to clash with the next run on the same ROS domain
+kill -TERM -- "-$launch" 2>/dev/null || true   # background jobs ignore SIGINT; see run_bench_a.sh
 for _ in $(seq 20); do kill -0 "$launch" 2>/dev/null || break; sleep 1; done
-kill -KILL "$launch" 2>/dev/null || true
+kill -KILL -- "-$launch" 2>/dev/null || true
 
 [ -s "$out/amcl.tum" ] || { echo "FAIL: AMCL published no pose (see $out/launch.log)"; exit 1; }
 python3 "$tools/pose_eval.py" report --est "$out/amcl.tum" --odom "$out/odom.tum" --ref "$ref" --map "$map" > "$out/report.json"
