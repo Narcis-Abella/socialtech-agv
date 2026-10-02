@@ -199,9 +199,9 @@ def level_quat(ref_path, T):
     return mat_to_quat(T[:3, :3] @ quat_to_mat(quat[0]))
 
 
-def initial_pose(ref_xyyaw, dist=1.0, dyaw_deg=20.0):
-    """First reference pose pushed `dist` m along its heading and turned `dyaw_deg`: AMCL must pull itself back."""
-    x, y, yaw = ref_xyyaw[0]
+def initial_pose(ref_xyyaw, dist=1.0, dyaw_deg=20.0, t_ref=None, at_time=None):
+    """Reference pose (the first one, or the one at at_time with t_ref) pushed `dist` m along its heading and turned `dyaw_deg`: AMCL must pull itself back."""
+    x, y, yaw = ref_xyyaw[0] if at_time is None else interp(t_ref, ref_xyyaw, np.array([at_time]))[0]
     return x + dist * np.cos(yaw), y + dist * np.sin(yaw), float(wrap(yaw + np.radians(dyaw_deg)))
 
 
@@ -240,11 +240,13 @@ def parser():
     i.add_argument("--map", required=True)
     i.add_argument("--dist", type=float, default=1.0)
     i.add_argument("--dyaw", type=float, default=20.0)
+    i.add_argument("--at-time", type=float, default=None, help="reference time (header stamp, epoch s) of the pose to start from; default the first sample")
     ip = sub.add_parser("initpose")
     ip.add_argument("--ref", required=True)
     ip.add_argument("--map", required=True)
     ip.add_argument("--dist", type=float, default=1.0)
     ip.add_argument("--dyaw", type=float, default=20.0)
+    ip.add_argument("--at-time", type=float, default=None)
     ip.add_argument("--std", type=float, default=0.5)
     ip.add_argument("--yaw-std", type=float, default=15.0)
     lv = sub.add_parser("level")
@@ -267,15 +269,15 @@ def parser():
 if __name__ == "__main__":
     a = parser().parse_args()
     if a.cmd == "initpose":
-        _, ref = reference_map(a.ref, read_map_yaml(a.map)["T_map_world"])
-        print(initpose_json(initial_pose(ref, a.dist, a.dyaw), a.std, a.yaw_std))
+        t_ref, ref = reference_map(a.ref, read_map_yaml(a.map)["T_map_world"])
+        print(initpose_json(initial_pose(ref, a.dist, a.dyaw, t_ref, a.at_time), a.std, a.yaw_std))
     elif a.cmd == "level":
         print(*level_quat(a.ref, read_map_yaml(a.map)["T_map_world"]))
     elif a.cmd == "check":
         print(json.dumps(ref_vs_map(a.ref, a.map, a.ref_dt), indent=2))
     elif a.cmd == "init":
-        _, ref = reference_map(a.ref, read_map_yaml(a.map)["T_map_world"])
-        print(*initial_pose(ref, a.dist, a.dyaw))
+        t_ref, ref = reference_map(a.ref, read_map_yaml(a.map)["T_map_world"])
+        print(*initial_pose(ref, a.dist, a.dyaw, t_ref, a.at_time))
     else:
         print(json.dumps(report(a.est, a.odom, a.ref, a.map, a.ref_dt, **{k: getattr(a, k) for k in (
             "conv_pos", "conv_yaw_deg", "conv_hold_s", "loss_pos", "loss_s", "jump_pos", "jump_yaw_deg")}), indent=2))

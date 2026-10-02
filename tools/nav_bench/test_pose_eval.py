@@ -121,6 +121,14 @@ def test_level_rotation_puts_the_floor_normal_on_z_and_roundtrips_as_a_quaternio
         assert np.allclose(pe.quat_to_mat(pe.mat_to_quat(R)), R), R
 
 
+def test_initial_pose_can_be_taken_at_any_time_of_the_reference():
+    t = 1.7e9 + np.arange(0, 30, 0.1)
+    ref = np.c_[0.5 * (t - t[0]), np.zeros_like(t), np.zeros_like(t)]  # straight line at 0.5 m/s
+    x, y, yaw = pe.initial_pose(ref, 1.0, 0.0, t_ref=t, at_time=t[0] + 10.0)
+    assert abs(x - (5.0 + 1.0)) < 1e-9 and abs(y) < 1e-9 and yaw == 0.0  # pose at 10 s is x = 5, pushed 1 m along the heading
+    assert pe.initial_pose(ref, 0.0, 0.0)[0] == 0.0  # default: the first sample, as before
+
+
 def test_initpose_message_carries_the_pose_and_an_explicit_covariance():
     msg = json.loads(pe.initpose_json((1.0, 2.0, np.pi / 2), 0.5, 15.0))
     assert msg["header"]["frame_id"] == "map" and msg["pose"]["pose"]["position"]["x"] == 1.0 and msg["pose"]["pose"]["position"]["y"] == 2.0
