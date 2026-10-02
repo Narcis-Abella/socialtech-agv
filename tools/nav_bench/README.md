@@ -8,7 +8,7 @@ away on purpose so convergence is measured, not just tracking.
 |---|---|
 | `run_bench_a.sh` | One run, inside the `robot` image |
 | `launch/bench_a.launch.py`, `config/` | FAST-LIO2, levelled odom frame, planar `base_footprint`, `pointcloud_to_laserscan`, `map_server`, AMCL |
-| `planar_odom.py` | `odom -> base_footprint` TF: x, y, yaw of the body, z = body z - sensor height, no roll/pitch |
+| `planar_odom.py` | Python reference of the `odom -> base_footprint` maths (x, y, yaw of the body, z = body z - sensor height, no roll/pitch); the bench runs the C++ node `docker/ros/planar_odom`, checked against it by `test_planar_odom_node.py` (inside the image) |
 | `record_poses.py` | `/Odometry` and `/amcl_pose` to text files |
 | `pose_eval.py` | `init`, `level`, `check` and `report` (numpy only); tests: `test_pose_eval.py`, `test_planar_odom.py` |
 | `scan_vs_map.py` | Share of `/scan` endpoints on occupied map cells, at the reference pose: checks the z cut, sensor height and frames |

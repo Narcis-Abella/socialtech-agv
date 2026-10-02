@@ -2,9 +2,10 @@
 ros2 launch bench_a.launch.py fastlio_params:=F map:=M.yaml init_x:=X init_y:=Y init_yaw:=R sensor_height:=H level_qx:=.. level_qy:=.. level_qz:=.. level_qw:=.. [overrides:=extra.yaml]
 (level_q* = pose_eval.py level: the rotation odom <- camera_init that levels FAST-LIO2's world frame to the floor of the PGM)"""
 import os
+from typing import List
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration as LC
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -22,13 +23,10 @@ def generate_launch_description():
     args.append(DeclareLaunchArgument("overrides", default_value=os.path.join(TOOLS, "config/no_overrides.yaml")))
     return LaunchDescription(args + [
         Node(package="fast_lio", executable="fastlio_mapping", parameters=[LC("fastlio_params"), SIM]),
-        # FAST-LIO2's world frame (camera_init) is the IMU frame at start, not gravity-aligned: odom is that frame levelled to the PGM's floor
-        Node(package="tf2_ros", executable="static_transform_publisher", parameters=[SIM],
-             arguments=["--frame-id", "odom", "--child-frame-id", "camera_init",
-                        "--qx", LC("level_qx"), "--qy", LC("level_qy"), "--qz", LC("level_qz"), "--qw", LC("level_qw")]),
-        ExecuteProcess(cmd=["python3", os.path.join(TOOLS, "planar_odom.py"), "--ros-args", "-p", "use_sim_time:=true",
-                            "-p", ["sensor_height:=", LC("sensor_height")],
-                            "-p", ["level:=[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"]], output="screen"),
+        # FAST-LIO2's world frame (camera_init) is the IMU frame at start, not gravity-aligned: odom is that frame levelled to the PGM's floor.
+        # The node publishes that static odom -> camera_init TF and the planar odom -> base_footprint one (docker/ros/planar_odom)
+        Node(package="planar_odom", executable="planar_odom", parameters=[SIM, {"sensor_height": number("sensor_height"), "level": ParameterValue(
+            ["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])}]),
         Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", parameters=[os.path.join(TOOLS, "config/scan.yaml"), SIM],
              remappings=[("cloud_in", "/cloud_registered_body"), ("scan", "/scan")]),
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}, SIM]),

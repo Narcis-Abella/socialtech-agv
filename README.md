@@ -11,6 +11,7 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | `docker/` | Layered images built from one `Dockerfile` (`base` → `robot`) |
 | `docker/robot.repos` | Third-party ROS sources, pinned by commit |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
+| `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
 | `tools/nav_bench/` | Localization bench (stage A): FAST-LIO2 + AMCL over a bag's own map, scored against Voxel-SLAM (see its README) |
 
 ## Jetson setup (once per board)
@@ -58,6 +59,7 @@ Shells opened with `docker exec -it <container> bash` get the same ROS environme
 |---|---|
 | Fix so upstream code builds/runs | `docker/patches/<repo>/*.patch` |
 | Our configuration (params, IPs, launch args) | our own bringup package (planned), never upstream configs |
+| Our own nodes | `docker/ros/<pkg>` (ament package; a Python reference + test next to the bench if it replaces one) |
 | New logic in upstream code | a fork, pinned in `docker/robot.repos` |
 
 ## Contributing

@@ -84,6 +84,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ros-jazzy-rosbag2-storage-mcap
 
+# Our own packages (docker/ros/<pkg>): built with the third-party ones.
+COPY ros/ src/
+
 # build/ and log/ live in cache mounts so they never land in the image. (A refetch gives sources
 # new mtimes, so it still rebuilds everything.) Few parallel packages: each already compiles with
 # -j$(nproc), and PCL-heavy packages side by side can exhaust RAM on an 8 GB Orin Nano.
