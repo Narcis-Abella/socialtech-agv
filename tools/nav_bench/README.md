@@ -11,6 +11,8 @@ away on purpose so convergence is measured, not just tracking.
 | `planar_odom.py` | Python reference of the `odom -> base_footprint` maths (x, y, yaw of the body, z = body z - sensor height, no roll/pitch); the bench runs the C++ node `docker/ros/planar_odom`, checked against it by `test_planar_odom_node.py` (inside the image) |
 | `record_poses.py` | `/Odometry` and `/amcl_pose` to text files |
 | `pose_eval.py` | `init`, `level`, `check` and `report` (numpy only); tests: `test_pose_eval.py`, `test_planar_odom.py` |
+| `config/scan_outdoor.yaml` | Outdoor variant of the scan band: 0.10 to 30 m (no ceiling to remove, the floor bound stays). Use with `SCAN_PARAMS=` / `scan_params:=` and a map rasterized with `ply_to_map --ceil 30`. In the one outdoor test so far (Koide, handheld) AMCL did not converge even on a Voxel-SLAM map of the same bag: outdoor is out of scope |
+| `live/` | Live view: replays a bag paused with the stack on the board and `rviz_laptop.sh` on another machine (`run_live.sh`, `control.sh`); needs `DDS_IFACE` and `PEER`. `OVERLAY=<colcon ws>` adds packages the image lacks |
 | `scan_vs_map.py` | Share of `/scan` endpoints on occupied map cells, at the reference pose: checks the z cut, sensor height and frames |
 
 ## Inputs per bag

@@ -13,6 +13,7 @@ tools=$(dirname "$(readlink -f "$0")")
 source /ros_env.sh
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-79}
 mkdir -p "$out"
+[ -n "${OVERLAY:-}" ] && source "$OVERLAY/install/setup.bash"   # optional colcon overlay (e.g. a FAST-LIO2 variant built outside the image: -v <ws>:/ov:ro, OVERLAY=/ov)
 # shellcheck disable=SC2086
 python3 "$tools/overlay.py" ${AMCL_OVERRIDES:-} ${INIT_STD:+set_initial_pose=false} > "$out/overrides.yaml"
 

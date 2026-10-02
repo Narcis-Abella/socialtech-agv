@@ -20,6 +20,7 @@ def number(name):
 
 def generate_launch_description():
     args = [DeclareLaunchArgument(n) for n in ("fastlio_params", "map", "init_x", "init_y", "init_yaw", "sensor_height", "level_qx", "level_qy", "level_qz", "level_qw")]
+    args.append(DeclareLaunchArgument("scan_params", default_value=os.path.join(TOOLS, "config/scan.yaml")))
     args.append(DeclareLaunchArgument("overrides", default_value=os.path.join(TOOLS, "config/no_overrides.yaml")))
     return LaunchDescription(args + [
         Node(package="fast_lio", executable="fastlio_mapping", parameters=[LC("fastlio_params"), SIM]),
@@ -27,7 +28,7 @@ def generate_launch_description():
         # The node publishes that static odom -> camera_init TF and the planar odom -> base_footprint one (docker/ros/planar_odom)
         Node(package="planar_odom", executable="planar_odom", parameters=[SIM, {"sensor_height": number("sensor_height"), "level": ParameterValue(
             ["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])}]),
-        Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", parameters=[os.path.join(TOOLS, "config/scan.yaml"), SIM],
+        Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", parameters=[LC("scan_params"), SIM],
              remappings=[("cloud_in", "/cloud_registered_body"), ("scan", "/scan")]),
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}, SIM]),
         Node(package="nav2_amcl", executable="amcl", parameters=[
