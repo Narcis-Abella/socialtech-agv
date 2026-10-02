@@ -1,0 +1,109 @@
+Cut FAST-LIO2's resident memory without changing its maths.
+1. The three 100000-point scratch clouds (normvec, laserCloudOri, corr_normvect) were preallocated (14 MB) and h_share_model indexed laserCloudOri/corr_normvect
+   after clear(), i.e. past size() (undefined behaviour that only worked because the capacity was there). Now they start empty and h_share_model resize()s
+   them to feats_down_size, which is also the bound the code already assumed.
+2. Drop pcl_io (PCD saving: the /map_save service, whose only data source is the map_en accumulation, and a dead block at exit). pcl_io is the only
+   library that pulls VTK (~10 MB of file-backed pages) into the node. The service now answers success=false.
+Base: hku-mars/FAST_LIO a4743b0 (ROS2 branch) with 0001-build-with-cxx17.patch applied.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index a200f2c..5e014bb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -78,7 +78,7 @@ set(dependencies
+ 
+ # Thirdparty libraries
+ find_package(Eigen3 REQUIRED)
+-find_package(PCL REQUIRED COMPONENTS common io)
++find_package(PCL REQUIRED COMPONENTS common filters)
+ 
+ message(Eigen: ${EIGEN3_INCLUDE_DIR})
+ message(STATUS "PCL: ${PCL_INCLUDE_DIRS}")
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+index e5d9950..d5f450b 100644
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -52,7 +52,6 @@
+ #include <pcl/point_cloud.h>
+ #include <pcl/point_types.h>
+ #include <pcl/filters/voxel_grid.h>
+-#include <pcl/io/pcd_io.h>
+ #include <sensor_msgs/msg/point_cloud2.hpp>
+ #include <sensor_msgs/msg/imu.hpp>
+ #include <std_srvs/srv/trigger.hpp>
+@@ -112,9 +111,9 @@ PointCloudXYZI::Ptr featsFromMap(new PointCloudXYZI());
+ PointCloudXYZI::Ptr feats_undistort(new PointCloudXYZI());
+ PointCloudXYZI::Ptr feats_down_body(new PointCloudXYZI());
+ PointCloudXYZI::Ptr feats_down_world(new PointCloudXYZI());
+-PointCloudXYZI::Ptr normvec(new PointCloudXYZI(100000, 1));
+-PointCloudXYZI::Ptr laserCloudOri(new PointCloudXYZI(100000, 1));
+-PointCloudXYZI::Ptr corr_normvect(new PointCloudXYZI(100000, 1));
++PointCloudXYZI::Ptr normvec(new PointCloudXYZI());
++PointCloudXYZI::Ptr laserCloudOri(new PointCloudXYZI());
++PointCloudXYZI::Ptr corr_normvect(new PointCloudXYZI());
+ PointCloudXYZI::Ptr _featsArray;
+ 
+ pcl::VoxelGrid<PointType> downSizeFilterSurf;
+@@ -606,12 +605,6 @@ void publish_map(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub
+     // pubLaserCloudMap->publish(laserCloudMap);
+ }
+ 
+-void save_to_pcd()
+-{
+-    pcl::PCDWriter pcd_writer;
+-    pcd_writer.writeBinary(map_file_path, *pcl_wait_pub);
+-}
+-
+ template<typename T>
+ void set_posestamp(T & out)
+ {
+@@ -677,8 +670,8 @@ void publish_path(rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pubPath)
+ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_data)
+ {
+     double match_start = omp_get_wtime();
+-    laserCloudOri->clear(); 
+-    corr_normvect->clear(); 
++    laserCloudOri->resize(feats_down_size);
++    corr_normvect->resize(feats_down_size);
+     total_residual = 0.0; 
+ 
+     /** closest surface search and residual computation **/
+@@ -1115,17 +1108,8 @@ private:
+     void map_save_callback(std_srvs::srv::Trigger::Request::ConstSharedPtr req, std_srvs::srv::Trigger::Response::SharedPtr res)
+     {
+         RCLCPP_INFO(this->get_logger(), "Saving map to %s...", map_file_path.c_str());
+-        if (pcd_save_en)
+-        {
+-            save_to_pcd();
+-            res->success = true;
+-            res->message = "Map saved.";
+-        }
+-        else
+-        {
+-            res->success = false;
+-            res->message = "Map save disabled.";
+-        }
++        res->success = false;
++        res->message = "PCD saving is not built in (pcl_io pulls in VTK).";
+     }
+ 
+ private:
+@@ -1164,18 +1148,6 @@ int main(int argc, char** argv)
+ 
+     if (rclcpp::ok())
+         rclcpp::shutdown();
+-    /**************** save map ****************/
+-    /* 1. make sure you have enough memories
+-    /* 2. pcd save will largely influence the real-time performences **/
+-    if (pcl_wait_save->size() > 0 && pcd_save_en)
+-    {
+-        string file_name = string("scans.pcd");
+-        string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
+-        pcl::PCDWriter pcd_writer;
+-        cout << "current scan saved to /PCD/" << file_name<<endl;
+-        pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+-    }
+-
+     if (runtime_pos_log)
+     {
+         vector<double> t, s_vec, s_vec2, s_vec3, s_vec4, s_vec5, s_vec6, s_vec7;    
