@@ -67,6 +67,11 @@ RUN python3 fetch_repos.py robot.repos src \
  && for p in patches/*/*.patch; do \
       repo=$(basename "$(dirname "$p")"); echo "applying $p"; \
       git -C "src/$repo" apply "/ws/$p" || exit 1; \
+    done \
+ # Submodule fixes (git apply cannot reach into a submodule from the parent): patches/<repo>/<submodule path>/*.patch.
+ && for p in patches/*/*/*/*.patch; do \
+      rel=${p#patches/}; echo "applying $p"; \
+      git -C "src/$(dirname "$rel")" apply "/ws/$p" || exit 1; \
     done
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \

@@ -17,8 +17,8 @@ mkdir -p "$out"
 python3 "$tools/overlay.py" ${AMCL_OVERRIDES:-} ${INIT_STD:+set_initial_pose=false} > "$out/overrides.yaml"
 
 sed -e "s|lid_topic:.*|lid_topic: \"${LIDAR:-/livox/lidar}\"|" -e "s|imu_topic:.*|imu_topic: \"${IMU:-/livox/imu}\"|" \
-    -e "s|pcd_save_en:.*|pcd_save_en: false|" -e "s|map_en:.*|map_en: false|" -e "s|path_en:.*|path_en: false|" \
-    "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" > "$out/fastlio.yaml"
+    -e "s|pcd_save_en:.*|pcd_save_en: false|" -e "s|map_en:.*|map_en: false|" -e "s|path_en:.*|path_en: false|" -e "s|^\( *\)gyr_cov:.*|\1gyr_cov: 1.0|" -e "s|^\( *\)acc_cov:.*|\1acc_cov: 1.0|" \
+    "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" > "$out/fastlio.yaml"   # gyr_cov/acc_cov 1.0 instead of upstream 0.1: stops FAST-LIO2 degrading in featureless corridors (M3DGR Corridor01)
 [ -n "${FASTLIO_SED:-}" ] && sed -i -f "$FASTLIO_SED" "$out/fastlio.yaml"   # optional FAST-LIO2 parameter overrides, one sed expression per line (experiments)
 read -r x y yaw < <(python3 "$tools/pose_eval.py" init --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}")
 read -r qx qy qz qw < <(python3 "$tools/pose_eval.py" level --ref "$ref" --map "$map")
