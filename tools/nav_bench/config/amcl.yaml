@@ -1,4 +1,4 @@
-# Only what differs from the Nav2 AMCL defaults. initial_pose.{x,y,yaw} come from the launch file (pose_eval.py init).
+# Only what differs from the Nav2 AMCL defaults. Tuned values: see README "AMCL tuning" (eco01 + eco03 bags, 6 initial offsets). initial_pose.{x,y,yaw} come from the launch file (pose_eval.py init).
 /**:
   ros__parameters:
     base_frame_id: base_footprint
@@ -8,3 +8,17 @@
     robot_model_type: nav2_amcl::DifferentialMotionModel
     set_initial_pose: true
     tf_broadcast: true
+    # LIO odometry is far better than the wheel-odometry noise the Nav2 defaults (alpha 0.2) assume
+    alpha1: 0.01
+    alpha2: 0.01
+    alpha3: 0.01
+    alpha4: 0.01
+    update_min_d: 0.05
+    update_min_a: 0.05
+    z_hit: 0.95
+    z_rand: 0.05
+    max_beams: 180
+    sigma_hit: 0.1
+    # fixed particle count: ~13 % of one core on the AGX at 1x; alpha <= 0.005 converged late (100-243 s) from large offsets even with 5000
+    min_particles: 2000
+    max_particles: 2000

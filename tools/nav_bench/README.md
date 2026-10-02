@@ -30,9 +30,24 @@ Docker creates the output as root: one new `/out/<run>` per run. Own `ROS_DOMAIN
 
 ## Tests
 ```bash
-cd tools/nav_bench && python3 -B test_pose_eval.py && python3 -B test_planar_odom.py   # needs numpy; -B: no stale .pyc
+cd tools/nav_bench && for t in test_*.py; do python3 -B $t || break; done   # needs numpy; -B: no stale .pyc
 ```
 
 ## Frames
 FAST-LIO2's world frame is the IMU frame at start, **not** gravity-aligned. `odom` is that frame rotated by `R_L` (`pose_eval.py level`) so the PGM's floor is
 z = 0 and the axes follow the walls. The z cut of `config/scan.yaml` (0.10 - 1.80 m) is the obstacle band of `ply_to_map.py` (`--floor-band`, `--ceil`): keep them in sync.
+
+## AMCL tuning
+`config/amcl.yaml` holds the tuned values; Nav2 defaults (alpha 0.2, `update_min_d` 0.25 m, 500-2000 particles) lose the pose from a 1 m / 20 deg offset. Measured on the
+`eco_-1_01` and `eco_-1_03` bags, each on its own map, 3 initial offsets each (1 m/20 deg, -1/-20, 2/40), replay 1x on an AGX Orin with `jetson_clocks`:
+| | Before tuning (alpha 0.02, 500-2000 particles) | Now (alpha 0.01, 2000 fixed) |
+|---|---|---|
+| Convergence | 3-16 s | 3-28 s |
+| Yaw error p95 | 1.3-1.9 deg | 1.0-1.2 deg |
+| Position error median / p95 / max | 3-5 cm / 7-10 cm / 23-30 cm | same |
+| Correction applied per update, p95 | 3.3-4.3 cm | 1.8-2.6 cm |
+| CPU, whole stack (FAST-LIO2 + AMCL + scan), % of ONE core | 23 (p95 32) | 31 (p95 45) |
+| RSS | ~300 MB | ~300 MB |
+Notes: alpha 0.005 was rejected, from large offsets it converged late (100-243 s) with 3000-5000 particles too. 5000 particles cost 35 % of a core for AMCL alone.
+Position error is at the floor of the reference and the 5 cm map: more particles only improve yaw. Measured on the AGX only (NX/Nano cost not measured); stage B (a bag over another
+bag's map) not run. Pose jitter (`map->odom` zig-zag, ~50 % sign reversals between consecutive corrections) is not judged offline: check it live in rviz2.
