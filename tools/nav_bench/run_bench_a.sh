@@ -6,7 +6,7 @@
 #        LIDAR (/livox/lidar)  IMU (/livox/imu)  ROS_DOMAIN_ID (79: GLIM 11, FAST-LIO2/iG-LIO 77, Voxel-SLAM 78)
 #        AMCL_OVERRIDES="alpha1=0.02 ..." (AMCL parameters over config/amcl.yaml)  INIT_STD (m) and INIT_YAW_STD (deg, 15): publish /initialpose with that covariance
 #        instead of the set_initial_pose parameter (which gives AMCL a ZERO covariance)  COST=1: CPU and RAM per process to <out_dir>/cost.{csv,txt}
-#        RECORD=1: also record /scan /tf /tf_static /Odometry to <out_dir>/inputs, the input of run_amcl_only.sh
+#        FASTLIO_SED=<file>: sed script applied to the generated fastlio.yaml (key names are unique there; check the diff)  RECORD=1: also record /scan /tf /tf_static /Odometry to <out_dir>/inputs, the input of run_amcl_only.sh
 set -eo pipefail
 bag=$1; map=$2; ref=$3; h=$4; out=$5
 tools=$(dirname "$(readlink -f "$0")")
@@ -19,6 +19,7 @@ python3 "$tools/overlay.py" ${AMCL_OVERRIDES:-} ${INIT_STD:+set_initial_pose=fal
 sed -e "s|lid_topic:.*|lid_topic: \"${LIDAR:-/livox/lidar}\"|" -e "s|imu_topic:.*|imu_topic: \"${IMU:-/livox/imu}\"|" \
     -e "s|pcd_save_en:.*|pcd_save_en: false|" -e "s|map_en:.*|map_en: false|" -e "s|path_en:.*|path_en: false|" \
     "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" > "$out/fastlio.yaml"
+[ -n "${FASTLIO_SED:-}" ] && sed -i -f "$FASTLIO_SED" "$out/fastlio.yaml"   # optional FAST-LIO2 parameter overrides, one sed expression per line (experiments)
 read -r x y yaw < <(python3 "$tools/pose_eval.py" init --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}")
 read -r qx qy qz qw < <(python3 "$tools/pose_eval.py" level --ref "$ref" --map "$map")
 echo "initial pose (map frame): $x $y $yaw; level quaternion: $qx $qy $qz $qw" | tee "$out/initial_pose.txt"
