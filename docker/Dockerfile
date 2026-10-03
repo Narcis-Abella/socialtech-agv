@@ -89,3 +89,10 @@ RUN --mount=type=cache,target=/ws/build \
  && colcon build --merge-install --install-base /opt/socialtech \
       --parallel-workers "${COLCON_WORKERS}" \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy
+
+# tools/glim_metrics.py. After the colcon build so this layer never invalidates it.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      python3-numpy python3-scipy
