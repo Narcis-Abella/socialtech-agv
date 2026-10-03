@@ -33,7 +33,7 @@ docker run --rm --network host -v <bags>:/bags:ro -v <maps>:/out -v $PWD/tools/s
   /tools/make_map.sh /bags/<bag_dir> /out/<name>
 ```
 
-`LIDAR` and `IMU` set the topics, `CEIL=30` makes an outdoor map, `PLAY_RATE` sets the replay speed (1.0). Voxel-SLAM follows the timestamps of the data, not the clock, so the speed should not change the result as long as no message is lost: keep the board otherwise idle while mapping (Elevator01 splits its sessions differently at 3x). Pose counts of repeated runs of the same bag differed by up to 12 % on eco01 while several jobs shared a board; the cause is not isolated, so compare `report.json`, not the PGM byte for byte. When the robot ends where it started (our bags do), check `end_to_start_m`: 1-2 m is normal.
+`LIDAR` and `IMU` set the topics, `CEIL=30` makes an outdoor map, `PLAY_RATE` sets the replay speed (1.0). Voxel-SLAM follows the timestamps of the data, not the clock, so the speed should not change the result as long as no message is lost: keep the board otherwise idle while mapping (Elevator01 splits its sessions differently at 3x). On an idle Orin NX, eco01 at 0.5x and at 1x gave byte-identical poses and the same PGM; with several jobs on one AGX, pose counts of the same bag varied by up to 12 %, probably from lost messages. Check `report.json` (resets, `end_to_start_m`) before trusting a map. When the robot ends where it started (our bags do), check `end_to_start_m`: 1-2 m is normal.
 
 Rules learned the hard way:
 - One `ROS_DOMAIN_ID` per method (GLIM 11, FAST-LIO2 / iG-LIO 77, Voxel-SLAM 78). GLIM also listens to live topics while replaying a bag; a second player with the same topic names corrupts its input.
