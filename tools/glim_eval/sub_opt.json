@@ -1,0 +1,8 @@
+{
+  "config_sub_mapping_gpu.json": {
+    "sub_mapping": {
+      "enable_optimization": true,
+      "create_between_factors": true
+    }
+  }
+}

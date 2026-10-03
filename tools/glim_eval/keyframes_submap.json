@@ -1,0 +1,12 @@
+{
+  "config_sub_mapping_gpu.json": {
+    "sub_mapping": {
+      "enable_optimization": true,
+      "create_between_factors": true,
+      "keyframe_voxel_resolution": 0.1,
+      "submap_downsample_resolution": 0.15,
+      "submap_voxel_resolution": 0.1,
+      "submap_target_num_points": 150000
+    }
+  }
+}

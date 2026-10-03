@@ -1,0 +1,7 @@
+{
+  "config_ros.json": {
+    "glim_ros": {
+      "extension_modules": ["libmemory_monitor.so", "libgravity_estimator.so"]
+    }
+  }
+}
