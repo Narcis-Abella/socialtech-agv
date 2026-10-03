@@ -47,6 +47,7 @@ On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=
 |---|---|
 | `base` | ROS 2 Jazzy, CycloneDDS, CUDA 13.2 runtime (must match the host L4T driver) |
 | `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP |
+| `mapper` | `robot` + GTSAM 4.3.0, Voxel-SLAM and `rosbags`: offline mapping (`tools/slam_bench/make_map.sh`). Build it with `--target mapper`; without `--target` the last stage in the file is built |
 
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
 Without `DDS_IFACE`, CycloneDDS picks a network interface arbitrarily and other machines may not see the robot's nodes.
@@ -59,6 +60,7 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 - `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
 - `tools/slam_bench/ply_to_map.py`: levelled, wall-aligned 2D map (`map_server` PGM + YAML) from a PLY of any SLAM; `--ply-out` saves the cloud it was made from; `--min-component N` frees occupied specks smaller than N cells.
 - `tools/slam_bench/map_visibility.py`: the same map cleaned with the raw scans: drops cloud points the beams mostly pass through (thin or dim specks) and frees the unknown cells the beams crossed (needs the bag, as PointCloud2 or Livox CustomMsg, and the SLAM poses).
+- `tools/slam_bench/make_map.sh`: bag to 2D map in one command inside the `mapper` image (Voxel-SLAM, `vs_to_ply.py`, `ply_to_map.py`, `map_visibility.py`); see `tools/slam_bench/README.md`.
 
 ```bash
 # GLIM map dump (glim_rosbag -p dump_path:=...) -> PLY, same points as offline_viewer's Export Points.
