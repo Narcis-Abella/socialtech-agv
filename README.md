@@ -11,6 +11,8 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | `docker/` | Layered images built from one `Dockerfile` (`base` → `robot`) |
 | `docker/robot.repos` | Third-party ROS sources, pinned by commit |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
+| `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
+| `tools/nav_bench/` | Localization bench (stage A): FAST-LIO2 + AMCL over a bag's own map, scored against Voxel-SLAM (see its README) |
 
 ## Jetson setup (once per board)
 
@@ -45,7 +47,7 @@ On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=
 | Stage | Contents |
 |---|---|
 | `base` | ROS 2 Jazzy, CycloneDDS, CUDA 13.2 runtime (must match the host L4T driver) |
-| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP |
+| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, Nav2 AMCL + map_server, pointcloud_to_laserscan |
 
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
 Without `DDS_IFACE`, CycloneDDS picks a network interface arbitrarily and other machines may not see the robot's nodes.
@@ -57,7 +59,12 @@ Shells opened with `docker exec -it <container> bash` get the same ROS environme
 |---|---|
 | Fix so upstream code builds/runs | `docker/patches/<repo>/*.patch` |
 | Our configuration (params, IPs, launch args) | our own bringup package (planned), never upstream configs |
+| Our own nodes | `docker/ros/<pkg>` (ament package; a Python reference + test next to the bench if it replaces one) |
 | New logic in upstream code | a fork, pinned in `docker/robot.repos` |
+
+## License
+
+GNU General Public License, version 2 only (`GPL-2.0-only`): see `LICENSE`. The patches in `docker/patches/` modify GPL-2.0 code (FAST-LIO2, ikd-Tree) and are covered by it. The sources `robot.repos` fetches at build time keep their own licenses.
 
 ## Contributing
 

@@ -67,6 +67,11 @@ RUN python3 fetch_repos.py robot.repos src \
  && for p in patches/*/*.patch; do \
       repo=$(basename "$(dirname "$p")"); echo "applying $p"; \
       git -C "src/$repo" apply "/ws/$p" || exit 1; \
+    done \
+ # Submodule fixes (git apply cannot reach into a submodule from the parent): patches/<repo>/<submodule path>/*.patch.
+ && for p in patches/*/*/*/*.patch; do \
+      rel=${p#patches/}; echo "applying $p"; \
+      git -C "src/$(dirname "$rel")" apply "/ws/$p" || exit 1; \
     done
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -79,6 +84,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ros-jazzy-rosbag2-storage-mcap
 
+# Our own packages (docker/ros/<pkg>): built with the third-party ones.
+COPY ros/ src/
+
 # build/ and log/ live in cache mounts so they never land in the image. (A refetch gives sources
 # new mtimes, so it still rebuilds everything.) Few parallel packages: each already compiles with
 # -j$(nproc), and PCL-heavy packages side by side can exhaust RAM on an 8 GB Orin Nano.
@@ -89,3 +97,10 @@ RUN --mount=type=cache,target=/ws/build \
  && colcon build --merge-install --install-base /opt/socialtech \
       --parallel-workers "${COLCON_WORKERS}" \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy
+
+# Navigation bench (tools/nav_bench): localization and scan conversion. After the colcon build so a change here does not rebuild the workspace.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ros-jazzy-nav2-amcl ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan
