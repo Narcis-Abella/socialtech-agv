@@ -21,7 +21,9 @@ host/robot.conf
 *.bag
 /maps/
 *.pcd
+*.ply
 !src/**/*.pcd
+!src/**/*.ply
 
 # Python
 .venv/
