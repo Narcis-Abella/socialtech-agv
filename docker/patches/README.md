@@ -20,3 +20,5 @@ git diff > ../patches/<repo>/NNNN-short-description.patch
 
 Put a short "why" and the base commit at the top of the file (text before `diff --git` is ignored).
 When bumping a commit in `robot.repos`, re-check each patch for that repo — drop it if upstream fixed it.
+
+License: a patch is a modification of its upstream code, so it falls under that code's license: GPL-2.0 for FAST-LIO2 and ikd-Tree, the same as this repository (`LICENSE`).

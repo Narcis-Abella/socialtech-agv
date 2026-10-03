@@ -62,6 +62,10 @@ Shells opened with `docker exec -it <container> bash` get the same ROS environme
 | Our own nodes | `docker/ros/<pkg>` (ament package; a Python reference + test next to the bench if it replaces one) |
 | New logic in upstream code | a fork, pinned in `docker/robot.repos` |
 
+## License
+
+GNU General Public License, version 2 only (`GPL-2.0-only`): see `LICENSE`. The patches in `docker/patches/` modify GPL-2.0 code (FAST-LIO2, ikd-Tree) and are covered by it. The sources `robot.repos` fetches at build time keep their own licenses.
+
 ## Contributing
 
 `main` is protected: work on a branch and open a pull request; merges need the maintainer's approval.
