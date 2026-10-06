@@ -48,10 +48,13 @@ def load_grid(map_yaml):
 def main(goals_yaml, map_yaml, out_json):
     import rclpy
     from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
-    from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
+    from action_msgs.msg import GoalStatus
+    from nav2_msgs.action import NavigateToPose
+    from rclpy.action import ActionClient
 
     rclpy.init()
-    nav = BasicNavigator()
+    nav = rclpy.create_node("eval_goals")
+    client = ActionClient(nav, NavigateToPose, "navigate_to_pose")
     state = {"gt": None, "amcl": None, "min_clr": float("inf")}
     grid, res, origin = load_grid(map_yaml)
 
@@ -62,19 +65,27 @@ def main(goals_yaml, map_yaml, out_json):
     nav.create_subscription(PoseStamped, "/gt/pose", on_gt, 10)
     nav.create_subscription(PoseWithCovarianceStamped, "/amcl_pose",
                             lambda m: state.update(amcl=(m.pose.pose.position.x, m.pose.pose.position.y)), 10)
-    nav.waitUntilNav2Active()
+    client.wait_for_server()  # run_eval.sh has already waited for bt_navigator to be active
     rows = []
     for g in yaml.safe_load(open(goals_yaml))["goals"]:
         p = PoseStamped()
         p.header.frame_id = "map"
+        p.header.stamp = nav.get_clock().now().to_msg()
         p.pose.position.x, p.pose.position.y = g["x"], g["y"]
         p.pose.orientation.z, p.pose.orientation.w = math.sin(g["yaw"] / 2), math.cos(g["yaw"] / 2)
         state["min_clr"] = float("inf")
         t0 = nav.get_clock().now()
-        nav.goToPose(p)
-        while not nav.isTaskComplete():
-            rclpy.spin_once(nav, timeout_sec=0.1)
-        ok = nav.getResult() == TaskResult.SUCCEEDED
+        goal = NavigateToPose.Goal()
+        goal.pose = p
+        sent = client.send_goal_async(goal)
+        rclpy.spin_until_future_complete(nav, sent)
+        handle = sent.result()
+        ok = False
+        if handle.accepted:
+            result = handle.get_result_async()
+            while not result.done():
+                rclpy.spin_once(nav, timeout_sec=0.1)
+            ok = result.result().status == GoalStatus.STATUS_SUCCEEDED
         dt = (nav.get_clock().now() - t0).nanoseconds / 1e9
         err = math.hypot(state["amcl"][0] - state["gt"][0], state["amcl"][1] - state["gt"][1]) if state["amcl"] and state["gt"] else float("nan")
         rows.append(dict(goal=g, ok=ok, t=dt, clr=state["min_clr"], err=err))

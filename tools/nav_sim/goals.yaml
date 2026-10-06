@@ -1,13 +1,14 @@
-# Goals in the `map` frame (origin = spawn point), sent in order from wherever the previous one ended. Picked on the loyola map (docker/ros_nav/socialtech_nav/maps):
-# clearance >= 0.9 m, in the free component reachable from the spawn. Covers: corridor, rooms on both sides (door ~0.8 m), a 30 m leg, a turn in place on arrival, a return to start.
+# Goals in the `map` frame (= Gazebo world frame; spawn at x=-13, y=5), sent in order from wherever the previous one ended.
+# Picked by script on the loyola map (docker/ros_nav/socialtech_nav/maps): free component reachable from the spawn with the
+# robot eroded by 0.35 m, clearance >= 0.9 m, legs 8-25 m, spread by farthest-point choice; the last one returns to the spawn.
 goals:
-  - {x: 5.0,  y: 8.5,  yaw: 1.57}    # corridor, facing north
-  - {x: 10.0, y: 9.8,  yaw: 0.0}     # east room
-  - {x: 5.0,  y: 19.0, yaw: 1.57}    # corridor
-  - {x: 2.4,  y: 9.1,  yaw: 3.14}    # west room, back south
-  - {x: 5.0,  y: 30.5, yaw: 1.57}    # far end of the corridor (long leg)
-  - {x: 9.6,  y: 32.4, yaw: 0.0}     # north-east room, edge of the mapped area
-  - {x: 2.3,  y: 22.6, yaw: 3.14}    # west room
-  - {x: 5.0,  y: 25.3, yaw: -1.57}   # corridor, arrives facing back: turn in place
-  - {x: 7.3,  y: 23.1, yaw: 0.0}     # east room
-  - {x: 0.0,  y: 0.0,  yaw: 0.0}     # back to the spawn point
+  - {x: 8.2,   y: 0.4,  yaw: 0.0}
+  - {x: -3.7,  y: -3.6, yaw: 1.57}
+  - {x: 16.4,  y: -4.5, yaw: 3.14}
+  - {x: -0.8,  y: 5.0,  yaw: -1.57}
+  - {x: -12.9, y: -4.1, yaw: 0.0}
+  - {x: -7.0,  y: 2.2,  yaw: 1.57}
+  - {x: 14.7,  y: 2.7,  yaw: 3.14}
+  - {x: 2.3,   y: 0.0,  yaw: -1.57}
+  - {x: -15.9, y: 0.2,  yaw: 0.0}
+  - {x: -13.0, y: 5.0,  yaw: -1.57}   # return to the spawn

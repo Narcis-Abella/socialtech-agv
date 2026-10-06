@@ -113,8 +113,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ros-jazzy-ros-gz ros-jazzy-nav2-bringup ros-jazzy-nav2-regulated-pure-pursuit-controller \
-      ros-jazzy-nav2-smac-planner ros-jazzy-nav2-simple-commander ros-jazzy-slam-toolbox \
-      ros-jazzy-teleop-twist-keyboard ros-jazzy-twist-mux ros-jazzy-xacro
+      ros-jazzy-nav2-smac-planner ros-jazzy-xacro
 
 # socialtech_nav: params, launch and map. Separate from docker/ros/ (copied into `robot`) so Nav2 stays out of `robot`.
 WORKDIR /ws

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Evaluation of Nav2 in the simulation, inside the `sim` image on the board. usage: run_eval.sh <out dir> <repetitions>
-#   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (a nav2_params.yaml instead of the packaged one), SIM_SRC (a hospital-agv-sim checkout to build when the image has none), ROS_DOMAIN_ID (53)
+#   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (a nav2_params.yaml instead of the packaged one), SIM_SRC (a hospital-agv-sim checkout to build when the image has none), SIM_ARGS (extra simulation.launch.py arguments, e.g. odom_source:=ground_truth), ROS_DOMAIN_ID (53)
 set -eo pipefail
 out=${1:?out dir}; reps=${2:-3}
 source /ros_env.sh
@@ -11,7 +11,7 @@ if ! ros2 pkg prefix hospital-agv-sim > /dev/null 2>&1; then
   source /tmp/sim_install/setup.bash
 fi
 map=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/maps/loyola.yaml
-ros2 launch hospital-agv-sim simulation.launch.py headless:=true > "$out/sim.log" 2>&1 &
+ros2 launch hospital-agv-sim simulation.launch.py headless:=true $SIM_ARGS > "$out/sim.log" 2>&1 &
 sleep 45
 ros2 launch socialtech_nav nav_sim.launch.py ${PARAMS:+params_file:=$PARAMS} > "$out/nav.log" 2>&1 &
 until [ "$(ros2 lifecycle get /bt_navigator 2>/dev/null | tail -1)" = "active [3]" ]; do sleep 2; done
