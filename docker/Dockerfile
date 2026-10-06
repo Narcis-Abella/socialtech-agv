@@ -115,3 +115,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-jazzy-ros-gz ros-jazzy-nav2-bringup ros-jazzy-nav2-regulated-pure-pursuit-controller \
       ros-jazzy-nav2-smac-planner ros-jazzy-nav2-simple-commander ros-jazzy-slam-toolbox \
       ros-jazzy-teleop-twist-keyboard ros-jazzy-twist-mux ros-jazzy-xacro
+
+# socialtech_nav: params, launch and map. Separate from docker/ros/ (copied into `robot`) so Nav2 stays out of `robot`.
+WORKDIR /ws
+COPY ros_nav/ src_nav/
+RUN . /opt/ros/jazzy/setup.sh \
+ && colcon build --base-paths src_nav --merge-install --install-base /opt/socialtech_nav
+# Appended here and not in ros_env.sh: that file is copied in `base`, and editing it would rebuild every stage.
+RUN echo 'if [[ -f /opt/socialtech_nav/setup.bash ]]; then source /opt/socialtech_nav/setup.bash --; fi' >> /ros_env.sh
