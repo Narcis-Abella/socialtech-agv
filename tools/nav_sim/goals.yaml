@@ -1,0 +1,13 @@
+# Goals in the `map` frame (origin = spawn point), sent in order from wherever the previous one ended. Picked on the loyola map (docker/ros_nav/socialtech_nav/maps):
+# clearance >= 0.9 m, in the free component reachable from the spawn. Covers: corridor, rooms on both sides (door ~0.8 m), a 30 m leg, a turn in place on arrival, a return to start.
+goals:
+  - {x: 5.0,  y: 8.5,  yaw: 1.57}    # corridor, facing north
+  - {x: 10.0, y: 9.8,  yaw: 0.0}     # east room
+  - {x: 5.0,  y: 19.0, yaw: 1.57}    # corridor
+  - {x: 2.4,  y: 9.1,  yaw: 3.14}    # west room, back south
+  - {x: 5.0,  y: 30.5, yaw: 1.57}    # far end of the corridor (long leg)
+  - {x: 9.6,  y: 32.4, yaw: 0.0}     # north-east room, edge of the mapped area
+  - {x: 2.3,  y: 22.6, yaw: 3.14}    # west room
+  - {x: 5.0,  y: 25.3, yaw: -1.57}   # corridor, arrives facing back: turn in place
+  - {x: 7.3,  y: 23.1, yaw: 0.0}     # east room
+  - {x: 0.0,  y: 0.0,  yaw: 0.0}     # back to the spawn point
