@@ -1,6 +1,7 @@
 """Sends the goals of goals.yaml to Nav2 in the simulation and scores each run.
   eval_goals.py <goals.yaml> <map.yaml> <out.json>      (inside the sim image, with the sim and Nav2 running)
-Per goal: reached or not, time, closest approach to a wall (ground truth = /odom_raw, whose origin is the map origin by construction), AMCL error against it."""
+Per goal: reached or not, time, closest approach to a wall and AMCL error, both against the pose Gazebo publishes for the robot (/gt/pose; /odom_raw is wheel odometry with ~6 % slip, not ground truth).
+The map frame is the world frame: the map is built with odom_source:=ground_truth, whose odom frame is the world one, and slam_toolbox starts `map` on `odom`."""
 import json
 import math
 import os
@@ -48,7 +49,6 @@ def main(goals_yaml, map_yaml, out_json):
     import rclpy
     from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
     from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
-    from nav_msgs.msg import Odometry
 
     rclpy.init()
     nav = BasicNavigator()
@@ -56,10 +56,10 @@ def main(goals_yaml, map_yaml, out_json):
     grid, res, origin = load_grid(map_yaml)
 
     def on_gt(m):
-        state["gt"] = (m.pose.pose.position.x, m.pose.pose.position.y)
+        state["gt"] = (m.pose.position.x, m.pose.position.y)
         state["min_clr"] = min(state["min_clr"], clearance(grid, res, origin, *state["gt"]))
 
-    nav.create_subscription(Odometry, "/odom_raw", on_gt, 10)
+    nav.create_subscription(PoseStamped, "/gt/pose", on_gt, 10)
     nav.create_subscription(PoseWithCovarianceStamped, "/amcl_pose",
                             lambda m: state.update(amcl=(m.pose.pose.position.x, m.pose.pose.position.y)), 10)
     nav.waitUntilNav2Active()

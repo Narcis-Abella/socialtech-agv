@@ -2,6 +2,7 @@
 # Deviations: RPP instead of MPPI; Smac2D instead of Navfn; footprint 0.70 x 0.58 m (base_link mesh of the sim, rounded up; the sim collision box is 0.60 x 0.40);
 # frames base_footprint; 2D ObstacleLayer on /scan (local), static + inflation (global); inflation 0.55 m (Smac2D asks for >= half the largest cross-section);
 # speeds for ~0.3 m/s; AMCL limited to the sim LiDAR (12 m). route_server and docking_server keep the bringup defaults: navigation_launch.py always starts them.
+# amcl.initial_pose = the spawn pose of the simulator in the world frame (the map frame is the world frame).
 # Initial values, tuned in the evaluation (notes/nav2_sim_resultados_*.md). use_sim_time comes from the launch (SetParameter).
 amcl:
   ros__parameters:
@@ -44,7 +45,7 @@ amcl:
     scan_topic: scan
     set_initial_pose: true
     always_reset_initial_pose: false
-    initial_pose: {x: 0.0, y: 0.0, z: 0.0, yaw: 0.0}
+    initial_pose: {x: -13.0, y: 5.0, z: 0.0, yaw: -1.5708}
 bt_navigator:
   ros__parameters:
     global_frame: map
