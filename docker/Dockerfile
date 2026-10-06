@@ -104,3 +104,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ros-jazzy-nav2-amcl ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Nav2 in simulation: Gazebo Harmonic + Nav2 on top of `robot`. Nav2 lives here until it goes to the real robot (then it moves to `robot`).
+FROM robot AS sim
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ros-jazzy-ros-gz ros-jazzy-nav2-bringup ros-jazzy-nav2-regulated-pure-pursuit-controller \
+      ros-jazzy-nav2-smac-planner ros-jazzy-nav2-simple-commander ros-jazzy-slam-toolbox \
+      ros-jazzy-teleop-twist-keyboard ros-jazzy-twist-mux ros-jazzy-xacro
