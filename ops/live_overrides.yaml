@@ -1,0 +1,4 @@
+# Over tools/nav_bench/config/amcl.yaml, live: AMCL waits for the operator's 2D Pose Estimate in rviz2 (ignored by nodes without that parameter).
+/**:
+  ros__parameters:
+    set_initial_pose: false

@@ -21,6 +21,7 @@ CAN_BITRATE=500000     # Tracer base
 NVME_DEV=/dev/nvme0n1  # root disk on every board; the heartbeat reads its first 128 KiB (GPT area)
 KVER=$(uname -r)
 TARGET_USER=${SUDO_USER:-jetson}
+OPS_VENV=$(getent passwd "$TARGET_USER" | cut -d: -f6)/venv-ops   # where ops/record_bag.sh looks for it
 
 log()  { printf '\e[1;34m==>\e[0m %s\n' "$*"; }
 warn() { printf '\e[1;33m!!\e[0m  %s\n' "$*" >&2; }
@@ -78,7 +79,7 @@ first_iface() {
 # ── steps ──────────────────────────────────────────────────────────────────
 
 step_packages() {
-  local want=(can-utils systemd-zram-generator) missing=() p
+  local want=(can-utils systemd-zram-generator python3-venv) missing=() p
   if [[ $NVME_HEARTBEAT == 1 ]]; then want+=(gcc libc6-dev); fi   # the heartbeat is built here, like gs_usb
   if [[ $TAILSCALE == 1 ]]; then
     want+=(tailscale)
@@ -147,6 +148,19 @@ net.core.rmem_max = $RMEM_MAX
 EOF
   # The file is a floor: never lower a limit the host already has (sysctl -p would apply it at once).
   if (( $(sysctl -n net.core.rmem_max) < RMEM_MAX )); then sysctl -q -p /etc/sysctl.d/99-socialtech-dds.conf; fi
+}
+
+# ops/record_bag.sh runs tools/slam_bench/bag_check.py on the host: it needs numpy (system) + rosbags (pip, the version
+# the mapper image uses). A venv, because Ubuntu 24.04 marks the system python as externally managed.
+ROSBAGS_VERSION=0.11.5
+ops_venv_ok() { runuser -u "$TARGET_USER" -- "$OPS_VENV/bin/python3" -c 'import numpy, rosbags.highlevel' 2>/dev/null; }
+step_ops_venv() {
+  ops_venv_ok && return 0
+  log "creating $OPS_VENV (rosbags $ROSBAGS_VERSION)"
+  if ! { runuser -u "$TARGET_USER" -- python3 -m venv --system-site-packages "$OPS_VENV" \
+         && runuser -u "$TARGET_USER" -- "$OPS_VENV/bin/pip" install -q "rosbags==$ROSBAGS_VERSION"; }; then
+    warn "venv-ops not ready (pip needs internet): re-run when online, or as $TARGET_USER: python3 -m venv --system-site-packages $OPS_VENV && $OPS_VENV/bin/pip install rosbags==$ROSBAGS_VERSION"
+  fi
 }
 
 symvers_hash() { sha256sum <"/lib/modules/$KVER/build/Module.symvers" | cut -d' ' -f1; }
@@ -453,6 +467,7 @@ run_checks() {
   check "$TARGET_USER in dialout" in_group dialout
   check "zram swap active" sh -c 'swapon --noheadings --show=NAME | grep -q zram0'
   check "UDP receive buffer limit >= $RMEM_MAX (no silent scan loss)" test "$(sysctl -n net.core.rmem_max)" -ge "$RMEM_MAX"
+  check "venv-ops with numpy + rosbags (bag_check)" ops_venv_ok
   check "gs_usb built for current kernel ABI" test "$(cat "/lib/modules/$KVER/updates/gs_usb.ko.symvers" 2>/dev/null)" = "$(symvers_hash)"
   check "gs_usb -> $CAN_IFACE rename rule" test -f /etc/systemd/network/10-tracer-can.link
   check "can-up@$CAN_IFACE enabled" systemctl is-enabled "can-up@$CAN_IFACE.service"
@@ -488,6 +503,7 @@ if [[ $MODE == apply ]]; then
   step_docker
   step_zram
   step_net_buffers
+  step_ops_venv
   step_can
   step_udev
   step_livox
