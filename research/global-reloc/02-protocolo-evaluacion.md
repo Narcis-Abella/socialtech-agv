@@ -104,6 +104,8 @@ All adopted values in this table are **I — DECIDIDO (criterio delegado de Narc
 
 **I — proposed IMU certification thresholds (unvalidated):** alongside the reference test, require raw gyro-norm p95 <=0.02 rad/s and maximum <=0.05 rad/s; require the sum of per-axis sample accelerometer variances <=0.04 (m/s²)² over the same conditioning/stationary interval, after verified conversion to SI units. The variance removes constant gravity; use no reference-derived bias correction. These loose vibration screens complement the pose ladder and do not prove zero translation. Log all statistics, units and sample counts; do not tune thresholds on candidate outcomes. **NV-P:** sensor noise, bias, vibration and raw acceleration units in the actual bags are not certified here.
 
+**Amendment, 2026-10-07:** the proposed raw gyro p95 screen above is superseded prospectively by [06-enmienda-estacionariedad-imu.md](06-enmienda-estacionariedad-imu.md), using independent static IMU recordings. Its historical point-5 result and the other protocol rules remain unchanged.
+
 **I — DECIDIDO (criterio delegado de Narcís, 2026-10-07; revisable por Narcís):** S1 verification uses the same frame as fitting even with a spatial/beam partition: it is weak, correlated evidence. Interpret S1 as a limiting performance case/floor; base the final recommendation on S2/S3 unless a method demonstrates reliability in S1 under the same acceptance/statistical criteria.
 
 ### Timing and information firewall

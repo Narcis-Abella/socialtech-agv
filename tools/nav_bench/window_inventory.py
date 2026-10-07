@@ -19,16 +19,20 @@ import sys
 from collections import Counter
 import numpy as np
 
-VERSION='1.1'
+VERSION='1.2'
 PROTOCOL='31cd64ff0034072a76699546ab47281a47359871'
 CONTINUITY_AMENDMENT='05-enmienda-continuidad-temporal.md'
+STATIONARITY_AMENDMENT='06-enmienda-estacionariedad-imu.md'
 DATASETS=('eco01_1x','hospital_02_r05b','eco03')
 NS=10**9
 GAP=200_000_000
-CONFIG={'schema_version':2,'generator_version':VERSION,'protocol_commit':PROTOCOL,
-        'continuity_amendment':CONTINUITY_AMENDMENT,'seed':None,
+CONFIG={'schema_version':3,'generator_version':VERSION,'protocol_commit':PROTOCOL,
+        'continuity_amendment':CONTINUITY_AMENDMENT,'stationarity_amendment':STATIONARITY_AMENDMENT,'seed':None,
         'dataset_roles':{'eco01_1x':'tuning_final','hospital_02_r05b':'heldout','eco03':'heldout_2d_only'},
-        'levels':{'A':[.02,1.],'B':[.05,2.]},'gyro_p95':.02,'gyro_max':.05,'accel_variance_sum':.04,
+        'levels':{'A':[.02,1.],'B':[.05,2.]},
+        'gyro_centered_residual_p95_max':0.006119479213085752,
+        'gyro_window_median_norm_max':0.0278346772285473,
+        'gyro_max':.05,'accel_variance_sum':.04,
         'accel_scale':9.80665,'conditioning_ns':2*NS,
         'imu_timing_irregularity_factor':[3,2],'imu_hard_gap_factor':4,
         'lidar_gap_factor':[3,2],'imu_min_coverage_percent':95,
@@ -146,12 +150,21 @@ def matrix_quat(m):
 
 def imu_stats(values,scale):
     if len(values)<2 or not np.isfinite(values).all(): raise ValueError('imu_invalid')
-    norms=np.linalg.norm(values[:,:3],axis=1)
+    gyro=values[:,:3]
+    norms=np.linalg.norm(gyro,axis=1)
+    window_median=np.median(gyro,axis=0)
+    residual_norm=np.linalg.norm(gyro-window_median,axis=1)
     return {'gyro_norm_p95_rad_s':float(np.quantile(norms,.95)), 'gyro_norm_max_rad_s':float(norms.max()),
+            'gyro_window_median_xyz_rad_s':window_median.tolist(),
+            'gyro_window_median_norm_rad_s':float(np.linalg.norm(window_median)),
+            'gyro_centered_residual_norm_p95_rad_s':float(np.quantile(residual_norm,.95)),
             'accel_variance_sum_m2_s4':float(np.var(values[:,3:]*scale,axis=0,ddof=1).sum()),'imu_count':len(values)}
 
 def imu_pass(s):
-    return s['gyro_norm_p95_rad_s']<=CONFIG['gyro_p95'] and s['gyro_norm_max_rad_s']<=CONFIG['gyro_max'] and s['accel_variance_sum_m2_s4']<=CONFIG['accel_variance_sum']
+    return (s['gyro_centered_residual_norm_p95_rad_s']<=CONFIG['gyro_centered_residual_p95_max']
+            and s['gyro_window_median_norm_rad_s']<=CONFIG['gyro_window_median_norm_max']
+            and s['gyro_norm_max_rad_s']<=CONFIG['gyro_max']
+            and s['accel_variance_sum_m2_s4']<=CONFIG['accel_variance_sum'])
 
 
 def components(xy):
@@ -228,17 +241,26 @@ def generate_dataset(root,dataset):
         if crosses(lc['gaps'],start,end): raise ValueError('lidar_gap')
         if crosses(ic['gaps'],start,end): raise ValueError('imu_hard_gap')
         ref.segment(start,end-1)
-    def certificate(start,end,conditioning_end,level):
-        valid(start,end); p,q,bracket=ref.segment(start,end-1)
-        ci,cj=np.searchsorted(it,[start,conditioning_end],side='left')
-        coverage=imu_conditioning(it[ci:cj],start,conditioning_end,ic['median_ns'])
+    def certificate(start,end,conditioning_end,level,funnel):
+        # Sequential, method-blind funnel. Its stages are diagnostic counts, not
+        # independent successes or a way to change the frozen criteria.
+        if start<first[0] or end-1>last[-1]: raise ValueError('lidar_outside')
+        if crosses(lc['gaps'],start,end): raise ValueError('lidar_gap')
+        funnel['passes_lidar']+=1
+        p,q,bracket=ref.segment(start,end-1)
         dis=float(np.linalg.norm(p-p[0],axis=1).max())
         angle=float(np.degrees(2*np.arccos(np.clip(np.abs(q@q[0]),0,1))).max())
-        i,j=np.searchsorted(it,[start,end]); stats=imu_stats(iv[i:j],CONFIG['accel_scale'])
         if dis>CONFIG['levels'][level][0] or angle>CONFIG['levels'][level][1]: raise ValueError('reference_not_stationary')
+        funnel['passes_reference']+=1
+        if start<it[0] or end-1>it[-1]: raise ValueError('imu_outside')
+        if crosses(ic['gaps'],start,end): raise ValueError('imu_hard_gap')
+        ci,cj=np.searchsorted(it,[start,conditioning_end],side='left')
+        coverage=imu_conditioning(it[ci:cj],start,conditioning_end,ic['median_ns'])
+        i,j=np.searchsorted(it,[start,end]); stats=imu_stats(iv[i:j],CONFIG['accel_scale'])
         if not imu_pass(stats): raise ValueError('imu_not_stationary')
+        funnel['passes_imu']+=1
         return dis,angle,bracket,stats,coverage
-    rows=[]; excluded=[]; attempted=Counter()
+    rows=[]; excluded=[]; attempted=Counter(); funnels={}
     variants=[('S1','primary',None),('S2','1s',NS),('S2','primary',3*NS),('S2','5s',5*NS),('S3','primary',30*NS)]
     for level in ('A','B'):
         next_start={'S1':-1,'S2':-1,'S3':-1}
@@ -246,15 +268,18 @@ def generate_dataset(root,dataset):
             start=int(start0); accepted_families=set()
             for scenario,variant,duration in variants:
                 key=f'{level}/{scenario}/{variant}'; attempted[key]+=1
+                funnel=funnels.setdefault(key,Counter())
+                funnel['candidates']+=1
                 warm=start if scenario=='S3' else start-2*NS
                 end=int(last[k])+1 if scenario=='S1' else start+duration
                 if warm<next_start[scenario]:
                     excluded.append([level,scenario,variant,start,'reserved_support_overlap']); continue
+                funnel['nonoverlap_candidates']+=1
                 try:
                     # Only certify S3 initialization now; actual LIO prefix is runtime evidence.
                     certend=start+2*NS if scenario=='S3' else end
                     conditioning_end=start+2*NS if scenario=='S3' else start
-                    dis,ang,bracket,stats,coverage=certificate(warm,certend,conditioning_end,level)
+                    dis,ang,bracket,stats,coverage=certificate(warm,certend,conditioning_end,level,funnel)
                     a=int(np.searchsorted(it,warm,side='right'))-1
                     b=int(np.searchsorted(it,(end if scenario!='S3' else min(end,int(it[-1])))-1))
                     # S3 reserves the full possible budget, irrespective of private truth prefix.
@@ -276,7 +301,7 @@ def generate_dataset(root,dataset):
                         runtime_status='pending_lio_and_physical_postcheck' if scenario=='S3' else 'not_executed',
                         input_scan_ids_hash=digest(canonical(scans if scenario!='S3' else [k])),
                         source_manifest_sha256=source_hash,scenario_config_sha256=confighash,generator_version=VERSION,
-                        generator_source_sha256=codehash,schema_version=2,protocol_commit=PROTOCOL,seed=None,
+                        generator_source_sha256=codehash,schema_version=3,protocol_commit=PROTOCOL,seed=None,
                         exposure_config_id=f'{scenario}/{variant}',planning_radius_m=2.8 if scenario=='S3' else None,
                         hard_radius_m=3.0 if scenario=='S3' else None,scan_count=len(scans) if scenario!='S3' else None,
                         evaluator_only_ref_pose_time_ns=pose_time,evaluator_only_ref_stationarity_displacement_m=dis,
@@ -309,7 +334,7 @@ def generate_dataset(root,dataset):
                     identity={name:row[name] for name in ('dataset_id','scenario','variant_id','stationarity_level','input_scan_ids_hash','source_manifest_sha256','scenario_config_sha256','generator_source_sha256','schema_version','protocol_commit')}
                     identity.update({name:row[name] for name in row if name.startswith('t_') and name.endswith('_ns')})
                     row['window_id']='w-'+digest(canonical(identity)); row['duplicate_family_id']=f'{dataset}:{start}:{scenario}'
-                    rows.append(row); accepted_families.add(scenario)
+                    rows.append(row); accepted_families.add(scenario); funnel['valid_pre_group']+=1
                 except ValueError as e: excluded.append([level,scenario,variant,start,str(e)])
             for scenario in accepted_families:
                 reserve=start+30*NS if scenario=='S3' else start+5*NS if scenario=='S2' else int(last[k])+1
@@ -332,8 +357,11 @@ def generate_dataset(root,dataset):
             if r['eligibility_status']!='excluded' and counts[r['stationarity_level']]<30:
                 r['eligibility_status']='insufficient_independent_coverage'
         chosenrows=[r for r in cell if r['selected_level'] and not r['exclusion_reason']]
+        selected_funnel=funnels[f'{chosen}/{scenario}/{variant}']
+        selected_funnel['valid_after_group']=len(chosenrows)
         summaries.append(dict(scenario=scenario,variant_id=variant,selected_level=chosen,blocks_by_level=counts,
             selected_windows=len(chosenrows),runtime_pending=scenario=='S3',
+            funnel={stage:int(selected_funnel[stage]) for stage in ('candidates','nonoverlap_candidates','passes_lidar','passes_reference','passes_imu','valid_pre_group','valid_after_group')},
             eligibility_status='insufficient_independent_coverage' if counts[chosen]<30 else 'adequate_inventory',
             windows_by_level={lev:sum(r['stationarity_level']==lev and not r['exclusion_reason'] for r in cell) for lev in ('A','B')},
             exclusions_by_level={lev:dict(Counter(e[-1] for e in excluded if e[:3]==[lev,scenario,variant])) for lev in ('A','B')},
@@ -360,7 +388,8 @@ def generate_dataset(root,dataset):
         frame_span_ns={'min':int((last-first).min()),'max':int((last-first).max()),'median':float(np.median(last-first))},
         accel_norm_raw_median=float(np.median(np.linalg.norm(iv[:,3:],axis=1))),
         storage_minus_header_ns={name:{'min':min(int(r[0]-r[1]) for r in values),'max':max(int(r[0]-r[1]) for r in values),'median':float(np.median([r[0]-r[1] for r in values]))} for name,values in [('lidar',lidar),('imu',imu)]},
-        summary=summaries,attempted=dict(attempted),exclusions=dict(Counter(e[-1] for e in excluded)),
+        summary=summaries,attempted=dict(attempted),funnels={k:dict(v) for k,v in sorted(funnels.items())},
+        exclusions=dict(Counter(e[-1] for e in excluded)),
         continuous_variant={'variant_id':'S3_continuous_rebased','status':'unavailable_no_sensor_odometry_artifact'})
     return rows,excluded,audit
 
@@ -375,6 +404,7 @@ schema_version protocol_commit seed runtime_status
  evaluator_only_ref_x_m evaluator_only_ref_y_m evaluator_only_ref_z_m evaluator_only_ref_qx evaluator_only_ref_qy evaluator_only_ref_qz evaluator_only_ref_qw
  evaluator_only_ref_pose_time_ns evaluator_only_ref_stationarity_displacement_m evaluator_only_ref_stationarity_angle_deg evaluator_only_ref_bracket_gap_s
  evaluator_only_gyro_norm_p95_rad_s evaluator_only_gyro_norm_max_rad_s evaluator_only_accel_variance_sum_m2_s4 evaluator_only_imu_count
+ evaluator_only_gyro_window_median_xyz_rad_s evaluator_only_gyro_window_median_norm_rad_s evaluator_only_gyro_centered_residual_norm_p95_rad_s
  evaluator_only_imu_timing_irregularity_count evaluator_only_imu_hard_gap_count
  evaluator_only_imu_expected_samples evaluator_only_imu_observed_samples evaluator_only_imu_coverage_ratio
  evaluator_only_support_start_ns evaluator_only_support_end_ns evaluator_only_anchor_map_xy evaluator_only_first_scan_ordinal

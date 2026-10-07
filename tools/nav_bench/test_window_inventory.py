@@ -70,6 +70,31 @@ class Contracts(unittest.TestCase):
         self.assertFalse(w.imu_pass(s))
         self.assertTrue(w.imu_pass(w.imu_stats(np.array([[0,0,0,0,0,1]]*10),9.80665)))
 
+    def test_static_bias_stationary_noise_and_actual_rotation(self):
+        bias=np.array([.023,-.001,.012])
+        stationary=np.tile(np.r_[bias,[0,0,1]],(400,1))
+        stationary[::2,0]+=.002
+        stationary[1::2,0]-=.002
+        s=w.imu_stats(stationary,9.80665)
+        self.assertGreater(s['gyro_norm_p95_rad_s'],.02) # historical false rejection
+        self.assertTrue(w.imu_pass(s))
+        self.assertTrue(w.imu_pass(w.imu_stats(np.tile([0,0,0,0,0,1],(400,1)),9.80665)))
+        # Constant motion can hide under centering; median-norm cap catches this one.
+        turning=np.tile([.03,0,0,0,0,1],(400,1))
+        self.assertFalse(w.imu_pass(w.imu_stats(turning,9.80665)))
+        moving=stationary.copy(); moving[200:,2]+=.05
+        self.assertFalse(w.imu_pass(w.imu_stats(moving,9.80665)))
+        oscillating=np.tile([0.,0,0,0,0,1],(400,1))
+        oscillating[::2,2]=.01; oscillating[1::2,2]=-.01
+        self.assertLess(w.imu_stats(oscillating,9.80665)['gyro_window_median_norm_rad_s'],w.CONFIG['gyro_window_median_norm_max'])
+        self.assertFalse(w.imu_pass(w.imu_stats(oscillating,9.80665)))
+        exactly=s.copy()
+        exactly['gyro_centered_residual_norm_p95_rad_s']=w.CONFIG['gyro_centered_residual_p95_max']
+        exactly['gyro_window_median_norm_rad_s']=w.CONFIG['gyro_window_median_norm_max']
+        self.assertTrue(w.imu_pass(exactly))
+        over=exactly.copy(); over['gyro_window_median_norm_rad_s']=np.nextafter(w.CONFIG['gyro_window_median_norm_max'],np.inf)
+        self.assertFalse(w.imu_pass(over))
+
     def test_groups_equality_chain_and_revisit(self):
         self.assertEqual(w.components([[0,0],[4,0],[8,0],[13,0]]),[0,0,0,3])
 
@@ -79,6 +104,7 @@ class Contracts(unittest.TestCase):
         self.assertEqual(c['operational_radius_m'],2.8)
         for name in ['reference_csv','split','evaluator_only_prefix_end_ns','stationarity_level',
                      'evaluator_only_imu_coverage_ratio','evaluator_only_imu_hard_gap_count',
+                     'evaluator_only_gyro_centered_residual_norm_p95_rad_s',
                      't_input_end_ns','initial_pose']:
             with self.assertRaises(ValueError): validate_method_packet({name:0})
         validate_method_packet({'kind':'imu','sensor_stamp_ns':123,'payload':b'raw'})
@@ -110,6 +136,7 @@ class Inventory(unittest.TestCase):
             self.assertEqual({r['independent_block_count'] for r in rows},{1})
             self.assertTrue(all(r['eligibility_status']=='insufficient_independent_coverage' for r in rows))
             self.assertEqual(len({r['window_id'] for r in rows}),len(rows))
+            self.assertEqual(audit['summary'][0]['funnel']['valid_after_group'],audit['summary'][0]['selected_windows'])
             for r in rows:
                 self.assertEqual(r['evaluator_only_imu_hard_gap_count'],0)
                 self.assertGreaterEqual(r['evaluator_only_imu_coverage_ratio'],.95)
