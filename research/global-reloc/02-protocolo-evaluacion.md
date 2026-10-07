@@ -58,6 +58,8 @@ Labels: **V** = verified in repository/upstream source or explicitly confirmed r
 
 **I — DECIDIDO (criterio delegado de Narcís, 2026-10-07; revisable por Narcís):** a later frozen input manifest marks observed LiDAR/IMU gaps, duplicate/regressing timestamps and corrupt messages. Define a gap at inter-message delta >1.5 times the dataset's median cadence: approximately >0.15 s LiDAR at 10 Hz or >7.5 ms IMU at 200 Hz. These rates are documented expectations; actual medians must come from the input manifest. Exclude an observation/warm-up/verification window that intersects a marked gap, lacks IMU bracketing for deskew/LIO, or crosses a reference/odom bracket >0.20 s. Require a fresh 2 s continuous initialization interval after a gap; do not interpolate motion across missing IMU data.
 
+**Amendment, 2026-10-07:** only the IMU continuity semantics in the preceding paragraph are superseded by [05-enmienda-continuidad-temporal.md](05-enmienda-continuidad-temporal.md). The original rule and its point-5 zero-window result remain historical evidence; LiDAR and reference rules are unchanged.
+
 **I:** record excluded windows and reasons before running methods. The identical eligibility mask applies to every method in a comparison. Insufficient geometric structure in intact data is a hard test, not a reason to remove a poor result. Playback drops, reference leakage or shared-topic contamination invalidate a run and require rerun/logging; candidate timeout on intact input is a method outcome. No gaps are repaired or analyzed in this task.
 
 ## B2. Scenarios with concrete decided parameters

@@ -1,7 +1,7 @@
 """Evaluator-only reproducible real-observation inventory, protocol point 5.
 
 python3 -B window_inventory.py --input-root INPUT --output NEW_DIRECTORY
-INPUT/{eco01_1x,hospital_02_r05b}/ contains sensor-index.json.gz,
+INPUT/{eco01_1x,hospital_02_r05b,eco03}/ contains sensor-index.json.gz,
 alidarState.txt, map.yaml and map.pgm. No candidate/ROS/odometry is executed.
 Private output is NEVER a method/executor input. See window_contract.py.
 """
@@ -19,14 +19,21 @@ import sys
 from collections import Counter
 import numpy as np
 
-VERSION='1.0'
+VERSION='1.1'
 PROTOCOL='31cd64ff0034072a76699546ab47281a47359871'
-DATASETS=('eco01_1x','hospital_02_r05b')
+CONTINUITY_AMENDMENT='05-enmienda-continuidad-temporal.md'
+DATASETS=('eco01_1x','hospital_02_r05b','eco03')
 NS=10**9
 GAP=200_000_000
-CONFIG={'schema_version':1,'generator_version':VERSION,'protocol_commit':PROTOCOL,'seed':None,
+CONFIG={'schema_version':2,'generator_version':VERSION,'protocol_commit':PROTOCOL,
+        'continuity_amendment':CONTINUITY_AMENDMENT,'seed':None,
+        'dataset_roles':{'eco01_1x':'tuning_final','hospital_02_r05b':'heldout','eco03':'heldout_2d_only'},
         'levels':{'A':[.02,1.],'B':[.05,2.]},'gyro_p95':.02,'gyro_max':.05,'accel_variance_sum':.04,
-        'accel_scale':9.80665,'conditioning_ns':2*NS,'gap_factor':[3,2],'reference_gap_ns':GAP,
+        'accel_scale':9.80665,'conditioning_ns':2*NS,
+        'imu_timing_irregularity_factor':[3,2],'imu_hard_gap_factor':4,
+        'lidar_gap_factor':[3,2],'imu_min_coverage_percent':95,
+        'imu_expected_samples_rule':'ceil(conditioning_duration_ns / imu_median_delta_ns)',
+        'reference_gap_ns':GAP,
         'spatial_m':5.,'guard_ns':35*NS,'minimum_blocks':30,'target_starts':100,
         's2_durations_ns':[NS,3*NS,5*NS],'s3_acquisition_ns':30*NS,'s3_radius_m':2.8,'s3_path_m':6.,
         'interval':'[start,end)','quantile':'linear','variance_ddof':1,
@@ -43,13 +50,31 @@ def ns(s):
 def seconds(t): return None if t is None else f'{t//NS}.{t%NS:09d}'
 
 
-def cadence(times):
+def cadence(times,gap_factor=1.5,irregularity_factor=None):
     d=np.diff(np.asarray(times,dtype=np.int64)); positive=d[d>0]
     if not len(positive): raise ValueError('No positive cadence')
     median=float(np.median(positive))
-    return {'first_ns':int(times[0]),'last_ns':int(times[-1]),'count':len(times),'median_ns':median,
+    result={'first_ns':int(times[0]),'last_ns':int(times[-1]),'count':len(times),'median_ns':median,
             'max_delta_ns':int(d.max()),'duplicates':int((d==0).sum()),'regressions':int((d<0).sum()),
-            'gaps':[[int(times[i]),int(times[i+1])] for i in np.flatnonzero(d>1.5*median)]}
+            'gaps':[[int(times[i]),int(times[i+1])] for i in np.flatnonzero(d>gap_factor*median)]}
+    if irregularity_factor is not None:
+        result['timing_irregularities']=[[int(times[i]),int(times[i+1])] for i in np.flatnonzero(d>irregularity_factor*median)]
+    return result
+
+
+def imu_conditioning(times,start,end,median_ns):
+    """Count real IMU samples in the fixed half-open 2 s conditioning interval."""
+    times=np.asarray(times,dtype=np.int64)
+    if len(times)>1 and np.any(np.diff(times)<=0): raise ValueError('Nonmonotonic IMU')
+    if end<=start or median_ns<=0: raise ValueError('Invalid conditioning interval')
+    # Median of integer ns deltas is integer or half-integer: use exact integer arithmetic.
+    twice_median=int(2*median_ns)
+    expected=(2*(end-start)+twice_median-1)//twice_median
+    i,j=np.searchsorted(times,[start,end],side='left')
+    observed=int(j-i)
+    if observed*100<expected*CONFIG['imu_min_coverage_percent']: raise ValueError('imu_coverage')
+    return {'expected_samples':int(expected),'observed_samples':observed,
+            'coverage_ratio':observed/expected}
 
 
 def crosses(gaps,start,end):
@@ -164,7 +189,8 @@ def group_split(rows,dataset):
     order=sorted(set(ef),key=lambda k:(min(r['t_input_start_ns'] for r,x in zip(rows,ef) if x==k),k))
     tune=set(order[:(3*len(order)+9)//10]) if dataset==DATASETS[0] else set()
     for r,sp,t,e in zip(rows,spatial,tp,ef):
-        r.update(spatial_block_id=sp,temporal_block_id=t,effective_block_id=e,split='heldout' if dataset==DATASETS[1] else 'tuning' if e in tune else 'final')
+        r.update(spatial_block_id=sp,temporal_block_id=t,effective_block_id=e,
+                 split='heldout' if dataset!=DATASETS[0] else 'tuning' if e in tune else 'final')
     tuning=[r for r in rows if r['split']=='tuning']
     for r in rows:
         if r['split']=='final' and any(max(r['_support_start']-s['_support_end'],s['_support_start']-r['_support_end'])<35*NS for s in tuning):
@@ -179,11 +205,17 @@ def generate_dataset(root,dataset):
     first=np.array([r[2]+r[3] for r in lidar],dtype=np.int64); last=np.array([r[2]+r[4] for r in lidar],dtype=np.int64)
     iv=np.array([r[2:] for r in imu],dtype=float)
     ref,T=load_reference(base/'alidarState.txt',base/'map.yaml'); tq=matrix_quat(T)
-    lc,ic=cadence(lt),cadence(it)
-    for times,c in ((lt,lc),(it,ic)):
-        cuts=np.r_[0,np.flatnonzero(np.diff(times)>1.5*c['median_ns'])+1,len(times)]
+    lidar_factor=CONFIG['lidar_gap_factor'][0]/CONFIG['lidar_gap_factor'][1]
+    irregularity_factor=CONFIG['imu_timing_irregularity_factor'][0]/CONFIG['imu_timing_irregularity_factor'][1]
+    imu_factor=CONFIG['imu_hard_gap_factor']
+    lc=cadence(lt,gap_factor=lidar_factor)
+    ic=cadence(it,gap_factor=imu_factor,irregularity_factor=irregularity_factor)
+    for times,c,factor in ((lt,lc,lidar_factor),(it,ic,imu_factor)):
+        cuts=np.r_[0,np.flatnonzero(np.diff(times)>factor*c['median_ns'])+1,len(times)]
         c['max_continuous_ns']=max(int(times[b-1]-times[a]) for a,b in zip(cuts[:-1],cuts[1:]))
         c['gap_count']=len(c['gaps'])
+    ic['timing_irregularity_count']=len(ic['timing_irregularities'])
+    ic['hard_gap_count']=len(ic['gaps'])
     if any(c[k] for c in (lc,ic) for k in ('duplicates','regressions')) or np.any(np.diff(first)<=0) or np.any(np.diff(last)<=0) or np.any(last<first):
         raise ValueError('Nonmonotonic sensor input: inspect before inventory')
     sources={p.name:digest(p.read_bytes()) for p in [base/'alidarState.txt',base/'map.yaml',base/'map.pgm']}
@@ -194,16 +226,18 @@ def generate_dataset(root,dataset):
         if start<it[0] or end-1>it[-1]: raise ValueError('imu_outside')
         if start<first[0] or end-1>last[-1]: raise ValueError('lidar_outside')
         if crosses(lc['gaps'],start,end): raise ValueError('lidar_gap')
-        if crosses(ic['gaps'],start,end): raise ValueError('imu_gap')
+        if crosses(ic['gaps'],start,end): raise ValueError('imu_hard_gap')
         ref.segment(start,end-1)
-    def certificate(start,end,level):
+    def certificate(start,end,conditioning_end,level):
         valid(start,end); p,q,bracket=ref.segment(start,end-1)
+        ci,cj=np.searchsorted(it,[start,conditioning_end],side='left')
+        coverage=imu_conditioning(it[ci:cj],start,conditioning_end,ic['median_ns'])
         dis=float(np.linalg.norm(p-p[0],axis=1).max())
         angle=float(np.degrees(2*np.arccos(np.clip(np.abs(q@q[0]),0,1))).max())
         i,j=np.searchsorted(it,[start,end]); stats=imu_stats(iv[i:j],CONFIG['accel_scale'])
         if dis>CONFIG['levels'][level][0] or angle>CONFIG['levels'][level][1]: raise ValueError('reference_not_stationary')
         if not imu_pass(stats): raise ValueError('imu_not_stationary')
-        return dis,angle,bracket,stats
+        return dis,angle,bracket,stats,coverage
     rows=[]; excluded=[]; attempted=Counter()
     variants=[('S1','primary',None),('S2','1s',NS),('S2','primary',3*NS),('S2','5s',5*NS),('S3','primary',30*NS)]
     for level in ('A','B'):
@@ -219,7 +253,8 @@ def generate_dataset(root,dataset):
                 try:
                     # Only certify S3 initialization now; actual LIO prefix is runtime evidence.
                     certend=start+2*NS if scenario=='S3' else end
-                    dis,ang,bracket,stats=certificate(warm,certend,level)
+                    conditioning_end=start+2*NS if scenario=='S3' else start
+                    dis,ang,bracket,stats,coverage=certificate(warm,certend,conditioning_end,level)
                     a=int(np.searchsorted(it,warm,side='right'))-1
                     b=int(np.searchsorted(it,(end if scenario!='S3' else min(end,int(it[-1])))-1))
                     # S3 reserves the full possible budget, irrespective of private truth prefix.
@@ -236,12 +271,12 @@ def generate_dataset(root,dataset):
                         t_imu_start_ns=warm,t_input_start_ns=start,t_input_end_ns=None if scenario=='S3' else end,
                         t_imu_end_ns=None if scenario=='S3' else int(it[b])+1,t_conditioning_end_ns=start+2*NS if scenario=='S3' else start,
                         t_fit_end_ns=fitend,t_verify_start_ns=fitend,imu_certified=True,imu_check_status='pass',
-                        lidar_gap_flag=False,imu_gap_flag=False,reference_gap_flag=False,timing_verified=True,
+                        lidar_gap_flag=False,imu_hard_gap_flag=False,reference_gap_flag=False,timing_verified=True,
                         eligibility_status='prepared_runtime_pending' if scenario=='S3' else 'eligible',exclusion_reason='',
                         runtime_status='pending_lio_and_physical_postcheck' if scenario=='S3' else 'not_executed',
                         input_scan_ids_hash=digest(canonical(scans if scenario!='S3' else [k])),
                         source_manifest_sha256=source_hash,scenario_config_sha256=confighash,generator_version=VERSION,
-                        generator_source_sha256=codehash,schema_version=1,protocol_commit=PROTOCOL,seed=None,
+                        generator_source_sha256=codehash,schema_version=2,protocol_commit=PROTOCOL,seed=None,
                         exposure_config_id=f'{scenario}/{variant}',planning_radius_m=2.8 if scenario=='S3' else None,
                         hard_radius_m=3.0 if scenario=='S3' else None,scan_count=len(scans) if scenario!='S3' else None,
                         evaluator_only_ref_pose_time_ns=pose_time,evaluator_only_ref_stationarity_displacement_m=dis,
@@ -250,6 +285,11 @@ def generate_dataset(root,dataset):
                     for name,value in zip(('x','y','z'),pose): row[f'evaluator_only_ref_{name}_m']=float(value)
                     for name,value in zip(('qx','qy','qz','qw'),quat): row[f'evaluator_only_ref_{name}']=float(value)
                     row.update({f'evaluator_only_{name}':value for name,value in stats.items()})
+                    row.update(evaluator_only_imu_timing_irregularity_count=sum(warm<b and certend-1>a for a,b in ic['timing_irregularities']),
+                        evaluator_only_imu_hard_gap_count=0,
+                        evaluator_only_imu_expected_samples=coverage['expected_samples'],
+                        evaluator_only_imu_observed_samples=coverage['observed_samples'],
+                        evaluator_only_imu_coverage_ratio=coverage['coverage_ratio'])
                     if scenario=='S3':
                         # Evaluator diagnostic only. No executor consumes this ending.
                         length=0.; radius=0.; prefix=start; reason='acquisition_limit'
@@ -327,7 +367,7 @@ def generate_dataset(root,dataset):
 
 # Explicit empty-inventory schema is mandatory; no rows still has a usable CSV header.
 BASE_COLUMNS='''window_id dataset_id scenario variant_id exposure_config_id input_scan_ids_hash
-stationarity_level selected_level imu_certified imu_check_status lidar_gap_flag imu_gap_flag reference_gap_flag timing_verified
+stationarity_level selected_level imu_certified imu_check_status lidar_gap_flag imu_hard_gap_flag reference_gap_flag timing_verified
 eligibility_status exclusion_reason spatial_block_id temporal_block_id effective_block_id split independent_block_count duplicate_family_id
 planning_radius_m hard_radius_m scan_count source_manifest_sha256 scenario_config_sha256 generator_version generator_source_sha256
 schema_version protocol_commit seed runtime_status
@@ -335,6 +375,8 @@ schema_version protocol_commit seed runtime_status
  evaluator_only_ref_x_m evaluator_only_ref_y_m evaluator_only_ref_z_m evaluator_only_ref_qx evaluator_only_ref_qy evaluator_only_ref_qz evaluator_only_ref_qw
  evaluator_only_ref_pose_time_ns evaluator_only_ref_stationarity_displacement_m evaluator_only_ref_stationarity_angle_deg evaluator_only_ref_bracket_gap_s
  evaluator_only_gyro_norm_p95_rad_s evaluator_only_gyro_norm_max_rad_s evaluator_only_accel_variance_sum_m2_s4 evaluator_only_imu_count
+ evaluator_only_imu_timing_irregularity_count evaluator_only_imu_hard_gap_count
+ evaluator_only_imu_expected_samples evaluator_only_imu_observed_samples evaluator_only_imu_coverage_ratio
  evaluator_only_support_start_ns evaluator_only_support_end_ns evaluator_only_anchor_map_xy evaluator_only_first_scan_ordinal
  evaluator_only_prefix_end_ns evaluator_only_max_radius_m evaluator_only_path_m evaluator_only_duration_s evaluator_only_stop_reason
  executor_input_start_ns executor_input_end_ns executor_imu_start_ns executor_conditioning_end_ns executor_stop_reason'''.split()

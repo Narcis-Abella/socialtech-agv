@@ -9,6 +9,35 @@ import numpy as np
 import window_inventory as w
 
 class Contracts(unittest.TestCase):
+    def test_imu_continuity_categories_and_coverage(self):
+        step=5_000_000
+        perfect=np.arange(0,2*w.NS,step,dtype=np.int64)
+        c=w.cadence(perfect,gap_factor=4,irregularity_factor=1.5)
+        self.assertEqual(c['gaps'],[])
+        self.assertEqual(c['timing_irregularities'],[])
+        self.assertEqual(w.imu_conditioning(perfect,0,2*w.NS,c['median_ns'])['observed_samples'],400)
+        self.assertEqual(w.imu_conditioning(perfect,0,2*w.NS,c['median_ns'])['expected_samples'],400)
+        self.assertEqual(w.imu_conditioning(perfect,0,2*w.NS,4_800_000)['expected_samples'],417)
+        jitter=np.array([0,5,10,18,20,25,30],dtype=np.int64)*1_000_000
+        cj=w.cadence(jitter,gap_factor=4,irregularity_factor=1.5)
+        self.assertEqual(cj['timing_irregularities'],[[10_000_000,18_000_000]])
+        self.assertEqual(cj['gaps'],[])
+        lost=np.array([0,5,10,35,40,45,50],dtype=np.int64)*1_000_000
+        cl=w.cadence(lost,gap_factor=4,irregularity_factor=1.5)
+        self.assertEqual(cl['gaps'],[[10_000_000,35_000_000]])
+        self.assertTrue(w.crosses(cl['gaps'],11_000_000,36_000_000))
+        exactly_four=np.array([0,5,10,30,35,40,45],dtype=np.int64)*1_000_000
+        self.assertEqual(w.cadence(exactly_four,gap_factor=4)['gaps'],[])
+        self.assertEqual(w.imu_conditioning(perfect[:380],0,2*w.NS,step)['coverage_ratio'],.95)
+        with self.assertRaisesRegex(ValueError,'imu_coverage'):
+            w.imu_conditioning(perfect[:379],0,2*w.NS,step)
+        with self.assertRaisesRegex(ValueError,'imu_coverage'):
+            w.imu_conditioning([],0,2*w.NS,step)
+        with self.assertRaisesRegex(ValueError,'Nonmonotonic'):
+            w.imu_conditioning([0,step,step-1],0,2*w.NS,step)
+        lidar=w.cadence([0,100_000_000,200_000_000,400_000_000])
+        self.assertEqual(lidar['gaps'],[[200_000_000,400_000_000]])
+
     def test_decimal_epoch(self):
         self.assertEqual(w.ns('1780999550.039071'), 1780999550039071000)
         with self.assertRaises(ValueError): w.ns('1.0000000001')
@@ -48,7 +77,9 @@ class Contracts(unittest.TestCase):
         from window_contract import execution_config, validate_method_packet
         c=execution_config('S3','primary')
         self.assertEqual(c['operational_radius_m'],2.8)
-        for name in ['reference_csv','split','evaluator_only_prefix_end_ns','stationarity_level','t_input_end_ns','initial_pose']:
+        for name in ['reference_csv','split','evaluator_only_prefix_end_ns','stationarity_level',
+                     'evaluator_only_imu_coverage_ratio','evaluator_only_imu_hard_gap_count',
+                     't_input_end_ns','initial_pose']:
             with self.assertRaises(ValueError): validate_method_packet({name:0})
         validate_method_packet({'kind':'imu','sensor_stamp_ns':123,'payload':b'raw'})
         with self.assertRaises(ValueError): execution_config('S3','primary', split='final')
@@ -80,6 +111,9 @@ class Inventory(unittest.TestCase):
             self.assertTrue(all(r['eligibility_status']=='insufficient_independent_coverage' for r in rows))
             self.assertEqual(len({r['window_id'] for r in rows}),len(rows))
             for r in rows:
+                self.assertEqual(r['evaluator_only_imu_hard_gap_count'],0)
+                self.assertGreaterEqual(r['evaluator_only_imu_coverage_ratio'],.95)
+                self.assertGreater(r['evaluator_only_imu_expected_samples'],0)
                 if r['scenario']=='S1': self.assertEqual(r['scan_count'],1)
                 if r['scenario']=='S3':
                     self.assertIsNone(r['t_input_end_ns'])
@@ -94,7 +128,7 @@ class Inventory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); self.fixture(root,True)
             rows,excluded,_=w.generate_dataset(root,'hospital_02_r05b')
-            self.assertTrue(any(e[-1]=='imu_gap' for e in excluded))
+            self.assertTrue(any(e[-1]=='imu_hard_gap' for e in excluded))
             for r in rows:
                 if r['scenario']!='S3':
                     self.assertFalse(w.crosses([[10*w.NS,11*w.NS]],r['t_imu_start_ns'],r['t_input_end_ns']))
@@ -121,6 +155,9 @@ class Inventory(unittest.TestCase):
         rows.append(row(3,0,200*w.NS,201*w.NS)); w.group_split(rows,'eco01_1x')
         self.assertEqual(rows[0]['spatial_block_id'],rows[3]['spatial_block_id'])
         self.assertEqual(rows[3]['split'],'tuning')
+        extra=[row(4,0,0,w.NS),row(5,10,40*w.NS,41*w.NS)]
+        w.group_split(extra,'eco03')
+        self.assertEqual({r['split'] for r in extra},{'heldout'})
 
     def test_cdr_readers(self):
         from window_sensor_index import custom_timing,imu_values
