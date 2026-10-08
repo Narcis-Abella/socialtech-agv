@@ -24,6 +24,17 @@ class AcceptanceTests(unittest.TestCase):
         self.assertAlmostEqual(runner.weight,.05)
         self.assertGreater(math.hypot(primary.x-runner.x,primary.y-runner.y),.30)
 
+    def test_particle_modes_are_disjoint_and_deterministic(self):
+        cluster_a=np.tile([0.,0.,0.,1.],(10,1))
+        cluster_b=np.tile([1.,0.,math.pi,1.],(5,1))
+        particles=np.vstack([cluster_a,cluster_b])
+        first=aa.particle_modes(particles,5);second=aa.particle_modes(particles,5)
+        self.assertEqual(len(first),2)
+        self.assertAlmostEqual(sum(m.weight for m in first),1.)
+        self.assertEqual(first,second)
+        self.assertAlmostEqual(first[0].weight,10/15)
+        self.assertAlmostEqual(first[1].weight,5/15)
+
     def test_geometry_gate_rejects_sparse_beams(self):
         scan=aa.Scan(np.full(49,2.),-1.,.05,.1,10.)
         result=aa.beam_coverage(scan)

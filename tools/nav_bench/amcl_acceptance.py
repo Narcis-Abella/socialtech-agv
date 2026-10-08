@@ -104,21 +104,37 @@ def _candidate_at(p, seed):
 
 
 def particle_modes(particles, max_modes=5):
-    """Deterministically find strongest local weighted modes in pose space."""
-    p=_particle_array(particles); remaining=np.ones(len(p),dtype=bool); modes=[]
-    for _ in range(max_modes):
-        best=None; best_mask=None; best_key=None
-        for i in np.flatnonzero(remaining):
-            candidate,mask=_candidate_at(p,i)
-            if candidate is None:
-                continue
-            # Lexical seed tie-break makes equal-weight modes reproducible.
-            key=(-candidate.weight,float(p[i,0]),float(p[i,1]),float(p[i,2]),int(i))
-            if best_key is None or key<best_key:
-                best,best_mask,best_key=candidate,mask,key
-        if best is None:
-            break
-        modes.append(best); remaining &= ~best_mask
+    """Find deterministic particle modes from high-weight and stratified seeds.
+
+    Evaluating every particle as a seed was too slow for a live Orin observer.
+    The bounded seed set is the 128 highest-weight samples plus 128 evenly
+    spaced samples (deduplicated); every selected seed is compared with all
+    remaining particles using the exact pose-neighborhood gate.
+    """
+    p=_particle_array(particles); n=len(p); remaining=np.ones(n,dtype=bool); modes=[]
+    budget=min(128,n)
+    high=np.argsort(-p[:,3],kind='stable')[:budget]
+    spread=np.linspace(0,n-1,min(128,n),dtype=np.int64)
+    seeds=np.unique(np.concatenate((high,spread)))
+    weights=p[:,3];total_weight=float(weights.sum())
+    for _ in range(min(max_modes,n)):
+        active_seeds=seeds[remaining[seeds]]
+        if not len(active_seeds):break
+        dx=p[active_seeds,0,None]-p[None,:,0];dy=p[active_seeds,1,None]-p[None,:,1]
+        yaw_delta=p[active_seeds,2,None]-p[None,:,2]
+        near=(dx*dx+dy*dy<=XY_CLUSTER_M**2)&(np.cos(yaw_delta)>=math.cos(YAW_CLUSTER_RAD))
+        near &= remaining[None,:]
+        masses=near@weights
+        max_mass=float(masses.max());tied=np.flatnonzero(masses==max_mass)
+        seed_pos=min(tied,key=lambda j:(float(p[active_seeds[j],0]),float(p[active_seeds[j],1]),
+                                        float(p[active_seeds[j],2]),int(active_seeds[j])))
+        seed=int(active_seeds[seed_pos]);members=near[seed_pos]
+        w=weights[members];mass=float(w.sum())
+        if mass<=0:break
+        x=float(np.average(p[members,0],weights=w));y=float(np.average(p[members,1],weights=w))
+        s=float(np.sum(w*np.sin(p[members,2])));c=float(np.sum(w*np.cos(p[members,2])))
+        modes.append(Candidate(x,y,math.atan2(s,c),mass/total_weight))
+        remaining[members]=False
     return modes
 
 
@@ -187,7 +203,7 @@ def map_support(scan, pose, occupancy, tolerance_m=.15):
 
 def evaluate(scan, particles, pose, occupancy):
     """Apply fixed AMCL acceptance gates. Inputs contain no evaluator data."""
-    modes=particle_modes(particles,2); conc=concentration(particles,pose)
+    modes=particle_modes(particles,5); conc=concentration(particles,pose)
     beams=beam_coverage(scan); primary=map_support(scan,pose,occupancy)
     runner=None
     for candidate in modes:
