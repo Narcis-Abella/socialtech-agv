@@ -66,6 +66,8 @@ def main():
         T_global_local = np.asarray(result['T_map_lidar_'+name])
         if manifest['frame_fit'] == 'local_first_imu':
             T_est = T_global_local @ np.asarray(manifest['T_local_imu_at_last'])
+        elif manifest['frame_fit'] == 'local_first_imu_levelled':
+            T_est = T_global_local @ np.asarray(manifest['T_level_local']) @ np.asarray(manifest['T_local_imu_at_last'])
         elif manifest['frame_fit'] == 'livox_lidar_stationary':
             T_est = T_global_local @ np.linalg.inv(T_imu_lidar)
         else:
