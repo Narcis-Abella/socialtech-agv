@@ -3,6 +3,7 @@
 No prior map or reference is read. Body clouds are already deskewed by FAST-LIO2.
 """
 import argparse
+import bisect
 import json
 from pathlib import Path
 import shutil
@@ -27,11 +28,11 @@ def stamp(msg):
 
 
 def interpolate(rows,t):
-    ts=np.array([r[0] for r in rows])
-    i=np.searchsorted(ts,t)
+    # bisect on the stamps (O(log n)); same bracket rule as the former searchsorted version
+    i=bisect.bisect_left(rows,t,key=lambda r:r[0])
     if i<len(rows) and abs(rows[i][0]-t)<1e-6:
         return rows[i][1]
-    if i==0 or i==len(rows) or ts[i]-ts[i-1]>.20:
+    if i==0 or i==len(rows) or rows[i][0]-rows[i-1][0]>.20:
         raise ValueError('no odometry bracket within 0.20 s')
     a,A=rows[i-1]; b,B=rows[i]
     u=(t-a)/(b-a)
@@ -116,9 +117,9 @@ def s3_limit(stamps,poses,max_radius,max_path):
     return n,reason,float(path[n-1]),float(radius[:n].max())
 
 
-def build(bag,map_xyz,start,duration,out,voxel_size=.20,imu_bag=None,max_radius=None,max_path=None):
+def read_bag(bag,start,duration):
+    """Odometry (all) and body clouds inside [start, start+duration) from a FAST-LIO2 capture bag."""
     from rosbags.highlevel import AnyReader
-    out=Path(out); out.mkdir(parents=True,exist_ok=False)
     odom=[]; clouds=[]
     with AnyReader([Path(bag)]) as reader:
         conn=[c for c in reader.connections if c.topic in ('/Odometry','/cloud_registered_body')]
@@ -131,7 +132,22 @@ def build(bag,map_xyz,start,duration,out,voxel_size=.20,imu_bag=None,max_radius=
                 if msg.header.frame_id!='body':
                     raise ValueError('FAST-LIO cloud frame is not body')
                 clouds.append((t,cloud_xyz(msg)))
-    odom.sort(key=lambda x:x[0]); clouds.sort(key=lambda x:x[0])
+    return odom,clouds
+
+
+def build(bag,map_xyz,start,duration,out,voxel_size=.20,imu_bag=None,max_radius=None,max_path=None):
+    odom,clouds=read_bag(bag,start,duration)
+    imu=read_imu(imu_bag,start,start+duration) if imu_bag else None
+    return assemble(odom,clouds,imu,map_xyz,start,duration,out,voxel_size,max_radius,max_path,source=str(bag))
+
+
+def assemble(odom,clouds,imu,map_xyz,start,duration,out,voxel_size=.20,max_radius=None,max_path=None,imu_source='/livox/imu',source='online'):
+    """Fit/check submap run directory from in-memory data: odom [(t, T)], clouds [(t, xyz)], imu [(t, accel)] or None.
+
+    The offline bag path (build) and the online node both end here, so they cannot diverge.
+    """
+    out=Path(out); out.mkdir(parents=True,exist_ok=False)
+    odom=sorted(odom,key=lambda x:x[0]); clouds=sorted(clouds,key=lambda x:x[0])
     if len(clouds)<3:
         raise ValueError('insufficient FAST-LIO body clouds')
     first=interpolate(odom,clouds[0][0])
@@ -150,11 +166,11 @@ def build(bag,map_xyz,start,duration,out,voxel_size=.20,imu_bag=None,max_radius=
         local.append(rebase(points,first,interpolate(odom,t)))
         counts.append(len(points))
     T_level=np.eye(4); levelling=None
-    if imu_bag:
-        up,n,spread,skipped=gravity_up(read_imu(imu_bag,start,start+duration),odom,first,stamps[0],stamps[-1])
+    if imu is not None:
+        up,n,spread,skipped=gravity_up(imu,odom,first,stamps[0],stamps[-1])
         T_level[:3,:3]=level_rotation(up)
         local=[transform(p,T_level) for p in local]
-        levelling={'source':'/livox/imu mean specific force in first local frame','samples':n,'samples_in_odom_gaps':skipped,
+        levelling={'source':imu_source+' mean specific force in first local frame','samples':n,'samples_in_odom_gaps':skipped,
                    'median_sample_angle_to_mean_deg':spread,
                    'tilt_removed_deg':float(np.degrees(np.arccos(np.clip(up[2],-1,1))))}
     fit=[p for t,p in zip(stamps,local) if t<start+duration*2/3]
@@ -166,14 +182,14 @@ def build(bag,map_xyz,start,duration,out,voxel_size=.20,imu_bag=None,max_radius=
     write_xyz(out/'fit.xyz',fit); write_xyz(out/'check.xyz',check)
     shutil.copyfile(map_xyz,out/'map.xyz')
     last=np.linalg.inv(first)@interpolate(odom,stamps[-1])
-    manifest={'bag':str(bag),'frame_fit':'local_first_imu_levelled' if imu_bag else 'local_first_imu','frame_map':'map',
+    manifest={'bag':source,'frame_fit':'local_first_imu_levelled' if imu is not None else 'local_first_imu','frame_map':'map',
               'T_level_local':T_level.tolist(),'levelling':levelling,'s3_stop':stop,
               'start_header_s':start,'duration_s':duration,'last_scan_end_s':stamps[-1],
               'stamps_s':stamps,'cloud_points':counts,'fit_points':len(fit),'check_points':len(check),
               'voxel_m':voxel_size,'T_local_imu_at_last':last.tolist(),
               'truth_used':False,'frontend':'FAST_LIO2_body_cloud_joined_to_Odometry'}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    print(json.dumps(manifest,indent=2))
+    return manifest
 
 
 if __name__=='__main__':
@@ -188,4 +204,4 @@ if __name__=='__main__':
     p.add_argument('--max-radius',type=float,help='online S3 stop radius from own odometry (2.8)')
     p.add_argument('--max-path',type=float,default=6.)
     a=p.parse_args()
-    build(a.bag,a.map_xyz,a.start,a.duration,a.out,a.voxel,a.imu_bag,a.max_radius,a.max_path)
+    print(json.dumps(build(a.bag,a.map_xyz,a.start,a.duration,a.out,a.voxel,a.imu_bag,a.max_radius,a.max_path),indent=2))

@@ -22,6 +22,7 @@ from search_tiles import agreement, distinct, pose_difference, temporal_evidence
 from verify import decide, score
 
 DEADLINE_S = 60.
+STAGE_S = {'gicp': 0., 'score': 0., 'confirm_total': 0.}  # additive instrumentation, no effect on decisions
 
 
 def tilt_deg(T):
@@ -54,8 +55,10 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
         remaining = DEADLINE_S - (time.monotonic() - t0)
         if remaining <= 0:
             return found, rows, True
+        t_g = time.monotonic()
         log, result = refine(args.binary, map_path, batch_path, other_path, c['T_map_source'],
                              out / f'{prefix}_{i:02d}', args.gicp_voxel, remaining)
+        STAGE_S['gicp'] += time.monotonic() - t_g
         if log['exit_code'] == 124:
             return found, rows, True
         row = {'id': f'{prefix}_{i:02d}', 'correlative': {k: c[k] for k in ('score', 'yaw_rad', 'xyz')}, 'run': log}
@@ -64,7 +67,9 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
             result['kiss_valid'] = True
             row['result'] = result
             if result['gicp_converged']:
+                t_s = time.monotonic()
                 row['geometry'] = score(map_points, other, result['T_map_lidar_refined'])
+                STAGE_S['score'] += time.monotonic() - t_s
                 row['tilt_deg'] = tilt_deg(result['T_map_lidar_refined'])
                 xy, deg = pose_difference(np.asarray(c['T_map_source']), np.asarray(result['T_map_lidar_refined']))
                 row['gicp_shift'] = {'xy_m': xy, 'yaw_deg': deg}
@@ -95,7 +100,10 @@ def main():
     p.add_argument('--radius', type=float, default=15.)
     p.add_argument('--top', type=int, default=10)
     p.add_argument('--gicp-voxel', type=float, default=.3)
+    p.add_argument('--deadline-s', type=float, default=60., help='remaining decision budget from this process start')
     a = p.parse_args()
+    global DEADLINE_S
+    DEADLINE_S = a.deadline_s
     run, out = Path(a.run), Path(a.out)
     out.mkdir(parents=True, exist_ok=False)
     t0 = time.monotonic()
@@ -118,8 +126,10 @@ def main():
     confirmation = None
     if primary and not timed_out and time.monotonic() - t0 < DEADLINE_S:
         # Independent global search of the later batch; its best is chosen on the fit batch.
+        t_c = time.monotonic()
         c_found, c_rows, timed_out = global_hypotheses(field, full, check, run / 'check.xyz', fit, run / 'fit.xyz',
                                                        run / 'map.xyz', a, out, 'confirm', t0)
+        STAGE_S['confirm_total'] = time.monotonic() - t_c
         c_top = rank(c_rows)
         confirmation = {'search_seconds': c_found['seconds'], 'top_ids': [r['id'] for r in c_top], 'agreement': False}
         if c_top:
@@ -154,6 +164,7 @@ def main():
               'self_cpu_seconds': own.ru_utime + own.ru_stime,
               'child_maxrss_kib': children.ru_maxrss, 'orchestrator_maxrss_kib': own.ru_maxrss,
               'fit_check_median_separation_s': separation, 'temporal_evidence_ok': temporal_ok,
+              'stage_seconds': dict(STAGE_S), 'deadline_s': DEADLINE_S,
               'truth_used': False, 'all_trials': rows}
     (out / 'search.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps({k: v for k, v in report.items() if k != 'all_trials'}, indent=2))
