@@ -112,3 +112,61 @@ eco03 map made with `make_map.sh` (PR #13 worktree `~/work/make-map` at `8c1f061
 ### IMU readiness (`imu_ready.py`) and certified S3 starts (`ready_windows.py`)
 
 The note 06 IMU stationarity test, unchanged (calibrated on static bags, no evaluation data), is applied causally to 2 s windows on the robot's own IMU. Stationary episodes: eco03 4 (longest stationary span 3.4 s), eco01 6, hospital 11. A certified S3 attempt starts FAST-LIO2 cold on the **last** certified 2 s before motion and accumulates up to 30 s with the online 2.8 m / 6 m stop. Truth-free; reference used only to report XY and cut holes.
+
+### Results session 2 (frozen v2 configuration, unchanged code paths for the method; DEVELOPMENT)
+
+Runs: `run-sessions-v2.sh` (tag `v2`) and reruns `v2r` after the levelling gap fix (eco03 c01–c03, s2a3: the `v2` attempts crashed in `lio_submap.py`, kept as invalid, not tabulated). Freeze files `search/frozen-<ds>-v2*.sha256`; evaluation `evaluate_batch2.sh` (eco03 with `--link`). Tables: `results/14-v2-sessions-{batch,rerun}.csv`.
+
+**Cross-session: eco03 queries, eco01 map (the map never saw eco03 data)**
+
+| Window type | N scorable | correct_accept | false_reject | XY median / max m | yaw max ° |
+|---|---:|---:|---:|---|---:|
+| trajectory, 5 m apart, 7 s (uncertified start) | 6 | 6 | 0 | | |
+| S3 certified start (IMU), ≤30 s, 2.8 m / 6 m stop | 3 (+1 unscorable: c03, reference ends) | 3 | 0 | | |
+| S2 3 s (3.4 s certified stationary) | 1 | 1 | 0 | | |
+| **all** | **10** | **10** (Wilson 95 % lower 0.72) | 0 | **0.010 / 0.040** | 0.44 |
+| S2 1 s (diagnostic, cannot meet ≥1 s confirmation by design) | 1 | 0 | 1 (`ambiguous_no_temporal_confirmation`, primary correct 0.021 m) | | |
+
+Errors are relative to eco03's Voxel-SLAM reference through the map link (link uncertainty ~1–2 cm, references unmeasured). Same-location caveat: c01/c02 are the same place (two starts) and s2a3 shares it; distinct places ≈ 8. Search time median 11.7 s, max 13.1 s.
+
+**S3 with certified start, same session:** hospital 10/10 correct_accept (XY median 0.021, max 0.049 m; c10 unscorable at bag end), eco01 4/5 (XY max 0.029 m; c05 unscorable). eco01 c02 = **false_reject by the RMSE gate** (0.1003 > 0.10; support 0.993, lead 0.367, confirmation agreed; primary 0.024 m off). No S3-certified window showed the w08 front-end corruption (0/18 scorable). Odometry stops: radius 7, path 2, duration 9; maximum span 29.6 s.
+
+**Negatives session 2:** 29 cross-map (hospital map) + 29 hole (8 m) = 58, **0 accepted**. Cumulative non-perturbed negatives 88, 0 wrong accepts (Wilson 95 % upper 0.042). New near miss: eco03 c03 on the hospital map, support 0.704, stopped by the lead (0.021).
+
+### Safety: the near misses (Phase 4)
+
+| Case | Support | RMSE | Lead | Confirmation | Gates that blocked |
+|---|---:|---:|---:|---|---|
+| eco01 w05 → hospital map | 0.756 | 0.090 | 0.005 | disagreed 1.25 m | lead, confirmation |
+| eco01 w06 → hospital map | 0.712 | 0.089 | 0.007 | disagreed 5.4 m | lead, confirmation |
+| eco01 w07 → hospital map | 0.703 | 0.100 | 0.016 | disagreed 1.24 m | lead, confirmation |
+| hospital w03, 8 m hole | 0.699 | 0.098 | 0.075 | **agreed 0.02 m / 0.34° on a pose 13.8 m off** | support (by 0.001), lead |
+| hospital w05, 8 m hole | 0.695 | 0.087 | 0.001 | **agreed 0.06 m / 0.12°** | support, lead |
+
+**Sensitivity (`perturb_input.py`, 20 % seeded point dropout, 10 seeds per case, `perturb-v1/`):** 5 near misses + 5 lowest-lead positives = 100 runs. Positives: 49/50 correct_accept. In one (hospital w03 own, seed 9) the primary was a **wrong** pose and the lead (0.003) blocked it: an observed wrong acceptance prevented only by the lead gate. Negatives: 0/50 accepted, but the gates flip. eco01 w05 cross support stays 0.756–0.771 (above 0.70) in 10/10 seeds; confirmation agrees on the wrong pose in 3/10. Hospital w03 hole support crosses 0.70 in 2/10 seeds and confirmation agrees in 8/10. **Across all 136 negatives with a hypothesis (perturbed + sessions), 17 (12.5 %) were blocked by a single gate: 16 by the lead alone, 1 by support alone.** The temporal confirmation is not independent evidence against aliasing: both batches see the same structure and agree on the same wrong place.
+
+**Band support as a second barrier (truth-free, `support_breakdown.py`, `breakdown-v2/`):** in those 17 single-gate negatives (+ eco03 c03 cross) band support (map z 0.10–1.80 m) is ≤0.715 (all-point ≤0.819). In the 27 accepted positives of session 2, including cross-session, band ≥0.962 (all ≥0.959). Session 1: wrong ≤0.65, correct ≥0.97. Proposal: [14-propuesta-puerta-banda.md](14-propuesta-puerta-banda.md). Not applied.
+
+**RMSE gate:** matched RMSE is computed only over points within 0.15 m, so it is capped near 0.15 and sits at 0.08–0.10 for right **and** wrong hypotheses (near misses 0.087–0.100; correct 0.078–0.1003). It caused the only false reject among certified S3 (eco01 c02) and never was the sole blocker of a negative. **I:** low information; reported for Narcís, not changed.
+
+### S3 front-end (Phase 5)
+
+**V, code:** FAST-LIO2 initializes `bg = mean_gyr` and gravity from `mean_acc` over its first IMU samples (`IMU_Processing.hpp:156-196`, `MAX_INI_COUNT` 10), so a start during a turn treats the turn rate as gyro bias. **I:** that explains eco01 w08 (odometry path 2× the reference while turning ~120°). With the note-06 IMU gate as a readiness condition (`imu_ready.py`), 18/18 scorable certified starts produced usable odometry, and 17/18 were accepted correctly (the 18th was the RMSE false reject). The counterfactual (same place, uncertified versus certified start) was not run separately.
+
+### AMCL handoff (Phase 6, isolated, `run_handoff.sh`)
+
+`handoff_pose.py` turns the frozen accepted pose into `T_map_camera_init` (initial pose = IMU origin at the FAST-LIO2 start, the bench's base_footprint proxy) and a gravity-only `LEVEL_Q` (odom ← camera_init). `run_bench_a.sh` got `INIT_XYYAW` / `LEVEL_Q` overrides, so neither the initial pose nor the levelling comes from the reference (before, both did, through `pose_eval.py init/level`). /initialpose with σ 0.15 m / 5°, sensor height 0.53 m (documented mount, not calibrated), replay from the capture offset at 1x, image `socialtech:robot-verify` (`socialtech:robot` lacks `planar_odom`: first attempt `-v1` failed at launch, kept). The reference reaches only the final `pose_eval.py report`.
+
+| Run | Bag / PGM | Converged | Initial error m | Position error median / p95 / max m | Yaw max ° | Losses | Duration s |
+|---|---|---|---:|---|---:|---:|---:|
+| eco01 c04 | eco01 / eco01 | yes, 0 s | 0.033 | 0.042 / 0.082 / 0.131 | 3.15 | 0 | 120 |
+| hospital c01 | hospital / hospital | yes, 0 s | 0.018 | 0.042 / 0.074 / 0.084 | 1.47 | 0 | 103 |
+| eco03 c01 | **eco03 / eco01** (reference converted with the link, `convert_reference.py`) | yes, 0 s | 0.016 | 0.031 / 0.052 / 0.072 | 1.97 | 0 | 92 |
+
+Reports: `results/14-handoff-*.json`. **Not complete integration:** sensor→base extrinsic and sensor height are uncalibrated (NV-P); the IMU origin stands in for base_footprint; the replay restarts FAST-LIO2 at the capture offset rather than reusing the relocalizer's own odometry session (online, map→odom = `T_map_camera_init` composed with live odometry: not implemented); N = 3.
+
+### Next (session 2)
+1. Narcís: band gate amendment (14), and what to do with the RMSE gate; neither applied.
+2. A second independent session of hospital (needs a new bag) and a held-out set to calibrate the band threshold.
+3. Online node: run the search inside the FAST-LIO2 session, publish map→odom/`/initialpose` at acceptance, and measure true boot→pose latency and PSS on NX and Nano.
+4. Mount calibration (sensor→base, height) before any integration claim.

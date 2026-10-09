@@ -1,0 +1,33 @@
+{
+  "samples": 332,
+  "duration_s": 103.29346084594727,
+  "converged": true,
+  "convergence_s": 0.0,
+  "pos_err_m": {
+    "median": 0.04160931747743704,
+    "p95": 0.07404409356902723,
+    "max": 0.0840245202476268
+  },
+  "yaw_err_deg": {
+    "median": 0.4068585947397374,
+    "p95": 1.0854784182455264,
+    "max": 1.4734852483471486
+  },
+  "losses": 0,
+  "map_odom_jumps": 0,
+  "map_odom_jumps_before_convergence": 0,
+  "correction_at_robot_cm": {
+    "median": 0.27214156938121276,
+    "p95": 1.1055833574133078
+  },
+  "initial_pos_err_m": 0.017779644195787227,
+  "amcl_covers_run_pct": 86.44199920467902,
+  "ref_poses": 6171,
+  "ref_on_free_pct": 99.59487927402367,
+  "ref_on_occupied_pct": 0.0,
+  "sensor_height_m": 0.533552837407759,
+  "amcl_std_xy_m": {
+    "median": 0.07239025840948135,
+    "max": 0.26321592656980314
+  }
+}

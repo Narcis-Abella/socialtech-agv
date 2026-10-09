@@ -1,39 +1,38 @@
 # SOCIALTECH — ESTADO ACTUAL
 
-Fecha: 2026-10-09 · Rama: `feat/global-reloc` · HEAD: ver `git log -1` (commits locales, sin push) · Working tree: limpio tras el commit v2.
+Fecha: 2026-10-09 · Rama: `feat/global-reloc` · HEAD: ver `git log -1` (commits locales, sin push) · Working tree: limpio tras el commit de la sesión 2.
 
 ## Objetivo
 Pose inicial (x, y, yaw) automática en un mapa conocido, sin operador. Aceptar solo si XY ≤ 0.30 m y yaw ≤ 8°; rechazar ante la duda.
 
 ## Progreso
 - Puntos 1–6 cerrados; AMCL global = `AMCL_WEAK_BASELINE`.
-- Punto 7 v1 (KISS + small_gicp): 1 lugar correcto; falla en hospital por descriptores FPFH (≤1 % de pares correctos, V).
-- Punto 7 v2: nivelación IMU + búsqueda correlativa exhaustiva (x, y, z, yaw) + small_gicp + la misma puerta (nota 13).
+- Método v2: FAST-LIO2 → nivelación IMU → búsqueda FFT exhaustiva (x, y, z, yaw) → small_gicp → puerta sin cambios. KISS no interviene en v2 (nota 13).
+- Fase actual: validación entre sesiones, seguridad, S3 certificado y handoff a AMCL (completados en DEVELOPMENT).
 
-## Últimos resultados (DEVELOPMENT, mapas de la misma sesión)
-- Mapa propio: 14/15 correct_accept (9 eco01 + 6 hospital, a ≥5 m); XY mediana 0.023 m, máx. 0.043; yaw máx. 1.6°.
-- 1 rechazo (eco01 w08): FAST-LIO2 arrancado girando, consulta corrupta; rechazo correcto.
-- Controles: mapa cruzado 15/15 y mapa con hueco de 8 m 15/15 rechazados. Wrong accepts 0/45 (Wilson ≤7.9 %).
-- Ablación, mismos inputs: KISS v1 3/15 frente a v2 14/15; ningún wrong accept.
-- Búsqueda: 9.7 s mediana (máx. 23 s), CPU 14 s, RSS ~90 MiB. v2 determinista (3/3).
+## Últimos resultados (DEVELOPMENT)
+- **Entre sesiones (consultas eco03, mapa eco01):** 10/10 correct_accept (Wilson ≥0.72); XY mediana 0.010 m, máx. 0.040 m. Enlace de frames mapa a mapa con incertidumbre ~1–2 cm.
+- S3 con arranque certificado por IMU: 17/18 correct_accept; 1 rechazo falso por la puerta de RMSE.
+- Negativos: 0/88 aceptados (Wilson ≤4.2 %), más 0/50 perturbados.
+- Handoff a AMCL sin referencia: 3/3 convergen en t = 0, 0 pérdidas (incluido eco03 sobre el PGM de eco01).
 
 ## Trabajo actual
-La puerta de soporte total (≥0.70) deja pasar hipótesis erróneas hasta 0.76; solo las frenó el margen. El soporte en la banda 0.10–1.80 m separa los casos (correctos ≥0.97, erróneos ≤0.65). Pendiente de enmienda.
+Seguridad: en 17 de 136 negativos solo una puerta frenó la hipótesis (16 veces el margen). La confirmación temporal llega a coincidir en poses erróneas. El soporte por banda separa los casos (correctos ≥0.962, erróneos ≤0.715). Propuesta en `14-propuesta-puerta-banda.md`, sin aplicar.
 
 ## Pendientes / bloqueos
-- Decisión de Narcís: puerta de soporte por banda (protocolo §145) y datos para calibrar su umbral.
-- Ventanas S3 no certificadas como estacionarias al inicio (desviación documentada).
-- Sin validación entre sesiones; sin handoff a AMCL; latencia integrada, PSS y Nano sin medir.
+- Decisión de Narcís sobre la puerta por banda, sobre la puerta de RMSE y sobre los datos para calibrar el umbral.
+- Extrínseca sensor→base y altura del sensor sin calibrar: la integración no está completa.
+- Solo dos edificios; una sola sesión independiente (eco03). Hospital sin segunda sesión.
 
 ## Próximas acciones
-1. Mapa de eco03 con `make_map.sh` → consultas eco03 sobre el mapa eco01 (independencia de sesión).
-2. Implementar la puerta por banda como variante con nombre propio, tras la enmienda.
-3. S3 desde arranques certificados casi estacionarios.
-4. Handoff: pose aceptada → `/initialpose` → convergencia de AMCL en replay.
-5. Coste: PSS/tegrastats, menos candidatos GICP, Nano.
+1. Revisión de Narcís de las notas 13 y 14 y de las figuras.
+2. Nuevo bag o sesión para calibrar T_band (datos no usados).
+3. Nodo online: búsqueda dentro de la sesión de FAST-LIO2 → map→odom; latencia real y PSS en NX y Nano.
+4. Calibración física del montaje y repetición tras el remontaje hacia abajo.
+5. Más sesiones independientes (hospital, otras plantas).
 
 ## Referencias
-- Protocolo `02-protocolo-evaluacion.md`; AMCL `10-amcl-cierre-exploratorio.md`; 3D `11`, `12`, `13-generalizacion-registro-3d.md`.
-- Código `tools/global_reloc_3d/` (`search_v2.py`, `correlative_search.py`, `register_v2.cpp`, `batch_generalization.sh`).
-- Resultados `research/global-reloc/results/13-v2-*.csv`; figura `figures/v2-band-overlays.png`.
-- Datos NX `/home/jetson/work/global-reloc-3d-20261009/claude-v1/` (`search/`, `inputs/`, `caps/`, `frozen-*.sha256`).
+- Notas `13-generalizacion-registro-3d.md`, `14-propuesta-puerta-banda.md`, protocolo `02`, AMCL `10`.
+- Código `tools/global_reloc_3d/` (`search_v2.py`, `correlative_search.py`, `imu_ready.py`, `map_link.py`, `handoff_pose.py`, `batch_sessions.sh`).
+- Resultados `results/13-*`, `results/14-*`; figura `figures/v2-band-overlays.png`.
+- NX: `/home/jetson/work/global-reloc-3d-20261009/claude-v1/`; mapa eco03 en `/home/jetson/work/maps/eco03_1x/`.
