@@ -15,6 +15,20 @@ DISTINCT_XY_M = 0.30
 DISTINCT_YAW_RAD = math.radians(8.0)
 
 
+def causal_cloud_pose_pair(clouds, poses, max_delay_ns=500_000_000):
+    """Pair only a cloud with a subsequently received pose.
+
+    Nav2 publishes the cloud before the pose within a scan callback. A pose
+    without a cloud must not be paired with the next scan's cloud.
+    """
+    candidates=((pose[0]-cloud[0], ci, pi)
+                for ci, cloud in enumerate(clouds)
+                for pi, pose in enumerate(poses)
+                if 0 <= pose[0]-cloud[0] <= max_delay_ns)
+    best=min(candidates, default=None)
+    return None if best is None else best[1:]
+
+
 def angle_error(a, b):
     """Signed shortest angular difference a-b in [-pi, pi]."""
     return math.atan2(math.sin(a-b), math.cos(a-b))
@@ -254,6 +268,20 @@ class AcceptanceTracker:
                     return None
         self.event=AcceptanceEvent(last[0],last[1],last[2],len(self.samples))
         return self.event
+
+
+def scan_update_state(stamp_ns, available_stamps, elapsed_s, timeout_s=60.):
+    """Causally wait for a scan-aligned update without a fixed processing grace.
+
+    A later completed AMCL update proves the earlier scan will not be updated.
+    Otherwise a slow large-particle update may still arrive before the fixed
+    trial deadline; it must not be dropped after an arbitrary one second.
+    """
+    if stamp_ns in available_stamps:
+        return 'ready'
+    if any(other>stamp_ns for other in available_stamps) or elapsed_s>=timeout_s:
+        return 'missing'
+    return 'wait'
 
 
 def timeout_outcome(accepted, elapsed_s, timeout_s=60.):

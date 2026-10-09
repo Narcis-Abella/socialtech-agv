@@ -11,6 +11,20 @@ import window_contract as wc
 
 
 class AcceptanceTests(unittest.TestCase):
+    def test_cloud_pose_pair_does_not_reuse_earlier_pose(self):
+        # Nav2 may publish a first pose with no ParticleCloud. The next
+        # cloud belongs to the next scan, not the earlier orphan pose.
+        clouds=[(200,None,0)]
+        poses=[(100,None,1),(210,None,2)]
+        self.assertEqual(aa.causal_cloud_pose_pair(clouds,poses),(0,1))
+        self.assertIsNone(aa.causal_cloud_pose_pair(clouds,poses[:1]))
+
+    def test_scan_update_waits_for_slow_large_particle_update(self):
+        self.assertEqual(aa.scan_update_state(100,{},3.,60.),'wait')
+        self.assertEqual(aa.scan_update_state(100,{100:object()},3.,60.),'ready')
+        self.assertEqual(aa.scan_update_state(100,{200:object()},3.,60.),'missing')
+        self.assertEqual(aa.scan_update_state(100,{},60.,60.),'missing')
+
     def test_angle_wrap(self):
         self.assertAlmostEqual(aa.angle_error(-math.pi + .01, math.pi - .01), .02)
 
@@ -131,6 +145,59 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(wc.validate_method_packet(packet),packet)
         with self.assertRaises(ValueError):
             wc.validate_method_packet({**packet,'evaluator_only_true_pose':[1.,2.,3.]})
+
+    def test_postrun_reference_bracket_and_yaw_wrap(self):
+        t=np.array([1_000_000_000,1_200_000_000],dtype=np.int64)
+        p=np.array([[0.,0.,math.radians(179)],[.2,0.,math.radians(-179)]])
+        self.assertEqual(ae.reference_at_ns(t[0],t,p),tuple(p[0]))
+        mid=ae.reference_at_ns(1_100_000_000,t,p)
+        self.assertAlmostEqual(mid[0],.1)
+        self.assertAlmostEqual(abs(math.degrees(mid[2])),180.)
+        self.assertIsNone(ae.reference_at_ns(t[0]-1,t,p))
+        self.assertIsNone(ae.reference_at_ns(t[-1]+1,t,p))
+        self.assertIsNone(ae.reference_at_ns(1_100_000_000,
+            [1_000_000_000,1_200_000_001],p))
+
+    def test_postrun_missing_update_is_unscorable(self):
+        t=[1_000_000_000,1_100_000_000]
+        p=[[0.,0.,0.],[0.,0.,0.]]
+        records=[{'sensor_stamp_ns':t[0],'input_kind':'check',
+                  'particle_concentration':.5,'pose':[0.,0.,0.]},
+                 {'sensor_stamp_ns':t[1],'input_kind':'check',
+                  'terminal_event':'no_scan_aligned_amcl_update'},
+                 {'terminal_event':'timeout'}]
+        result=ae.score_observer(records,t,p,2)
+        self.assertEqual(result['outcome'],'invalid_unscorable')
+        self.assertEqual(result['scored_scans'],1)
+
+    def test_postrun_rejects_s1_extra_custommsg_even_when_two_partitions_score(self):
+        stamp=1_100_000_000
+        records=[{'sensor_stamp_ns':stamp,'input_kind':kind,
+                  'particle_concentration':.1,'pose':[0.,0.,0.]}
+                 for kind in ('fit','check')]+[{'terminal_event':'timeout'}]
+        frontend={'window_lidar_received':2,'fit_published':1,'check_published':1,
+                  'excess_s1_frames':1,'projection_error':0,'insufficient_imu':0,
+                  'conditioning':{'reason':'ok'}}
+        result=ae.score_observer(records,[stamp],[[0.,0.,0.]],2,
+            frontend_counts=frontend,expected_input_frames=1)
+        self.assertEqual(result['outcome'],'invalid_unscorable')
+        self.assertFalse(result['frontend_verified'])
+
+    def test_postrun_wrong_accept_is_absorbing(self):
+        t=[1_000_000_000,1_100_000_000]
+        p=[[0.,0.,0.],[0.,0.,0.]]
+        records=[{'sensor_stamp_ns':t[0],'input_kind':'check',
+                  'particle_concentration':.95,'pose':[1.,0.,0.],
+                  'acceptance_event':{'sensor_stamp_ns':t[0],'pose':[1.,0.,0.]}},
+                 {'sensor_stamp_ns':t[1],'input_kind':'check',
+                  'particle_concentration':.95,'pose':[0.,0.,0.],
+                  'acceptance_event':{'sensor_stamp_ns':t[1],'pose':[0.,0.,0.]}}]
+        result=ae.score_observer(records,t,p,2)
+        self.assertEqual(result['outcome'],'wrong_accept')
+        self.assertEqual(result['final_hypothesis_error']['xy_m'],0.)
+        negative=ae.score_observer(records,t,p,2,negative=True)
+        self.assertEqual(negative['outcome'],'wrong_accept')
+        self.assertIsNone(negative['acceptance_errors'][0]['xy_m'])
 
 
 if __name__=='__main__':
