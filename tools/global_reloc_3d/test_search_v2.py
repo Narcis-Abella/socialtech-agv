@@ -34,6 +34,7 @@ class SearchV2Test(unittest.TestCase):
         bad = {'refined': {'within_limits': False}}
         self.assertEqual(classify('hole', {'accepted': True, 'decision': 'accepted'}, bad), 'wrong_accept')
         self.assertEqual(classify('own', {'accepted': True, 'decision': 'accepted'}, bad), 'wrong_accept')
+        self.assertEqual(classify('x01', {'accepted': False, 'decision': 'reject_geometry'}, bad), 'false_reject')
 
     def test_wilson_and_hole(self):
         self.assertAlmostEqual(wilson(0, 50)[1], .0714, places=3)

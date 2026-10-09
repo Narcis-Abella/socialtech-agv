@@ -30,7 +30,9 @@ def classify(variant, search, evaluation):
     ok = evaluation['refined']['within_limits']
     if accepted:
         return 'correct_accept' if ok else 'wrong_accept'
-    return 'false_reject' if ok else 'reject_wrong_hypothesis'
+    # Protocol: any non-acceptance of a positive is a false reject; whether the
+    # rejected primary was right is reported separately (primary_within_limits).
+    return 'false_reject'
 
 
 def main():
@@ -43,7 +45,7 @@ def main():
     for s in sorted(glob.glob(f'{a.root}/search/*-{a.version}/search.json')):
         d = Path(s).parent
         name = d.name[:-len(a.version) - 1]
-        if name.rsplit('-', 1)[-1] not in ('own', 'cross', 'hole'):
+        if name.rsplit('-', 1)[-1] not in ('own', 'x01', 'cross', 'hole'):
             continue
         dataset, window, variant = name.rsplit('-', 2)
         search = json.loads(Path(s).read_text())
@@ -54,6 +56,7 @@ def main():
         conf = search.get('confirmation') or {}
         rows.append({'dataset': dataset, 'window': window, 'variant': variant, 'decision': search['decision'],
                      'class': classify(variant, search, evaluation),
+                     'primary_within_limits': evaluation['refined']['within_limits'] if evaluation else None,
                      'xy_m': evaluation['refined']['xy_error_m'] if evaluation else None,
                      'yaw_deg': evaluation['refined']['yaw_error_deg'] if evaluation else None,
                      'support': top.get('support'), 'rmse': top.get('rmse'), 'margin': search['support_margin'],
@@ -68,7 +71,7 @@ def main():
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
         w.writerows(rows)
-    for variant in ('own', 'cross', 'hole'):
+    for variant in ('own', 'x01', 'cross', 'hole'):
         sub = [r for r in rows if r['variant'] == variant]
         if not sub:
             continue

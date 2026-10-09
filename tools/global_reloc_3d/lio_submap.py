@@ -66,9 +66,14 @@ def gravity_up(imu,odom,first,start,end):
     short start-stop path average out; the residual tilt is reported, not hidden.
     """
     rows=[]
+    skipped=0
     for t,a in imu:
         if start<=t<end:
-            R=(np.linalg.inv(first)@interpolate(odom,t))[:3,:3]
+            try:
+                R=(np.linalg.inv(first)@interpolate(odom,t))[:3,:3]
+            except ValueError:
+                skipped+=1  # inside an odometry gap > 0.20 s (e.g. a scan FAST-LIO2 skipped): sample unused
+                continue
             rows.append(R@a)
     if len(rows)<20:
         raise ValueError('insufficient IMU samples for levelling')
@@ -76,7 +81,7 @@ def gravity_up(imu,odom,first,start,end):
     mean=rows.mean(axis=0)
     spread=float(np.degrees(np.median(np.arccos(np.clip(
         rows@mean/np.linalg.norm(rows,axis=1)/np.linalg.norm(mean),-1,1)))))
-    return mean/np.linalg.norm(mean), len(rows), spread
+    return mean/np.linalg.norm(mean), len(rows), spread, skipped
 
 
 def cloud_xyz(msg):
@@ -146,10 +151,10 @@ def build(bag,map_xyz,start,duration,out,voxel_size=.20,imu_bag=None,max_radius=
         counts.append(len(points))
     T_level=np.eye(4); levelling=None
     if imu_bag:
-        up,n,spread=gravity_up(read_imu(imu_bag,start,start+duration),odom,first,stamps[0],stamps[-1])
+        up,n,spread,skipped=gravity_up(read_imu(imu_bag,start,start+duration),odom,first,stamps[0],stamps[-1])
         T_level[:3,:3]=level_rotation(up)
         local=[transform(p,T_level) for p in local]
-        levelling={'source':'/livox/imu mean specific force in first local frame','samples':n,
+        levelling={'source':'/livox/imu mean specific force in first local frame','samples':n,'samples_in_odom_gaps':skipped,
                    'median_sample_angle_to_mean_deg':spread,
                    'tilt_removed_deg':float(np.degrees(np.arccos(np.clip(up[2],-1,1))))}
     fit=[p for t,p in zip(stamps,local) if t<start+duration*2/3]

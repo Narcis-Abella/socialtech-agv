@@ -32,10 +32,15 @@ class LioJoinTest(unittest.TestCase):
         odom=[(t,first if t<1 else later) for t in np.arange(0,2.01,.1)]
         up_world=np.array([np.sin(.05),0,np.cos(.05)])
         imu=[(t,(first if t<1 else later)[:3,:3].T@up_world) for t in np.linspace(0,1.99,200) if abs(t-1)>.1]
-        up,n,spread=gravity_up(imu,odom,first,0.,2.)
+        up,n,spread,skipped=gravity_up(imu,odom,first,0.,2.)
         self.assertTrue(np.allclose(up,up_world,atol=1e-6))
         self.assertGreater(n,150)
         self.assertLess(spread,1e-3)
+        self.assertEqual(skipped,0)
+        gap=[(t,T) for t,T in odom if not .4<t<.7]  # 0.3 s odometry gap: samples there are skipped, not fatal
+        up,n,spread,skipped=gravity_up(imu,gap,first,0.,2.)
+        self.assertGreater(skipped,0)
+        self.assertTrue(np.allclose(up,up_world,atol=1e-6))
 
     def test_s3_limit_uses_own_odometry(self):
         poses=[]

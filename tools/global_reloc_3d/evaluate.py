@@ -44,6 +44,7 @@ def main():
     p.add_argument('--reference', required=True)
     p.add_argument('--map-yaml', required=True)
     p.add_argument('--out', required=True)
+    p.add_argument('--link', help='evaluator frame link JSON T_A_B: reference session map B -> known map A')
     a = p.parse_args()
     run = Path(a.run)
     manifest = json.loads((run/'manifest.json').read_text())
@@ -57,11 +58,13 @@ def main():
         accepted = json.loads((run/'verification.json').read_text())['accepted']
     t = manifest['last_scan_end_s']
     T_ref = map_transform(a.map_yaml) @ reference_at(np.loadtxt(a.reference, usecols=range(8)), t)
+    if a.link:
+        T_ref = np.asarray(json.loads(Path(a.link).read_text())['T_A_B']) @ T_ref
     # mid360.yaml/map_visibility.py fixed LiDAR origin in IMU body, R=I.
     T_imu_lidar = np.eye(4)
     T_imu_lidar[:3, 3] = [-.011, -.02329, .04412]
-    output = {'represented_time_s': t, 'accepted': accepted,
-              'reference_kind': 'same_run_Voxel_SLAM_IMU_pose', 'T_map_imu_reference': T_ref.tolist()}
+    output = {'represented_time_s': t, 'accepted': accepted, 'link': a.link,
+              'reference_kind': 'other_session_Voxel_SLAM_IMU_pose_via_map_link' if a.link else 'same_run_Voxel_SLAM_IMU_pose', 'T_map_imu_reference': T_ref.tolist()}
     for name in ['kiss', 'refined']:
         T_global_local = np.asarray(result['T_map_lidar_'+name])
         if manifest['frame_fit'] == 'local_first_imu':
