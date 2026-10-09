@@ -10,6 +10,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import signal
 import struct
@@ -47,6 +48,7 @@ except ImportError:      # LiDAR availability is then judged from the body cloud
 BEST = QoSProfile(depth=500, reliability=ReliabilityPolicy.BEST_EFFORT)
 
 
+LIO_STALL_S = 3.
 PROFILE = {}
 
 
@@ -84,7 +86,7 @@ class RelocNode(Node):
         self.publish_pose = P('publish_initialpose', True).value
         self.deadline = P('deadline_s', rc.DEADLINE_S).value      # protocol value; override only for fault-injection tests
         self.acq_limit = P('acquisition_limit_s', rc.ACQUISITION_LIMIT_S).value
-        self.fastlio_cmd_override = list(P('fastlio_cmd', ['']).value)
+        self.fastlio_exe = P('fastlio_exe', '').value               # fault injection only: replaces the FAST-LIO2 executable
         rc.DEADLINE_S = self.deadline
         self.process_start = time.monotonic()
         self.work.mkdir(parents=True, exist_ok=True)
@@ -123,6 +125,7 @@ class RelocNode(Node):
         self.search_info = None
         self.latest_odom = None
         self.build = None
+        self.last_cloud_mono = None
         self.level_q = None
         self.att.go('WAIT_SENSORS')
         self.announce()
@@ -195,6 +198,7 @@ class RelocNode(Node):
             self.acq.refused += 1
             return
         self.streams['cloud'].add(t, self.mono())
+        self.last_cloud_mono = self.mono()
         if self.att.t_input is None:
             self.att.input_started()
         if m.header.frame_id != 'body':
@@ -262,7 +266,7 @@ class RelocNode(Node):
         out = self.work / f'attempt{self.att.id}'
         out.mkdir(exist_ok=True)
         (out / 'fastlio.yaml').write_text(cfg)
-        cmd = self.fastlio_cmd_override if self.fastlio_cmd_override and self.fastlio_cmd_override[0] else [
+        cmd = shlex.split(self.fastlio_exe) if self.fastlio_exe not in ('', 'default') else [
             str(Path(get_package_prefix('fast_lio')) / 'lib' / 'fast_lio' / 'fastlio_mapping')]
         sim = ['-p', 'use_sim_time:=true'] if self.get_parameter('use_sim_time').value else []
         self.lio = subprocess.Popen(cmd + ['--ros-args', '--params-file', str(out / 'fastlio.yaml')] + sim,
@@ -302,7 +306,7 @@ class RelocNode(Node):
         try:
             if st in ('HANDOFF',):
                 if self.mono() - a.marks['state:HANDOFF'] > self.handoff_timeout:
-                    return self.go('HANDOFF_FAILED', reason='amcl_not_confirmed')
+                    return self.go('HANDOFF_FAILED', reason='amcl_not_available' if self.pose_pub_info is None else 'amcl_not_confirmed')
                 return self.tick_handoff()
             if st == 'ACCEPTED':
                 return
@@ -323,6 +327,8 @@ class RelocNode(Node):
             elif st == 'ACCUMULATING':
                 if self.lio.poll() is not None:
                     return self.go('ERROR', reason=f'fastlio_exited_{self.lio.returncode}')
+                if self.acq.stop_reason is None and self.last_cloud_mono is not None and self.mono() - self.last_cloud_mono > LIO_STALL_S:
+                    return self.go('ERROR', reason='lio_stalled')       # FAST-LIO2 stopped producing clouds mid-acquisition
                 if self.acq.stop_reason is None and a.elapsed() >= self.acq_limit:
                     self.acq.finish('time_limit')
                 if self.acq.stop_reason is not None:

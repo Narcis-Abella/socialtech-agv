@@ -34,12 +34,21 @@ def main():
     ref = lambda t: T_link @ T0 @ reference_at(rows, t)
     out = {'run': run.name, 'attempt': m['attempt'], 'state': m['state'], 'reason': m['reason'], 'accepted': m['accepted']}
     ip = m['initialpose']
+    unscorable = None
     if ip:
-        xy, deg = error(pose_xyyaw(ip['x'], ip['y'], ip['yaw']), ref(ip['stamp']))
-        out['initialpose_error'] = {'xy_m': xy, 'yaw_deg': deg, 'within_limits': xy <= .30 and deg <= 8.}
-    if m['accepted']:
+        try:
+            xy, deg = error(pose_xyyaw(ip['x'], ip['y'], ip['yaw']), ref(ip['stamp']))
+            out['initialpose_error'] = {'xy_m': xy, 'yaw_deg': deg, 'within_limits': xy <= .30 and deg <= 8.}
+        except ValueError as exc:             # the Voxel-SLAM reference has a gap at this stamp: no ground truth, not a method result
+            unscorable = str(exc)
+            out['reference_gap'] = unscorable
+    if unscorable:
+        out['class'] = 'unscorable_reference_gap'
+    elif m['accepted']:
         ok = ip and out['initialpose_error']['within_limits'] and not a.negative
         out['class'] = 'correct_accept' if ok else 'wrong_accept'
+    elif m['state'] == 'ERROR':
+        out['class'] = 'error_no_pose'      # nothing was published; neither a correct reject nor a method rejection
     else:
         out['class'] = 'correct_reject' if a.negative else ('false_reject_timeout' if m['state'] == 'TIMEOUT' else 'false_reject_' + str(m['reason']))
     tum = run / 'amcl.tum'
