@@ -34,6 +34,12 @@ AMCL_TF_STALL_S = 3.      # AMCL republishes map -> odom on every scan (nav2_amc
 SUPERVISE_GAP_S = 2.      # the supervision tick (20 Hz) itself went unserved this long: the node could not vouch meanwhile
 ODOM_KEEP = 1200          # odometry samples kept after acceptance (2 min at 10 Hz): only stamps near "now" are ever propagated
 INPUT_JUMP_S = 1.        # a sensor header stamp may not advance this much more than the wall time between two messages
+# Map check (map_check.py): the pose that is about to go out, or that is being vouched for, tested against the map with the newest scans.
+MAP_CHECK_WINDOW_S = S2_EXPOSURE_S   # the exposure the acceptance rule was validated on
+MAP_CHECK_TIMEOUT_S = 8.  # worker limit; a check that does not answer is a failed check
+MAP_CHECK_MAX_AGE_S = 3.  # /initialpose carries the pose AT the newest scan of a passed check and goes out at most this long after it
+MAP_CHECK_PERIOD_S = 3.   # after LOCALIZED: one check every this long (LOSS_HOLD_S); a failed one is repeated at once
+MAP_CHECK_FAILS = 2       # consecutive failed checks before LOCALIZED is revoked (one scan window can be blocked by a person or a door)
 PERMIT_PERIOD_S = .1      # navigation permit heartbeat
 PERMIT_TTL_S = .5         # the gate closes when the newest permit is older than this (5 missed heartbeats)
 PERMIT_NEED = 3           # consecutive fresh `true` heartbeats before the gate opens
@@ -316,6 +322,15 @@ def compose_planar(xyyaw, ext):
     x, y, w = xyyaw
     ex, ey, ew = ext
     return (x + math.cos(w) * ex - math.sin(w) * ey, y + math.sin(w) * ex + math.cos(w) * ey, w + ew)
+
+
+def planar_delta(a, b):
+    """4x4 rigid motion of the map plane that takes planar pose b (x, y, yaw) onto pose a."""
+    def se2(p):
+        T = np.eye(4); c, s_ = math.cos(p[2]), math.sin(p[2])
+        T[:2, :2] = [[c, -s_], [s_, c]]; T[:2, 3] = p[:2]
+        return T
+    return se2(a) @ np.linalg.inv(se2(b))
 
 
 def yaw_diff_deg(a, b):

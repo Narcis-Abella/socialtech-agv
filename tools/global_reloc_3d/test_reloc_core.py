@@ -308,5 +308,15 @@ class Phase2Test(unittest.TestCase):
         self.assertEqual((j.jumps, j.fault), (1, 'input_stamp_jump_imu'))      # latched: later sane stamps do not clear it
 
 
+    def test_planar_delta_takes_the_own_pose_onto_the_amcl_pose(self):
+        own, amcl = (1., 2., .3), (1.4, 1.7, .5)
+        D = rc.planar_delta(amcl, own)
+        c, s = np.cos(own[2]), np.sin(own[2])
+        T = np.eye(4); T[:2, :2] = [[c, -s], [s, c]]; T[:2, 3] = own[:2]
+        M = D @ T
+        self.assertTrue(np.allclose(M[:2, 3], amcl[:2]))
+        self.assertAlmostEqual(np.arctan2(M[1, 0], M[0, 0]), amcl[2])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -18,7 +18,7 @@ def generate_launch_description():
     args = [DeclareLaunchArgument(n) for n in names]
     for n, d in (('sim_time', 'true'), ('mode', 's3'), ('sensor_height', '0.53'), ('max_attempts', '1'), ('overrides', os.path.join(NAV, 'config/no_overrides.yaml')),
                  ('register_binary', os.path.join(os.path.dirname(HERE), 'register_v2')), ('lib_dir', '/opt'),
-                 ('deadline_s', '60.0'), ('acquisition_limit_s', '30.0'), ('handoff_timeout_s', '30.0'), ('with_amcl', 'true'), ('fastlio_exe', 'default'), ('s2_exposure_s', '3.0'), ('s3_auto_authorize', 'false'), ('sensor_wait_s', '30.0'),
+                 ('deadline_s', '60.0'), ('acquisition_limit_s', '30.0'), ('handoff_timeout_s', '30.0'), ('with_amcl', 'true'), ('fastlio_exe', 'default'), ('s2_exposure_s', '3.0'), ('s3_auto_authorize', 'false'), ('sensor_wait_s', '30.0'), ('map_supervision', 'enforce'),
                  ('base_from_body_xyyaw', '[0.0, 0.0, 0.0]'), ('init_std_m', '0.15'), ('init_yaw_std_deg', '5.0')):   # last four: protocol values; overridden only by fault-injection tests
         args.append(DeclareLaunchArgument(n, default_value=d))
     sim = {'use_sim_time': ParameterValue(LC('sim_time'), value_type=bool)}
@@ -31,7 +31,7 @@ def generate_launch_description():
                             '-p', ['acquisition_limit_s:=', LC('acquisition_limit_s')], '-p', ['handoff_timeout_s:=', LC('handoff_timeout_s')], '-p', ['fastlio_exe:=', LC('fastlio_exe')],
                             '-p', ['s2_exposure_s:=', LC('s2_exposure_s')], '-p', ['s3_auto_authorize:=', LC('s3_auto_authorize')],
                             '-p', ['base_from_body_xyyaw:=', LC('base_from_body_xyyaw')], '-p', ['init_std_m:=', LC('init_std_m')],
-                            '-p', ['init_yaw_std_deg:=', LC('init_yaw_std_deg')], '-p', ['sensor_wait_s:=', LC('sensor_wait_s')]], output='screen', name='global_reloc'),
+                            '-p', ['init_yaw_std_deg:=', LC('init_yaw_std_deg')], '-p', ['sensor_wait_s:=', LC('sensor_wait_s')], '-p', ['map_supervision:=', LC('map_supervision')]], output='screen', name='global_reloc'),
         Node(package='pointcloud_to_laserscan', executable='pointcloud_to_laserscan_node', parameters=[os.path.join(NAV, 'config/scan.yaml'), sim],
              remappings=[('cloud_in', '/cloud_registered_body'), ('scan', '/scan')]),
         Node(package='nav2_map_server', executable='map_server', parameters=[{'yaml_filename': LC('map')}, sim]),

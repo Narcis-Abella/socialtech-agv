@@ -5,17 +5,20 @@ frozen gate verify.decide) -> accepted pose -> /initialpose -> AMCL coherence ch
 The worker is a killable subprocess: the 60 s deadline is enforced by killing it, not by hoping it returns.
 Frozen candidate: thresholds live in verify.py/search_v2.py and are not parameters of this node.
 """
+import collections
 import ctypes
 import json
 import math
 import os
 import re
 import shlex
+import shutil
 import signal
 import struct
 import subprocess
 import threading
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -98,6 +101,14 @@ class RelocNode(Node):
         self.acq_limit = P('acquisition_limit_s', rc.ACQUISITION_LIMIT_S).value
         self.fastlio_exe = P('fastlio_exe', '').value               # fault injection only: replaces the FAST-LIO2 executable
         self.sensor_wait = P('sensor_wait_s', rc.SENSOR_WAIT_S).value   # O1: bound on waiting for the very first sensor message
+        # Map check after LOCALIZED: 'enforce' revokes on MAP_CHECK_FAILS consecutive failures, 'observe' only records, 'off'.
+        # The check before /initialpose is not optional.
+        self.map_supervision = P('map_supervision', 'enforce').value
+        # Scratch of the map-check worker: memory-backed, so a storage stall (note 21, NVMe) cannot hang the supervision tick on it.
+        shm = '/dev/shm' if os.path.isdir('/dev/shm') else tempfile.gettempdir()
+        for old in Path(shm).glob('global_reloc_*'):          # left by a killed instance; one relocalizer runs per machine
+            shutil.rmtree(old, ignore_errors=True)
+        self.scratch = Path(tempfile.mkdtemp(prefix='global_reloc_', dir=shm))
         rc.DEADLINE_S = self.deadline
         self.process_start = time.monotonic()
         self.work.mkdir(parents=True, exist_ok=True)
@@ -125,6 +136,14 @@ class RelocNode(Node):
         self.create_subscription(TFMessage, '/tf', self.on_tf, 100)
         self.permit_stats = {'true': 0, 'false': 0, 'first_true_mono': None, 'last_true_mono': None}
         self.supervision = None
+        self.kill_map_check()
+        self.recent = collections.deque()      # newest body clouds (t, xyz, arrival), MAP_CHECK_WINDOW_S of them: input of map_check.py
+        self.check = None                      # running map-check worker
+        self.verified = None                   # last passed check before the hand-over
+        self.checks = []                       # every check of this attempt before LOCALIZED (metrics)
+        self.amcl_delta = None
+        self.verified_pose = self.checked_pose = None
+        self.check_n = 0
         self.odom_ok = rc.OdomPlausibility()
         self.inputs = {k: rc.InputIntegrity(k) for k in ('imu', 'lidar')}
         self.footprint_xyyaw = None
@@ -239,11 +258,15 @@ class RelocNode(Node):
     @profiled
     def on_cloud(self, m):
         st = self.att.state
-        if st != 'LIO_STARTING' and st not in rc.ACCUMULATE_STATES:
+        if st not in LIO_STATES or (st == 'LOCALIZED' and self.map_supervision == 'off'):
             return
         t = msg_stamp(m)
         if t <= self.acq.min_stamp:
             self.acq.refused += 1
+            return
+        if st != 'LIO_STARTING' and st not in rc.ACCUMULATE_STATES:      # searching, handing over or localized: keep only the newest scans
+            if m.header.frame_id == 'body':
+                self.keep_recent(t, cloud_xyz(m))
             return
         self.streams['cloud'].add(t, self.mono())
         self.last_cloud_mono = self.mono()
@@ -252,6 +275,7 @@ class RelocNode(Node):
         if m.header.frame_id != 'body':
             return self.go('ERROR', reason='cloud_frame_not_body')
         xyz = cloud_xyz(m)
+        self.keep_recent(t, xyz)
         if st == 'LIO_STARTING':
             if len(self.acq.odom) < 2 or not len(xyz):
                 return
@@ -266,6 +290,128 @@ class RelocNode(Node):
                 self.stop_signalled = True
                 self.announce()
 
+    def keep_recent(self, t, xyz):
+        if len(xyz):
+            self.recent.append((t, xyz, self.mono()))
+        while self.recent and t - self.recent[0][0] > rc.MAP_CHECK_WINDOW_S + .05:
+            self.recent.popleft()
+
+    # ------------------------------------------------------------------ map check (map_check.py worker)
+    def start_map_check(self, tag):
+        """Snapshot the newest scans and the odometry under them, start the worker. False = not enough data yet."""
+        if self.latest_odom is None:
+            return False
+        clouds = [c for c in self.recent if c[0] <= self.latest_odom[0]]
+        if len(clouds) < 6 or clouds[-1][0] - clouds[0][0] < rc.MAP_CHECK_WINDOW_S / 2:
+            return False
+        odom = [r for r in self.acq.odom[-600:] if r[0] >= clouds[0][0] - 1.]
+        T_map_ci, _, _ = rc.handoff_pose(self.T_map_src, self.T_level_local, self.T_ci_first, np.eye(4))
+        if tag == 's':                 # after LOCALIZED the pose under test is the one navigation uses: AMCL's
+            if self.amcl_delta is None:
+                return False
+            T_map_ci = self.amcl_delta @ T_map_ci
+        self.check_n += 1
+        d = self.scratch / f'{tag}{self.check_n:04d}'
+        d.mkdir()
+        np.savez(d / 'snapshot.npz', T_map_ci=T_map_ci, odom_t=np.array([r[0] for r in odom]), odom_T=np.array([r[1] for r in odom]),
+                 cloud_t=np.array([c[0] for c in clouds]), cloud_n=np.array([len(c[1]) for c in clouds]),
+                 cloud_xyz=np.concatenate([c[1] for c in clouds]).astype(np.float32))
+        env = {**os.environ, 'LD_LIBRARY_PATH': f"{self.lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
+        cmd = [sys.executable, '-B', str(HERE / 'map_check.py'), '--input', str(d / 'snapshot.npz'), '--map', self.map_xyz,
+               '--binary', self.binary, '--out', str(d / 'out'), '--timeout-s', str(rc.MAP_CHECK_TIMEOUT_S)]
+        proc = subprocess.Popen(cmd, stdout=open(d / 'stdout', 'w'), stderr=subprocess.STDOUT, env=env, start_new_session=True,
+                                preexec_fn=_die_with_parent)
+        self.check = {'proc': proc, 'dir': d, 'tag': tag, 'mono': self.mono(), 'newest_stamp': clouds[-1][0], 'newest_mono': clouds[-1][2],
+                      'T_ci_newest': interpolate(odom, clouds[-1][0])}
+        return True
+
+    def poll_map_check(self):
+        """None while the worker runs; else its verdict (a worker that crashed or overran is a failed check)."""
+        c = self.check
+        rcode = c['proc'].poll()
+        if rcode is None:
+            if self.mono() - c['mono'] <= rc.MAP_CHECK_TIMEOUT_S + 1.:
+                return None
+            self.kill_map_check()
+            r = {'ok': False, 'reason': 'timeout'}
+        else:
+            path = c['dir'] / 'out' / 'check.json'
+            r = json.loads(path.read_text()) if rcode == 0 and path.exists() else {'ok': False, 'reason': f'worker_exit_{rcode}'}
+        shutil.rmtree(c['dir'], ignore_errors=True)       # the verdict below is what is kept (metrics.json / supervision.json)
+        self.check = None
+        r = {k: r.get(k) for k in ('ok', 'reason', 'geometry', 'at_propagated', 'shift', 'clouds', 'window_s', 'gicp_s', 'elapsed_s', 'fit_points', 'check_points')}
+        r.update(tag=c['tag'], wall_s=self.mono() - c['mono'], newest_stamp=c['newest_stamp'], newest_mono=c['newest_mono'],
+                 rel_first_input_s=c['mono'] - (self.att.t_input or c['mono']))
+        self.checked_pose = (c['newest_stamp'], c['T_ci_newest'])       # the stamp and odometry pose this verdict is about
+        return r
+
+    def kill_map_check(self):
+        c = getattr(self, 'check', None)
+        if c and c['proc'].poll() is None:
+            os.killpg(c['proc'].pid, signal.SIGKILL); c['proc'].wait()
+        if c:
+            shutil.rmtree(c['dir'], ignore_errors=True)
+        self.check = None
+
+    def map_verified(self):
+        """Hand-over: True only while a passed check on scans at most MAP_CHECK_MAX_AGE_S old is in hand. A failed check ends the attempt."""
+        v = self.verified
+        if v is not None and self.mono() - v['newest_mono'] <= rc.MAP_CHECK_MAX_AGE_S:
+            return True
+        if self.check is None:
+            self.start_map_check('h')
+            return False
+        r = self.poll_map_check()
+        if r is None:
+            return False
+        self.checks.append(r)
+        if not r['ok']:
+            self.go('HANDOFF_FAILED', reason=f"map_check_{r['reason']}")
+            return False
+        self.verified = r
+        self.verified_pose = self.checked_pose
+        self.att.mark_once('map_check_passed')
+        return self.mono() - r['newest_mono'] <= rc.MAP_CHECK_MAX_AGE_S
+
+    def tick_confirm(self):
+        """AMCL agrees with the node's own pose; before LOCALIZED the own pose must once more fit the map with scans newer than the
+        hand-over (the agreement alone is circular: AMCL moves with the same odometry)."""
+        if self.check is None:
+            self.start_map_check('c')
+            return
+        r = self.poll_map_check()
+        if r is None:
+            return
+        self.checks.append(r)
+        if not r['ok']:
+            return self.go('HANDOFF_FAILED', reason=f"map_check_{r['reason']}_after_pose")
+        self.att.mark('amcl_confirmed')
+        self.go('LOCALIZED')
+
+    def tick_map_supervision(self):
+        """After LOCALIZED: the same check, periodically. Returns a revocation reason or None."""
+        if self.map_supervision == 'off':
+            return None
+        if self.check is None:
+            if self.mono() - self.map_last >= rc.MAP_CHECK_PERIOD_S and self.start_map_check('s'):
+                self.map_last = self.mono()
+            return None
+        r = self.poll_map_check()
+        if r is None:
+            return None
+        self.map_fails = 0 if r['ok'] else self.map_fails + 1
+        if not r['ok']:
+            self.map_last = -math.inf          # a failed check is repeated at once, not a period later
+        self.map_stats['n'] += 1; self.map_stats['failed'] += not r['ok']
+        self.map_stats['max_consecutive_failed'] = max(self.map_stats['max_consecutive_failed'], self.map_fails)
+        g = r.get('geometry') or {}
+        self.map_trace.append([round(r['newest_mono'] - self.att.marks['state:LOCALIZED'], 1), int(r['ok']), r['reason'],
+                               g.get('support_015') and round(g['support_015'], 3), g.get('matched_rmse_m') and round(g['matched_rmse_m'], 3),
+                               r.get('shift') and round(r['shift']['xy_m'], 3), r.get('shift') and round(r['shift']['yaw_deg'], 2), round(r['wall_s'], 2)])
+        if self.map_fails >= rc.MAP_CHECK_FAILS and self.map_supervision == 'enforce':
+            return 'map_incoherent'
+        return None
+
     def on_tf(self, m):
         """After LOCALIZED: every map -> odom of AMCL, compared at the robot with the node's own propagated pose."""
         if self.att.state != 'LOCALIZED' or self.supervision is None or self.footprint_xyyaw is None or self.latest_odom is None:
@@ -277,6 +423,7 @@ class RelocNode(Node):
                 _, xyyaw, _ = rc.handoff_pose(self.T_map_src, self.T_level_local, self.T_ci_first, self.latest_odom[1])
                 own = rc.compose_planar(xyyaw, self.base_ext)
                 self.supervision.add(self.mono(), math.hypot(amcl[0] - own[0], amcl[1] - own[1]), rc.yaw_diff_deg(amcl[2], own[2]))
+                self.amcl_delta = rc.planar_delta(amcl, own)      # what AMCL has moved the robot by, relative to the node's own pose
 
     def tick_permit(self):
         ok = self.att.state == 'LOCALIZED'
@@ -301,7 +448,7 @@ class RelocNode(Node):
             return self.go('LOCALIZATION_LOST', reason='odometry_implausible')
         if self.input_fault():
             return self.go('LOCALIZATION_LOST', reason=self.input_fault())
-        why = self.supervision.lost(self.mono())
+        why = self.supervision.lost(self.mono()) or self.tick_map_supervision()
         if why:
             return self.go('LOCALIZATION_LOST', reason=why)
         if self.mono() - self.supervision_written > 10.:      # so that a killed node still leaves a recent record
@@ -318,7 +465,8 @@ class RelocNode(Node):
                'localized_mono': a.marks.get('state:LOCALIZED'), 'lost_mono': a.marks.get('state:LOCALIZATION_LOST'), 'written_mono': self.mono(),
                'held_s': (a.marks.get('state:LOCALIZATION_LOST', self.mono()) - a.marks['state:LOCALIZED']) if 'state:LOCALIZED' in a.marks else None,
                'first_input_mono': a.t_input, 'permit': self.permit_stats, 'odom_max_speed_mps': self.odom_ok.max_seen,
-               'odom_rows_kept': len(self.acq.odom), 'inputs': {k: i.report() for k, i in self.inputs.items()}, 'monitor': self.supervision.report() if self.supervision else None, 'truth_used': False}
+               'odom_rows_kept': len(self.acq.odom), 'inputs': {k: i.report() for k, i in self.inputs.items()},
+               'map_supervision': {**self.map_stats, 'trace_t_ok_reason_support_rmse_shiftxy_shiftyaw_wall': list(self.map_trace)} if self.supervision else None, 'monitor': self.supervision.report() if self.supervision else None, 'truth_used': False}
         self.supervision_written = self.mono()
         rc.dump(d / 'supervision.tmp', out)
         os.replace(d / 'supervision.tmp', d / 'supervision.json')
@@ -344,8 +492,7 @@ class RelocNode(Node):
         c = m.pose.covariance
         self.monitor.add(t, (p.x, p.y, yaw), T_now, cov_trace=c[0] + c[7] + c[35])
         if self.monitor.confirmed:
-            self.att.mark('amcl_confirmed')
-            self.go('LOCALIZED')
+            self.att.mark_once('amcl_coherent')      # LOCALIZED follows from tick_confirm()
 
     # ------------------------------------------------------------------ helpers
     def publish_footprint(self, m):
@@ -440,10 +587,13 @@ class RelocNode(Node):
                     return self.go('HANDOFF_FAILED', reason='odometry_implausible')
                 if self.mono() - a.marks['state:HANDOFF'] > self.handoff_timeout:
                     return self.go('HANDOFF_FAILED', reason='amcl_not_confirmed' if self.pose_pub_info is not None else
+                                   'map_check_not_passed' if self.checks and self.verified is None else
                                    'odom_stale_at_handoff' if self.odom_age() > HANDOFF_ODOM_MAX_AGE_S else 'amcl_not_available')
                 if self.pose_pub_info is not None and (self.lio is None or self.lio.poll() is not None or self.odom_age() > LIO_STALL_S):
                     # pose already handed over, but the odometry AMCL needs is gone: say so now instead of waiting for the timeout
                     return self.go('HANDOFF_FAILED', reason='odometry_lost_after_pose')
+                if self.pose_pub_info is not None and self.monitor.confirmed:
+                    return self.tick_confirm()
                 return self.tick_handoff()
             if st == 'ACCEPTED':
                 return
@@ -626,7 +776,11 @@ class RelocNode(Node):
             return                                     # AMCL not up yet: wait, bounded by handoff_timeout
         if self.latest_odom is None or self.odom_age() > HANDOFF_ODOM_MAX_AGE_S:
             return                                     # stale odometry: the pose "now" is unknown, publish nothing (bounded wait)
-        t, T = self.latest_odom
+        if not self.map_verified():                    # the propagated pose must fit the map with the newest scans, checked just now
+            return
+        # The pose that goes out is the one the check was about, with that scan's stamp: nothing unverified is added on the way.
+        # AMCL integrates the odometry from that stamp to its own "now" (nav2_amcl handleInitialPose), as it did in F1.
+        t, T = self.verified_pose
         _, xyyaw, _ = rc.handoff_pose(self.T_map_src, self.T_level_local, self.T_ci_first, T)
         x, y, yaw = rc.compose_planar(xyyaw, self.base_ext)
         # The only place in this file that publishes a pose, reachable only from HANDOFF (itself only after ACCEPTED).
@@ -641,7 +795,7 @@ class RelocNode(Node):
         c[35] = math.radians(self.init_yaw_std) ** 2
         m.pose.covariance = c
         self.init_pub.publish(m)
-        self.pose_pub_info = {'stamp': t, 'x': x, 'y': y, 'yaw': yaw}
+        self.pose_pub_info = {'stamp': t, 'x': x, 'y': y, 'yaw': yaw, 'map_check_age_s': self.mono() - self.verified['newest_mono']}
         a.mark('initialpose_published', **self.pose_pub_info)
 
     # ------------------------------------------------------------------ outcome
@@ -661,8 +815,13 @@ class RelocNode(Node):
         self.get_logger().info(f'attempt {a.id} ended {a.state} ({self.reason}); metrics written')
         # O4: the clouds and IMU samples of a finished attempt are never read again (metrics are on disk). Odometry is trimmed in on_odom.
         self.acq.clouds, self.acq.imu, self.build = [], [], None
+        if a.state != 'LOCALIZED':
+            self.kill_map_check(); self.recent.clear()
         if a.state == 'LOCALIZED':
             self.supervision = rc.LocalizationMonitor(self.mono())
+            self.map_last, self.map_fails = self.mono(), 0
+            self.map_stats = {'mode': self.map_supervision, 'n': 0, 'failed': 0, 'max_consecutive_failed': 0}
+            self.map_trace = collections.deque(maxlen=400)
             self.supervise_mono = self.mono()
             self.write_supervision()
         if a.state in ('REJECTED', 'TIMEOUT', 'ERROR', 'HANDOFF_FAILED') and a.id < self.max_attempts:
@@ -701,6 +860,7 @@ class RelocNode(Node):
                 'gicp_s': ss.get('gicp'), 'score_s': ss.get('score'), 'confirm_total_s': ss.get('confirm_total'),
                 'handoff_publish_s': dur('accepted', 'initialpose_published'),
                 'handoff_confirm_s': dur('initialpose_published', 'amcl_confirmed'),
+                'map_check_s': dur('accepted', 'map_check_passed'),
             },
             'total_s': {
                 'protocol_accept_from_first_input': rel('accepted'),
@@ -713,6 +873,7 @@ class RelocNode(Node):
             'marks_rel_first_input_s': {k: v - ti for k, v in marks.items()},
             'streams': {k: s.report() for k, s in self.streams.items()},
             'inputs': {k: i.report() for k, i in self.inputs.items()},
+            'map_checks': self.checks,
             'acquisition': {'clouds': len(self.acq.clouds), 'refused_stale': self.acq.refused, 'stop_reason': self.acq.stop_reason,
                             'imu_samples': len(self.acq.imu), 'span_s': self.acq.span_s(), 's2_clouds': self.acq.s2_n,
                             's2_odom_radius_m': getattr(self.acq, 's2_radius', None),   # own-odometry motion during the S2 exposure
@@ -745,6 +906,8 @@ class RelocNode(Node):
             except Exception:
                 import traceback; traceback.print_exc()
         self.kill_search()
+        self.kill_map_check()
+        shutil.rmtree(self.scratch, ignore_errors=True)
         if self.att.state not in ('LOCALIZED',):
             self.stop_lio()
 
