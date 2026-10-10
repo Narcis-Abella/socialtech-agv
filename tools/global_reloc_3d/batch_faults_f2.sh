@@ -45,16 +45,22 @@ run h08_input_gap_10s_after_localized "${LOC}LOCALIZATION_LOST\(odometry_stalled
 run h09_lidar_blackout_2s_in_s2 "$SAFE" h40 "$FED and relay['lidar']['dropped']>=15 and lidar_gap>1.5" RELAY_SPEC="$(relay 1,0,after=5,until=7 0,0)" PLAY_ARGS_EXTRA="$REMAP"
 run h10_imu_lost_after_localized "${LOC}LOCALIZATION_LOST\(.*" h40 "$FED and relay['imu']['dropped']>200" $POST RELAY_SPEC="$(relay 0,0 1,0,after=35)" PLAY_ARGS_EXTRA="$REMAP"
 run h11_lidar_lost_after_localized "${LOC}LOCALIZATION_LOST\(odometry_stalled\)" h40 "$FED and relay['lidar']['dropped']>10" $POST RELAY_SPEC="$(relay 1,0,after=35 0,0)" PLAY_ARGS_EXTRA="$REMAP"
-# --- time stamps
-run h12_imu_duplicated_20pct "$SAFE" h40 "$FED and relay['imu']['duplicated']>100 and imu_nonmono>50" $POST RELAY_SPEC="$(relay 0,0 0,0,dup=0.2)" PLAY_ARGS_EXTRA="$REMAP"
-run h13_imu_reversed_5pct "$SAFE" h40 "$FED and relay['imu']['swapped']>50 and imu_nonmono>20" $POST RELAY_SPEC="$(relay 0,0 0,0,swap=0.05)" PLAY_ARGS_EXTRA="$REMAP"
-run h14_lidar_duplicated_20pct "$SAFE" h40 "$FED and relay['lidar']['duplicated']>10 and lidar_nonmono>5" $POST RELAY_SPEC="$(relay 0,0,dup=0.2 0,0)" PLAY_ARGS_EXTRA="$REMAP"
-run h15_lidar_reversed_20pct "$SAFE" h40 "$FED and relay['lidar']['swapped']>10 and lidar_nonmono>5" $POST RELAY_SPEC="$(relay 0,0,swap=0.2 0,0)" PLAY_ARGS_EXTRA="$REMAP"
+# --- time stamps. h12-h15: since the input-integrity rule the attempt ends at the first bad stamp, before FAST-LIO2 has published
+# anything, so "FAST-LIO2 was fed" ($FED) cannot be shown there; their evidence is that the relay altered the stream, that the
+# node saw it and that the relay had its subscribers. Rows scored with the older expression stay in table-f2c.csv as INVALID.
+SEEN="relay['imu']['max_matched_subscribers']>=2 and relay['lidar']['max_matched_subscribers']>=1"
+run h12_imu_duplicated_20pct "$SAFE" h40 "$SEEN and relay['imu']['duplicated']>100 and imu_nonmono>=1" $POST RELAY_SPEC="$(relay 0,0 0,0,dup=0.2)" PLAY_ARGS_EXTRA="$REMAP"
+run h13_imu_reversed_5pct "$SAFE" h40 "$SEEN and relay['imu']['swapped']>50 and imu_nonmono>=1" $POST RELAY_SPEC="$(relay 0,0 0,0,swap=0.05)" PLAY_ARGS_EXTRA="$REMAP"
+run h14_lidar_duplicated_20pct "$SAFE" h40 "$SEEN and relay['lidar']['duplicated']>10 and lidar_nonmono>=1" $POST RELAY_SPEC="$(relay 0,0,dup=0.2 0,0)" PLAY_ARGS_EXTRA="$REMAP"
+run h15_lidar_reversed_20pct "$SAFE" h40 "$SEEN and relay['lidar']['swapped']>10 and lidar_nonmono>=1" $POST RELAY_SPEC="$(relay 0,0,swap=0.2 0,0)" PLAY_ARGS_EXTRA="$REMAP"
 run h16_imu_epoch_jump_in_s2 '(ERROR|TIMEOUT|REJECTED)\(.*' h40 "odom>5 and relay['imu']['shifted']>100" RELAY_SPEC="$(relay 0,0 0,$EPOCH,after=5)" PLAY_ARGS_EXTRA="$REMAP"
 run h17_both_epoch_jump_in_s2 '(ERROR|TIMEOUT|REJECTED)\(.*' h40 "odom>5 and relay['imu']['shifted']>100 and relay['lidar']['shifted']>5" RELAY_SPEC="$(relay 0,$EPOCH,after=5 0,$EPOCH,after=5)" PLAY_ARGS_EXTRA="$REMAP"
 run h18_both_epoch_jump_in_imu_gate "$SAFE" h40 "relay['imu']['shifted']>100 and relay['lidar']['shifted']>5 and imu_nonmono>=1" RELAY_SPEC="$(relay 0,$EPOCH,after=1 0,$EPOCH,after=1)" PLAY_ARGS_EXTRA="$REMAP"
 run h19_both_epoch_jump_after_localized "${LOC}LOCALIZATION_LOST\(.*" h40 "$FED and relay['imu']['shifted']>100 and relay['lidar']['shifted']>5" $POST RELAY_SPEC="$(relay 0,$EPOCH,after=35 0,$EPOCH,after=35)" PLAY_ARGS_EXTRA="$REMAP"
 run h20_imu_stamp_plus_1000s_after_localized "${LOC}LOCALIZATION_LOST\(.*" h40 "$FED and relay['imu']['shifted']>100" $POST RELAY_SPEC="$(relay 0,0 0,1000,after=35)" PLAY_ARGS_EXTRA="$REMAP"
+run h41_lidar_reversed_from_s2_search '(ERROR|HANDOFF_FAILED)\(input_stamp_backward_lidar\)' h40 "odom>5 and relay['lidar']['swapped']>5 and lidar_nonmono>=1" $POST RELAY_SPEC="$(relay 0,0,swap=0.2,after=8 0,0)" PLAY_ARGS_EXTRA="$REMAP"
+run h42_lidar_reversed_after_localized "${LOC}LOCALIZATION_LOST\(input_stamp_backward_lidar\)" h40 "$FED and relay['lidar']['swapped']>=1" $POST RELAY_SPEC="$(relay 0,0,swap=0.2,after=35 0,0)" PLAY_ARGS_EXTRA="$REMAP"
+run h43_imu_reversed_after_localized "${LOC}LOCALIZATION_LOST\(input_stamp_backward_imu\)" h40 "$FED and relay['imu']['swapped']>=1" $POST RELAY_SPEC="$(relay 0,0 0,0,swap=0.05,after=35)" PLAY_ARGS_EXTRA="$REMAP"
 # --- /clock
 run h21_clock_back_in_s2_search "$SAFE" h00 "inj_rc==[0] and time_jump_logs>0" CLOCK_JUMP_AT=8 CLOCK_JUMP_SEC=1000
 run h22_clock_forward_in_s2_search "$SAFE" h00 "inj_rc==[0]" CLOCK_JUMP_AT=8 CLOCK_JUMP_SEC=2000000000
