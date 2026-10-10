@@ -17,6 +17,37 @@ def pose_xyyaw(x, y, w):
     return T
 
 
+def classify(m, ref, negative):
+    """Class of one attempt. `ref(t)` returns the reference pose or raises ValueError where there is none.
+    A success class is given only with a valid reference at the pose stamp; a pose accepted on a negative is wrong with or without one."""
+    out = {'attempt': m['attempt'], 'state': m['state'], 'reason': m['reason'], 'accepted': m['accepted']}
+    ip = m['initialpose']
+    gap = None
+    if ip:
+        try:
+            xy, deg = error(pose_xyyaw(ip['x'], ip['y'], ip['yaw']), ref(ip['stamp']))
+            if not (np.isfinite(xy) and np.isfinite(deg)):
+                raise ValueError('pose error not finite')
+            out['initialpose_error'] = {'xy_m': xy, 'yaw_deg': deg, 'within_limits': xy <= .30 and deg <= 8.}
+        except ValueError as exc:             # the Voxel-SLAM reference has a gap at this stamp: no ground truth, not a method result
+            gap = out['reference_gap'] = str(exc)
+    if ip and not m['accepted']:
+        out['class'] = 'pose_without_acceptance'        # must never happen; worse than a wrong accept
+    elif m['accepted'] and negative:
+        out['class'] = 'wrong_accept'                   # no correct pose exists in this map: wrong whatever the reference says
+    elif m['accepted'] and not ip:
+        out['class'] = 'accepted_not_published'         # accepted, but the handoff never sent it: nothing to score, not a success
+    elif m['accepted'] and gap:
+        out['class'] = 'unscorable_reference_gap'
+    elif m['accepted']:
+        out['class'] = 'correct_accept' if out['initialpose_error']['within_limits'] else 'wrong_accept'
+    elif m['state'] == 'ERROR':
+        out['class'] = 'error_no_pose'      # nothing was published; neither a correct reject nor a method rejection
+    else:
+        out['class'] = 'correct_reject' if negative else ('false_reject_timeout' if m['state'] == 'TIMEOUT' else 'false_reject_' + str(m['reason']))
+    return out
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--run-dir', required=True, help='run output dir with work/attempt*/metrics.json and amcl.tum')
@@ -32,25 +63,8 @@ def main():
     T0 = map_transform(a.map_yaml)
     T_link = np.asarray(json.loads(Path(a.link).read_text())['T_A_B']) if a.link else np.eye(4)
     ref = lambda t: T_link @ T0 @ reference_at(rows, t)
-    out = {'run': run.name, 'attempt': m['attempt'], 'state': m['state'], 'reason': m['reason'], 'accepted': m['accepted']}
+    out = {'run': run.name, **classify(m, ref, a.negative)}
     ip = m['initialpose']
-    unscorable = None
-    if ip:
-        try:
-            xy, deg = error(pose_xyyaw(ip['x'], ip['y'], ip['yaw']), ref(ip['stamp']))
-            out['initialpose_error'] = {'xy_m': xy, 'yaw_deg': deg, 'within_limits': xy <= .30 and deg <= 8.}
-        except ValueError as exc:             # the Voxel-SLAM reference has a gap at this stamp: no ground truth, not a method result
-            unscorable = str(exc)
-            out['reference_gap'] = unscorable
-    if unscorable:
-        out['class'] = 'unscorable_reference_gap'
-    elif m['accepted']:
-        ok = ip and out['initialpose_error']['within_limits'] and not a.negative
-        out['class'] = 'correct_accept' if ok else 'wrong_accept'
-    elif m['state'] == 'ERROR':
-        out['class'] = 'error_no_pose'      # nothing was published; neither a correct reject nor a method rejection
-    else:
-        out['class'] = 'correct_reject' if a.negative else ('false_reject_timeout' if m['state'] == 'TIMEOUT' else 'false_reject_' + str(m['reason']))
     tum = run / 'amcl.tum'
     if tum.exists() and tum.stat().st_size:
         A = np.loadtxt(tum, ndmin=2)
@@ -61,6 +75,7 @@ def main():
                 errs.append((r[0], *error(T, ref(r[0]))))
             except ValueError:
                 continue
+        out['amcl_poses'] = {'n': len(A), 'unscorable_reference_gap': len(A) - len(errs)}
         if errs:
             e = np.array(errs)
             t0 = ip['stamp'] if ip else e[0, 0]

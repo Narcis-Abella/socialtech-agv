@@ -21,6 +21,8 @@ def reference_at(rows, t):
     if i == 0 or i == len(rows) or rows[i, 0]-rows[i-1, 0] > .20:
         raise ValueError('reference timestamp not bracketed within 0.20 s')
     a, b = rows[i-1], rows[i]
+    if not (np.isfinite(t) and np.isfinite(a).all() and np.isfinite(b).all()):
+        raise ValueError('reference not finite at this timestamp')
     u = (t-a[0])/(b[0]-a[0])
     rotation = Slerp([a[0], b[0]], Rotation.from_quat([a[4:8], b[4:8]]))([t])[0]
     return pose((1-u)*a[1:4]+u*b[1:4], rotation.as_quat())

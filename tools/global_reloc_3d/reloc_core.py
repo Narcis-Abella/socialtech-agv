@@ -23,6 +23,19 @@ S2_EXPOSURE_S = 3.
 # Planning estimate only (never an acceptance threshold): worst submap build (5.7 s) + worst search worker (15.3 s) observed in
 # note 15 (development data) + 1 s. S3 is not started when less than this remains of the single 60 s budget.
 S3_COMPUTE_RESERVE_S = 22.
+# Phase 2 (robustness). None of these touches the 60 s clock, the search or the acceptance gate.
+SENSOR_WAIT_S = 30.       # O1: no IMU and no LiDAR message at all within this time of the attempt start -> TIMEOUT (clock B, not the 60 s)
+ODOM_MAX_SPEED_MPS = 3.   # plausibility bound on FAST-LIO2 odometry, about twice the top speed of the base (AgileX figure, not verified here)
+ODOM_BAD_STEPS = 3        # consecutive implausible steps (0.3 s at 10 Hz) before the odometry is declared diverged
+LOSS_XY_M = .50           # O3: AMCL against the node's own propagated pose after LOCALIZED; 0.5 m / 3 s is the loss rule of pose_eval.py
+LOSS_YAW_DEG = 15.        # no earlier definition exists for yaw; provisional
+LOSS_HOLD_S = 3.
+AMCL_TF_STALL_S = 3.      # AMCL republishes map -> odom on every scan (nav2_amcl laserReceived); silent for this long = AMCL gone
+SUPERVISE_GAP_S = 2.      # the supervision tick (20 Hz) itself went unserved this long: the node could not vouch meanwhile
+ODOM_KEEP = 1200          # odometry samples kept after acceptance (2 min at 10 Hz): only stamps near "now" are ever propagated
+PERMIT_PERIOD_S = .1      # navigation permit heartbeat
+PERMIT_TTL_S = .5         # the gate closes when the newest permit is older than this (5 missed heartbeats)
+PERMIT_NEED = 3           # consecutive fresh `true` heartbeats before the gate opens
 
 TRANSITIONS = {
     'IDLE': {'WAIT_SENSORS', 'ERROR'},
@@ -40,9 +53,12 @@ TRANSITIONS = {
     'SEARCHING': {'ACCEPTED', 'REJECTED', 'TIMEOUT', 'ERROR'},
     'ACCEPTED': {'HANDOFF', 'ERROR'},
     'HANDOFF': {'LOCALIZED', 'HANDOFF_FAILED', 'ERROR'},
-    'LOCALIZED': set(), 'HANDOFF_FAILED': set(), 'REJECTED': set(), 'TIMEOUT': set(), 'ERROR': set(),
+    # LOCALIZED ends the attempt (metrics are written there, as in F1) but is supervised afterwards; the only way out is a
+    # revocation. There is no automatic way back: a new localization needs a new attempt started by a person or a restart.
+    'LOCALIZED': {'LOCALIZATION_LOST'}, 'LOCALIZATION_LOST': set(),
+    'HANDOFF_FAILED': set(), 'REJECTED': set(), 'TIMEOUT': set(), 'ERROR': set(),
 }
-TERMINAL = {s for s, n in TRANSITIONS.items() if not n}
+TERMINAL = {s for s, n in TRANSITIONS.items() if not n} | {'LOCALIZED'}
 SEARCH_STATES = {'SEARCHING', 'S2_SEARCHING', 'S3_SEARCHING'}
 ACCUMULATE_STATES = {'ACCUMULATING', 'S2_ACCUMULATING', 'S2_SEARCHING', 'S2_INSUFFICIENT', 'S3_SUPERVISION_REQUIRED', 'S3_ACCUMULATING'}
 
@@ -98,6 +114,10 @@ class Attempt:
 
     def expired(self):
         return self.t_input is not None and self.elapsed() >= DEADLINE_S
+
+    def no_input(self, limit=None):
+        """O1: not one sensor message since the attempt started. The 60 s clock has no origin yet, so this is a separate bound."""
+        return self.t_input is None and self.clock() - self.t_start >= (SENSOR_WAIT_S if limit is None else limit)
 
     def since(self, a, b):
         return self.marks[b] - self.marks[a] if a in self.marks and b in self.marks else None
@@ -323,6 +343,120 @@ class HandoffMonitor:
         if len(self.run) >= self.need and self.run[-1] - self.run[0] >= self.hold_s:
             self.confirmed = True
         return self.confirmed
+
+
+class OdomPlausibility:
+    """FAST-LIO2 alive but diverged: implied speed between consecutive odometry stamps above a physical bound, several times in a row.
+
+    Latches. Samples with a non-increasing stamp are ignored here (StreamStats counts them)."""
+
+    def __init__(self, max_speed=None, need=None):
+        self.max_speed = ODOM_MAX_SPEED_MPS if max_speed is None else max_speed
+        self.need = ODOM_BAD_STEPS if need is None else need
+        self.last = None
+        self.bad = 0
+        self.diverged = False
+        self.max_seen = 0.
+
+    def add(self, stamp, xyz):
+        xyz = np.asarray(xyz, float)
+        if self.last is not None and stamp > self.last[0]:
+            v = float(np.linalg.norm(xyz - self.last[1]) / (stamp - self.last[0]))
+            self.max_seen = max(self.max_seen, v)
+            self.bad = self.bad + 1 if v > self.max_speed else 0
+            if self.bad >= self.need:
+                self.diverged = True
+        if self.last is None or stamp > self.last[0]:
+            self.last = (stamp, xyz)
+        return self.diverged
+
+
+class LocalizationMonitor:
+    """After LOCALIZED: is AMCL still there and still coherent with the node's own propagated pose? Truth-free, monotonic time.
+
+    It can only revoke. Either estimator may be the wrong one; the answer is the same (stop trusting the pose).
+    The propagated pose drifts with FAST-LIO2, so over a long mission this monitor will eventually revoke a healthy AMCL."""
+
+    def __init__(self, t0, xy_m=None, yaw_deg=None, hold_s=None, tf_stall_s=None):
+        self.xy_m = LOSS_XY_M if xy_m is None else xy_m
+        self.yaw_deg = LOSS_YAW_DEG if yaw_deg is None else yaw_deg
+        self.hold_s = LOSS_HOLD_S if hold_s is None else hold_s
+        self.tf_stall_s = AMCL_TF_STALL_S if tf_stall_s is None else tf_stall_s
+        self.t0 = t0
+        self.last_tf = t0
+        self.bad_since = None
+        self.bad_n = 0
+        self.n = 0
+        self.max_xy = self.max_yaw = self.max_tf_gap = 0.
+        self.trace = collections.deque(maxlen=720)     # one sample per 5 s: an hour of discrepancy history, bounded
+        self._trace_t = -math.inf
+
+    def add(self, mono, xy, yaw_deg):
+        """One map -> odom transform of AMCL, as its distance at the robot from the node's own pose."""
+        self.max_tf_gap = max(self.max_tf_gap, mono - self.last_tf)
+        self.last_tf = mono
+        self.n += 1
+        self.max_xy, self.max_yaw = max(self.max_xy, xy), max(self.max_yaw, yaw_deg)
+        if mono - self._trace_t >= 5.:
+            self._trace_t = mono
+            self.trace.append((round(mono - self.t0, 1), round(xy, 3), round(yaw_deg, 2)))
+        if xy > self.xy_m or yaw_deg > self.yaw_deg:
+            self.bad_since = mono if self.bad_since is None else self.bad_since
+            self.bad_n += 1
+        else:
+            self.bad_since, self.bad_n = None, 0
+
+    def lost(self, mono):
+        """Reason for revoking, or None."""
+        if mono - self.last_tf > self.tf_stall_s:
+            return 'amcl_silent'
+        if self.bad_since is not None and self.bad_n >= 3 and mono - self.bad_since >= self.hold_s:
+            return 'amcl_incoherent'
+        return None
+
+    def report(self):
+        return {'tf_received': self.n, 'max_xy_m': self.max_xy, 'max_yaw_deg': self.max_yaw, 'max_tf_gap_s': self.max_tf_gap,
+                'limits': {'xy_m': self.xy_m, 'yaw_deg': self.yaw_deg, 'hold_s': self.hold_s, 'tf_stall_s': self.tf_stall_s},
+                'trace_t_xy_yaw': list(self.trace)}
+
+
+class PermitGate:
+    """Consumer side of the navigation permit. Fail-closed: open only on PERMIT_NEED consecutive fresh `true` heartbeats from
+    exactly one publisher. Any `false`, a gap over the TTL, a dead or duplicated publisher closes it."""
+
+    def __init__(self, ttl=None, need=None):
+        self.ttl = PERMIT_TTL_S if ttl is None else ttl
+        self.need = PERMIT_NEED if need is None else need
+        self.streak = 0
+        self.last = None
+
+    def on_permit(self, value, mono):
+        if not value or (self.last is not None and mono - self.last > self.ttl):
+            self.streak = 0
+        if value:
+            self.streak += 1
+        self.last = mono
+
+    def state(self, mono, publishers=1):
+        """(open, reason)"""
+        if publishers != 1:
+            self.streak = 0
+            return False, f'publishers_{publishers}'
+        if self.last is None:
+            return False, 'no_permit'
+        if mono - self.last > self.ttl:
+            self.streak = 0
+            return False, 'permit_stale'
+        if self.streak < self.need:
+            return False, 'permit_false' if self.streak == 0 else 'permit_warming'
+        return True, 'open'
+
+
+def trim(rows, keep=None):
+    """Bound a growing list in place (amortised): once it holds twice `keep` rows, drop all but the newest `keep`."""
+    keep = ODOM_KEEP if keep is None else keep
+    if len(rows) >= 2 * keep:
+        del rows[:-keep]
 
 
 def dump(path, obj):

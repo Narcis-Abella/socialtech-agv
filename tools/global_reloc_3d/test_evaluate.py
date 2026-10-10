@@ -2,6 +2,7 @@ import unittest
 import numpy as np
 
 from evaluate import error, reference_at
+from evaluate_online import classify
 
 
 class EvaluatorTest(unittest.TestCase):
@@ -22,6 +23,42 @@ class EvaluatorTest(unittest.TestCase):
         self.assertAlmostEqual(error(a,b)[0],.3)
         a[:2,:2]=[[-1,0],[0,-1]]
         self.assertAlmostEqual(error(a,b)[1],180.)
+
+
+class ClassTest(unittest.TestCase):
+    """A success class needs a valid reference at the pose stamp. Nothing else may produce one."""
+    ROWS = np.array([[t, 1., 2., 0., 0, 0, 0, 1] for t in (10., 10.1, 10.2, 11.0, 11.1)])
+
+    def ref(self, t, rows=None):
+        return reference_at(self.ROWS if rows is None else rows, t)
+
+    def m(self, accepted=True, stamp=10.05, x=1., state='LOCALIZED', pose=True):
+        return {'attempt': 1, 'state': state, 'reason': None, 'accepted': accepted,
+                'initialpose': {'stamp': stamp, 'x': x, 'y': 2., 'yaw': 0.} if pose else None}
+
+    def test_valid_reference(self):
+        self.assertEqual(classify(self.m(), self.ref, False)['class'], 'correct_accept')
+        self.assertEqual(classify(self.m(x=1.31), self.ref, False)['class'], 'wrong_accept')
+
+    def test_no_success_without_a_reference(self):
+        for stamp in (10.6, 9.9, 11.2, 10.2 + 1e-9, float('nan')):       # inside a gap, before the start, after the end, gap edge, bad stamp
+            c = classify(self.m(stamp=stamp), self.ref, False)
+            self.assertEqual(c['class'], 'unscorable_reference_gap', stamp)
+            self.assertNotIn('initialpose_error', c)
+        bad = self.ROWS.copy(); bad[1, 1] = np.nan                      # a reference row that is not a pose
+        self.assertEqual(classify(self.m(), lambda t: self.ref(t, bad), False)['class'], 'unscorable_reference_gap')
+        self.assertEqual(classify(self.m(stamp=10.2), self.ref, False)['class'], 'correct_accept')     # exactly on a sample, bracket 0.1 s
+
+    def test_negative_accept_is_wrong_even_in_a_gap(self):
+        self.assertEqual(classify(self.m(stamp=10.6), self.ref, True)['class'], 'wrong_accept')      # F1 evaluator said "unscorable"
+        self.assertEqual(classify(self.m(), self.ref, True)['class'], 'wrong_accept')
+        self.assertEqual(classify(self.m(accepted=False, state='REJECTED', pose=False), self.ref, True)['class'], 'correct_reject')
+
+    def test_accept_without_pose_and_pose_without_accept(self):
+        self.assertEqual(classify(self.m(state='HANDOFF_FAILED', pose=False), self.ref, False)['class'], 'accepted_not_published')
+        self.assertEqual(classify(self.m(accepted=False, state='ERROR'), self.ref, False)['class'], 'pose_without_acceptance')
+        self.assertEqual(classify(self.m(accepted=False, state='ERROR', pose=False), self.ref, False)['class'], 'error_no_pose')
+        self.assertEqual(classify(self.m(accepted=False, state='TIMEOUT', pose=False), self.ref, False)['class'], 'false_reject_timeout')
 
 
 if __name__=='__main__':

@@ -33,7 +33,9 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Imu, PointCloud2
 from std_msgs.msg import Bool, String
-from tf2_ros import Buffer, StaticTransformBroadcaster, TransformBroadcaster, TransformListener
+from rclpy.clock import Clock, ClockType
+from tf2_msgs.msg import TFMessage
+from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
 import reloc_core as rc
 from lio_submap import assemble, cloud_xyz, interpolate, pose as odom_pose, stamp as msg_stamp
@@ -94,6 +96,7 @@ class RelocNode(Node):
         self.deadline = P('deadline_s', rc.DEADLINE_S).value      # protocol value; override only for fault-injection tests
         self.acq_limit = P('acquisition_limit_s', rc.ACQUISITION_LIMIT_S).value
         self.fastlio_exe = P('fastlio_exe', '').value               # fault injection only: replaces the FAST-LIO2 executable
+        self.sensor_wait = P('sensor_wait_s', rc.SENSOR_WAIT_S).value   # O1: bound on waiting for the very first sensor message
         rc.DEADLINE_S = self.deadline
         self.process_start = time.monotonic()
         self.work.mkdir(parents=True, exist_ok=True)
@@ -104,7 +107,6 @@ class RelocNode(Node):
         self.level_q = None
         self.br = TransformBroadcaster(self)
         self.static_br = StaticTransformBroadcaster(self)
-        self.tfbuf = Buffer(); self.tfl = TransformListener(self.tfbuf, self)
         self.init_pub = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.state_pub = self.create_publisher(String, '/global_reloc/state', latched)
@@ -116,7 +118,18 @@ class RelocNode(Node):
         self.create_subscription(PointCloud2, '/cloud_registered_body', self.on_cloud, BEST)
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.on_amcl, 10)
         self.create_subscription(Bool, '/global_reloc/s3_authorize', self.on_s3_authorize, 10)   # volatile: an old grant is never replayed
-        self.create_timer(0.05, self.tick)
+        # Navigation permit: a heartbeat, true only while LOCALIZED. Volatile on purpose (nothing may outlive this process).
+        # The consumer is nav_gate.py; a dead, hung or duplicated publisher closes the gate there.
+        self.permit_pub = self.create_publisher(Bool, '/global_reloc/nav_permit', 10)
+        self.create_subscription(TFMessage, '/tf', self.on_tf, 100)
+        self.permit_stats = {'true': 0, 'false': 0, 'first_true_mono': None, 'last_true_mono': None}
+        self.supervision = None
+        self.odom_ok = rc.OdomPlausibility()
+        self.footprint_xyyaw = None
+        # Steady clock: with use_sim_time the default timer follows /clock, so a stopped or jumping /clock would stop every watchdog.
+        steady = Clock(clock_type=ClockType.STEADY_TIME)
+        self.create_timer(0.05, self.tick, clock=steady)
+        self.create_timer(rc.PERMIT_PERIOD_S, self.tick_permit, clock=steady)
         self.new_attempt(min_stamp=-math.inf)
 
     # ------------------------------------------------------------------ attempts
@@ -141,6 +154,8 @@ class RelocNode(Node):
         self.build = None
         self.last_cloud_mono = None
         self.level_q = None
+        self.odom_ok = rc.OdomPlausibility()
+        self.footprint_xyyaw = None
         self.att.go('WAIT_SENSORS')
         self.announce()
 
@@ -156,6 +171,8 @@ class RelocNode(Node):
         self.reason = reason or self.reason
         self.att.go(state, reason=reason, **info)
         self.announce()
+        if state == 'LOCALIZATION_LOST':
+            return self.write_supervision()
         if state in rc.TERMINAL:
             self.finish()
 
@@ -200,6 +217,9 @@ class RelocNode(Node):
             if not np.isfinite(T).all():
                 return
             self.acq.add_odom(t, T)           # kept after acceptance too: it propagates the accepted pose to AMCL's stamps
+            self.odom_ok.add(t, T[:3, 3])
+            if self.att.state in ('HANDOFF', 'LOCALIZED'):
+                rc.trim(self.acq.odom)        # O4: only stamps near "now" are propagated from here on
             self.att.mark_once('lio_first_odom')
             self.latest_odom = (t, T)
             self.last_odom_mono = self.mono()
@@ -236,6 +256,58 @@ class RelocNode(Node):
                 self.stop_signalled = True
                 self.announce()
 
+    def on_tf(self, m):
+        """After LOCALIZED: every map -> odom of AMCL, compared at the robot with the node's own propagated pose."""
+        if self.att.state != 'LOCALIZED' or self.supervision is None or self.footprint_xyyaw is None or self.latest_odom is None:
+            return
+        for t in m.transforms:
+            if t.header.frame_id.lstrip('/') == 'map' and t.child_frame_id.lstrip('/') == 'odom':
+                r = t.transform.rotation
+                amcl = rc.compose_planar((t.transform.translation.x, t.transform.translation.y, 2 * math.atan2(r.z, r.w)), self.footprint_xyyaw)
+                _, xyyaw, _ = rc.handoff_pose(self.T_map_src, self.T_level_local, self.T_ci_first, self.latest_odom[1])
+                own = rc.compose_planar(xyyaw, self.base_ext)
+                self.supervision.add(self.mono(), math.hypot(amcl[0] - own[0], amcl[1] - own[1]), rc.yaw_diff_deg(amcl[2], own[2]))
+
+    def tick_permit(self):
+        ok = self.att.state == 'LOCALIZED'
+        m = Bool(); m.data = ok
+        self.permit_pub.publish(m)
+        self.permit_stats['true' if ok else 'false'] += 1
+        if ok:
+            self.permit_stats['first_true_mono'] = self.permit_stats['first_true_mono'] or self.mono()
+            self.permit_stats['last_true_mono'] = self.mono()
+
+    def tick_supervise(self):
+        """O3: LOCALIZED is held only while the odometry and AMCL are alive, plausible and coherent. Revocation is final."""
+        now = self.mono()
+        gap, self.supervise_mono = now - self.supervise_mono, now
+        if gap > rc.SUPERVISE_GAP_S:           # the node was hung or starved; whatever it would conclude now, it did not watch
+            return self.go('LOCALIZATION_LOST', reason='supervisor_stalled')
+        if self.lio is None or self.lio.poll() is not None:
+            return self.go('LOCALIZATION_LOST', reason=f'fastlio_exited_{self.lio.returncode if self.lio else None}')
+        if self.odom_age() > LIO_STALL_S:
+            return self.go('LOCALIZATION_LOST', reason='odometry_stalled')
+        if self.odom_ok.diverged:
+            return self.go('LOCALIZATION_LOST', reason='odometry_implausible')
+        why = self.supervision.lost(self.mono())
+        if why:
+            return self.go('LOCALIZATION_LOST', reason=why)
+        if self.mono() - self.supervision_written > 10.:      # so that a killed node still leaves a recent record
+            self.write_supervision()
+
+    def write_supervision(self):
+        a = self.att
+        d = self.work / f'attempt{a.id}'
+        d.mkdir(parents=True, exist_ok=True)
+        out = {'attempt': a.id, 'state': a.state, 'reason': self.reason if a.state == 'LOCALIZATION_LOST' else None,
+               'localized_mono': a.marks.get('state:LOCALIZED'), 'lost_mono': a.marks.get('state:LOCALIZATION_LOST'), 'written_mono': self.mono(),
+               'held_s': (a.marks.get('state:LOCALIZATION_LOST', self.mono()) - a.marks['state:LOCALIZED']) if 'state:LOCALIZED' in a.marks else None,
+               'first_input_mono': a.t_input, 'permit': self.permit_stats, 'odom_max_speed_mps': self.odom_ok.max_seen,
+               'odom_rows_kept': len(self.acq.odom), 'monitor': self.supervision.report() if self.supervision else None, 'truth_used': False}
+        self.supervision_written = self.mono()
+        rc.dump(d / 'supervision.tmp', out)
+        os.replace(d / 'supervision.tmp', d / 'supervision.json')
+
     def on_s3_authorize(self, m):
         if m.data and self.att.state == 'S3_SUPERVISION_REQUIRED' and self.s3_authorized is None:
             self.s3_authorized = 'supervisor'
@@ -269,6 +341,7 @@ class RelocNode(Node):
         x, y, z, qz, qw = footprint((p.x, p.y, p.z), (q.x, q.y, q.z, q.w), self.level_q, self.sensor_height)
         x, y, yaw = rc.compose_planar((x, y, 2 * math.atan2(qz, qw)), self.base_ext)
         tr.x, tr.y, tr.z, ro.z, ro.w = float(x), float(y), float(z), math.sin(yaw / 2), math.cos(yaw / 2)
+        self.footprint_xyyaw = (float(x), float(y), yaw)
         self.br.sendTransform(t)
 
     def publish_level_tf(self):
@@ -339,10 +412,14 @@ class RelocNode(Node):
     def tick(self):
         a = self.att
         st = a.state
+        if st == 'LOCALIZED':
+            return self.tick_supervise()
         if st in rc.TERMINAL:
             return
         try:
             if st in ('HANDOFF',):
+                if self.odom_ok.diverged:      # never hand over, or keep vouching for, a pose propagated through diverged odometry
+                    return self.go('HANDOFF_FAILED', reason='odometry_implausible')
                 if self.mono() - a.marks['state:HANDOFF'] > self.handoff_timeout:
                     return self.go('HANDOFF_FAILED', reason='amcl_not_confirmed' if self.pose_pub_info is not None else
                                    'odom_stale_at_handoff' if self.odom_age() > HANDOFF_ODOM_MAX_AGE_S else 'amcl_not_available')
@@ -360,6 +437,8 @@ class RelocNode(Node):
                 if self.acq.s2_n is None:
                     self.acq.s2_n = len(self.acq.clouds)
             if st == 'WAIT_SENSORS':
+                if a.no_input(self.sensor_wait):
+                    return self.go('TIMEOUT', reason='no_sensor_input')
                 if self.streams['imu'].n and (CustomMsg is None or 'first_lidar' in a.marks):
                     self.go('IMU_CONDITIONING')
             elif st == 'IMU_CONDITIONING':
@@ -427,6 +506,10 @@ class RelocNode(Node):
         if self.odom_age() > LIO_STALL_S:
             self.kill_search()
             self.go('ERROR', reason='lio_stalled')
+            return True
+        if self.odom_ok.diverged:
+            self.kill_search()
+            self.go('ERROR', reason='lio_diverged')
             return True
         return False
 
@@ -558,6 +641,12 @@ class RelocNode(Node):
             (self.work / f'attempt{a.id}' / 'metrics_error.txt').write_text(traceback.format_exc())
             raise
         self.get_logger().info(f'attempt {a.id} ended {a.state} ({self.reason}); metrics written')
+        # O4: the clouds and IMU samples of a finished attempt are never read again (metrics are on disk). Odometry is trimmed in on_odom.
+        self.acq.clouds, self.acq.imu, self.build = [], [], None
+        if a.state == 'LOCALIZED':
+            self.supervision = rc.LocalizationMonitor(self.mono())
+            self.supervise_mono = self.mono()
+            self.write_supervision()
         if a.state in ('REJECTED', 'TIMEOUT', 'ERROR', 'HANDOFF_FAILED') and a.id < self.max_attempts:
             self.stop_lio()
             self.kill_search()
@@ -618,6 +707,7 @@ class RelocNode(Node):
                            'search_worker_wall_s': dur('s2:search_spawn', 's2:search_end'), 'decided_at_s': rel('s2:search_end')},
             'imu_gate': {'evaluations': self.gate.evaluations, 'failed': self.gate.failed_evaluations, 'ready_stamp': self.gate.ready_stamp},
             'search': self.search_info, 'details': self.details, 'initialpose': self.pose_pub_info,
+            'first_input_mono': a.t_input, 'odom_max_speed_mps': self.odom_ok.max_seen, 'sensor_wait_s': self.sensor_wait,
             'handoff_samples': self.monitor.samples[-40:], 'callback_profile': {k: {'n': v[0], 'total_s': v[1], 'max_s': v[2]} for k, v in PROFILE.items()}, 'process_start_to_end_s': now - self.process_start,
         }
         return out
@@ -628,6 +718,11 @@ class RelocNode(Node):
                 (self.work / f'attempt{self.att.id}').mkdir(parents=True, exist_ok=True)
                 out = self.build_metrics(); out['interrupted'] = True
                 rc.dump(self.work / f'attempt{self.att.id}' / 'metrics_interrupted.json', out)
+            except Exception:
+                import traceback; traceback.print_exc()
+        if self.supervision is not None:
+            try:
+                self.write_supervision()
             except Exception:
                 import traceback; traceback.print_exc()
         self.kill_search()

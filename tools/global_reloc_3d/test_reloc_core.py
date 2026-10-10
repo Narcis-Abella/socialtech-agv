@@ -210,5 +210,87 @@ class S3EquivalenceTest(unittest.TestCase):
             self.assertLessEqual(abs(len(a.clouds) - n), 1, (trial, len(a.clouds), n))
 
 
+class Phase2Test(unittest.TestCase):
+    def test_no_sensor_input_is_bounded_and_separate_from_the_deadline(self):
+        c = Clock(); a = rc.Attempt(1, c); a.go('WAIT_SENSORS')
+        c.t += rc.SENSOR_WAIT_S - .1
+        self.assertFalse(a.no_input()); self.assertFalse(a.expired())
+        c.t += .2
+        self.assertTrue(a.no_input()); self.assertFalse(a.expired())      # O1: F1 had no terminal state here
+        b = rc.Attempt(2, c); b.go('WAIT_SENSORS'); c.t += 29.; b.input_started(); c.t += 59.
+        self.assertFalse(b.no_input()); self.assertFalse(b.expired())       # a late first message still gets its full 60 s
+        c.t += 1.1
+        self.assertTrue(b.expired())
+
+    def test_localized_is_revocable_and_never_comes_back(self):
+        self.assertEqual(rc.TRANSITIONS['LOCALIZED'], {'LOCALIZATION_LOST'})
+        self.assertEqual(rc.TRANSITIONS['LOCALIZATION_LOST'], set())
+        self.assertIn('LOCALIZED', rc.TERMINAL); self.assertIn('LOCALIZATION_LOST', rc.TERMINAL)
+        for s, nxt in rc.TRANSITIONS.items():
+            if s != 'HANDOFF':
+                self.assertNotIn('LOCALIZED', nxt)
+
+    def test_odometry_divergence(self):
+        o = rc.OdomPlausibility()
+        for i in range(100):                                   # 1.5 m/s, duplicated and reversed stamps in between
+            self.assertFalse(o.add(i * .1, [i * .15, 0, 0]))
+            o.add(i * .1, [99, 0, 0]); o.add(i * .1 - .05, [-99, 0, 0])
+        self.assertAlmostEqual(o.max_seen, 1.5, places=6)
+        o.add(10., [15.85, 0, 0])                              # one glitch of 10 m/s does not latch
+        self.assertFalse(o.add(10.1, [16., 0, 0]))
+        x = 16.
+        for i in range(3):
+            x += .5; d = o.add(10.2 + i * .1, [x, 0, 0])
+        self.assertTrue(d)
+        self.assertTrue(o.add(11., [x, 0, 0]))                 # latched
+
+    def test_localization_monitor(self):
+        m = rc.LocalizationMonitor(0.)
+        t = 0.
+        for i in range(100):
+            t = i * .1; m.add(t, .05, 1.)
+        self.assertIsNone(m.lost(t))
+        self.assertEqual(m.lost(t + 3.1), 'amcl_silent')       # AMCL stopped publishing map -> odom
+        m.add(t + .1, .6, 1.); m.add(t + .2, .1, 1.)           # a single outlier is not a loss
+        for i in range(29):
+            m.add(t + .3 + i * .1, .6, 1.)
+        self.assertIsNone(m.lost(t + 3.2))
+        m.add(t + 3.4, .1, 20.)                                # yaw alone also counts
+        self.assertEqual(m.lost(t + 3.4), 'amcl_incoherent')
+        self.assertLessEqual(len(m.report()['trace_t_xy_yaw']), 720)
+
+    def test_monitor_and_buffers_are_bounded(self):
+        m = rc.LocalizationMonitor(0.)
+        rows = []
+        for i in range(200000):                                # 5.5 h at 10 Hz
+            m.add(i * .1, .01, .1); rows.append((i * .1, None)); rc.trim(rows)
+        self.assertLess(len(rows), 2 * rc.ODOM_KEEP)
+        self.assertEqual(rows[-1][0], 199999 * .1)
+        self.assertEqual(len(m.trace), 720)
+
+    def test_permit_gate_fails_closed(self):
+        g = rc.PermitGate()
+        self.assertEqual(g.state(0.), (False, 'no_permit'))
+        g.on_permit(True, 0.); g.on_permit(True, .1)
+        self.assertFalse(g.state(.1)[0])                       # two heartbeats are not enough
+        g.on_permit(True, .2)
+        self.assertTrue(g.state(.2)[0])
+        self.assertEqual(g.state(.2, publishers=2), (False, 'publishers_2'))   # a second publisher closes it and resets the streak
+        self.assertFalse(g.state(.2)[0])
+        for i in range(3):
+            g.on_permit(True, .3 + i * .1)
+        self.assertTrue(g.state(.5)[0])
+        self.assertEqual(g.state(.5 + rc.PERMIT_TTL_S + .01), (False, 'permit_stale'))   # publisher died: closed after the TTL
+        g.on_permit(True, 2.)
+        self.assertFalse(g.state(2.)[0])                       # one heartbeat after a gap does not reopen it
+        g.on_permit(True, 2.1); g.on_permit(True, 2.2)
+        self.assertTrue(g.state(2.2)[0])
+        g.on_permit(False, 2.3)
+        self.assertEqual(g.state(2.3), (False, 'permit_false'))               # revoked at once
+        g.on_permit(True, 2.4); g.on_permit(False, 2.5); g.on_permit(True, 2.6); g.on_permit(True, 2.7)
+        self.assertFalse(g.state(2.7)[0])                      # interleaved true/false (two sources disagreeing) never opens
+        self.assertEqual(g.state(2.7, publishers=0), (False, 'publishers_0'))
+
+
 if __name__ == '__main__':
     unittest.main()
