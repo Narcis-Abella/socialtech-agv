@@ -12,7 +12,7 @@ echo "jetson_clocks: $(systemctl is-active jetson-clocks)  load: $(cut -d' ' -f1
 tegrastats --interval 500 > "$out/tegrastats.log" 2>/dev/null & teg=$!
 docker run --rm --network host --cpus 8 -e ROS_DOMAIN_ID=$((100+RANDOM%100)) \
   -e BAG=/bag -e MAPYAML=/map/$(basename "$MAPYAML") -e MAPXYZ=/prior/map.xyz -e OUT=/out -e OFFSET=$OFFSET \
-  -e PLAY_S=${PLAY_S:-100} -e MODE=${MODE:-s3} -e H=${H:-0.53} -e MAX_ATTEMPTS=${MAX_ATTEMPTS:-1} -e KEEP_PLAYING=${KEEP_PLAYING:-0} -e LEAD=${LEAD:-12} -e PRE=${PRE:-2.5} -e REGISTER_BIN=${REGISTER_BIN:-} -e LAUNCH_EXTRA="${LAUNCH_EXTRA:-}" -e RELAY_SPEC="${RELAY_SPEC:-}" -e PLAY_ARGS_EXTRA="${PLAY_ARGS_EXTRA:-}" -e KILL_NODE_AT=${KILL_NODE_AT:-} \
+  -e PLAY_S=${PLAY_S:-100} -e MODE=${MODE:-s3} -e H=${H:-0.53} -e MAX_ATTEMPTS=${MAX_ATTEMPTS:-1} -e KEEP_PLAYING=${KEEP_PLAYING:-0} -e LEAD=${LEAD:-12} -e PRE=${PRE:-2.5} -e REGISTER_BIN=${REGISTER_BIN:-} -e LAUNCH_EXTRA="${LAUNCH_EXTRA:-}" -e RELAY_SPEC="${RELAY_SPEC:-}" -e PLAY_ARGS_EXTRA="${PLAY_ARGS_EXTRA:-}" -e KILL_NODE_AT=${KILL_NODE_AT:-} -e KILL_LIO_AT=${KILL_LIO_AT:-} -e KILL_LIO_SIG=${KILL_LIO_SIG:-} -e AUTH_AT=${AUTH_AT:-} -e NODE2_ARGS="${NODE2_ARGS:-}" \
   -v "$BAG":/bag:ro -v "$(dirname "$MAPYAML")":/map:ro -v "$MAPXYZ":/prior/map.xyz:ro -v $R/tools:/tools:ro \
   -v $B/small_gicp-build/libsmall_gicp.so:/opt/libsmall_gicp.so:ro -v "$out":/out socialtech:reloc-online bash /tools/global_reloc_3d/online_inner.sh > "$out/inner.log" 2>&1
 echo "exit=$?" >> "$out/host.txt"

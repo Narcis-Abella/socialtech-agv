@@ -11,7 +11,6 @@ import math
 import os
 import re
 import shlex
-import shutil
 import signal
 import struct
 import subprocess
@@ -33,7 +32,7 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Imu, PointCloud2
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, StaticTransformBroadcaster, TransformBroadcaster, TransformListener
 
 import reloc_core as rc
@@ -49,6 +48,8 @@ BEST = QoSProfile(depth=500, reliability=ReliabilityPolicy.BEST_EFFORT)
 
 
 LIO_STALL_S = 3.
+LIO_STATES = rc.ACCUMULATE_STATES | rc.SEARCH_STATES | {'LIO_STARTING', 'ACCEPTED', 'HANDOFF', 'LOCALIZED'}
+HANDOFF_ODOM_MAX_AGE_S = 1.   # the accepted pose is propagated with FAST-LIO odometry: never publish it from odometry older than this
 PROFILE = {}
 
 
@@ -77,8 +78,14 @@ class RelocNode(Node):
         self.work = Path(P('work_dir', '/tmp/global_reloc').value)
         self.binary = P('register_binary', str(HERE / 'register_v2')).value
         self.lib_dir = P('lib_dir', '/opt').value
-        self.mode = P('mode', 's3').value                          # s3 = frozen candidate, s2 = fixed 3 s exposure ablation
+        self.mode = P('mode', 's3').value                          # s3 / s2 = baselines of note 15; s2s3 = stationary S2 first, supervised S3 fallback
+        self.s2_exposure = P('s2_exposure_s', rc.S2_EXPOSURE_S).value   # protocol main value 3 s; 1 s and 5 s are predeclared ablations
+        # Replay only: recorded bags contain their own motion and no supervisor. On the robot this stays false and a person authorizes.
+        self.s3_auto = P('s3_auto_authorize', False).value
         self.sensor_height = P('sensor_height', 0.53).value       # PROVISIONAL, uncalibrated (NV-P); exploratory only
+        # Planar mount extrinsic: base_footprint in the levelled body (IMU) frame, [x m, y m, yaw rad]. PROVISIONAL zeros = the IMU
+        # origin stands in for the base (nothing measured yet, see 17-calibracion-montaje.md).
+        self.base_ext = tuple(float(v) for v in P('base_from_body_xyyaw', [0., 0., 0.]).value)
         self.init_std = P('init_std_m', 0.15).value
         self.init_yaw_std = P('init_yaw_std_deg', 5.).value
         self.handoff_timeout = P('handoff_timeout_s', 30.).value
@@ -108,6 +115,7 @@ class RelocNode(Node):
         self.create_subscription(Odometry, '/Odometry', self.on_odom, BEST)
         self.create_subscription(PointCloud2, '/cloud_registered_body', self.on_cloud, BEST)
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.on_amcl, 10)
+        self.create_subscription(Bool, '/global_reloc/s3_authorize', self.on_s3_authorize, 10)   # volatile: an old grant is never replayed
         self.create_timer(0.05, self.tick)
         self.new_attempt(min_stamp=-math.inf)
 
@@ -116,7 +124,13 @@ class RelocNode(Node):
         self.attempt_no += 1
         self.att = rc.Attempt(self.attempt_no)
         self.gate = rc.ImuGate()
-        self.acq = rc.Acquisition(self.mode, min_stamp)
+        self.acq = rc.Acquisition(self.mode, min_stamp, self.s2_exposure)
+        self.stage = 's2' if self.mode == 's2s3' else None      # None = single-stage baseline (file layout and mark names of note 15)
+        self.stages = {}
+        self.s3_authorized = None
+        self.stop_signalled = False
+        self.last_odom_mono = None
+        self.search = None
         self.streams = {k: rc.StreamStats(k) for k in ('imu', 'lidar', 'odom', 'cloud')}
         self.monitor = rc.HandoffMonitor()
         self.reason = None
@@ -131,7 +145,10 @@ class RelocNode(Node):
         self.announce()
 
     def announce(self):
-        m = String(); m.data = json.dumps({'attempt': self.att.id, 'state': self.att.state, 'reason': self.reason})
+        m = String(); m.data = json.dumps({'attempt': self.att.id, 'state': self.att.state, 'reason': self.reason,
+                                           'supervision_required': self.att.state == 'S3_SUPERVISION_REQUIRED',
+                                           'supervisor_stop_required': self.stop_signalled,
+                                           'remaining_s': round(self.att.remaining(), 1)})
         self.state_pub.publish(m)
         self.get_logger().info(f'attempt {self.att.id}: {self.att.state} {self.reason or ""}')
 
@@ -160,7 +177,7 @@ class RelocNode(Node):
             if self.gate.add(t, [w.x, w.y, w.z], acc) and 'imu_ready' not in self.att.marks:
                 self.att.mark_once('imu_ready', header_stamp=t, window_end=self.gate.ready_stamp)
                 self.imu_ready_header = t
-        elif self.att.state in ('LIO_STARTING', 'ACCUMULATING'):
+        elif self.att.state == 'LIO_STARTING' or self.att.state in rc.ACCUMULATE_STATES:
             self.acq.add_imu(t, acc)
 
     @profiled
@@ -176,7 +193,7 @@ class RelocNode(Node):
     def on_odom(self, m):
         t = msg_stamp(m)
         self.last_odom_stamp = max(self.last_odom_stamp, t)
-        if self.att.state in ('LIO_STARTING', 'ACCUMULATING', 'SEARCHING', 'ACCEPTED', 'HANDOFF', 'LOCALIZED'):
+        if self.att.state in LIO_STATES:
             if t > self.acq.min_stamp:
                 self.streams['odom'].add(t, self.mono())
             T = odom_pose(m)
@@ -185,13 +202,14 @@ class RelocNode(Node):
             self.acq.add_odom(t, T)           # kept after acceptance too: it propagates the accepted pose to AMCL's stamps
             self.att.mark_once('lio_first_odom')
             self.latest_odom = (t, T)
+            self.last_odom_mono = self.mono()
             if self.level_q is not None:
                 self.publish_footprint(m)
 
     @profiled
     def on_cloud(self, m):
         st = self.att.state
-        if st not in ('LIO_STARTING', 'ACCUMULATING'):
+        if st != 'LIO_STARTING' and st not in rc.ACCUMULATE_STATES:
             return
         t = msg_stamp(m)
         if t <= self.acq.min_stamp:
@@ -208,11 +226,19 @@ class RelocNode(Node):
             if len(self.acq.odom) < 2 or not len(xyz):
                 return
             self.att.mark('lio_ready', header_stamp=t)
-            self.go('ACCUMULATING')
+            self.go('S2_ACCUMULATING' if self.mode == 's2s3' else 'ACCUMULATING')
         if not self.acq.clouds:
             self.att.mark_once('first_cloud_kept')
-        if not self.acq.add_cloud(t, xyz):
+        if not self.acq.add_cloud(t, xyz) and 'acq_stop' not in self.att.marks:
             self.att.mark('acq_stop', reason=self.acq.stop_reason)
+            if self.acq.stop_reason in ('radius', 'path'):
+                # The node commands nothing. It stops acquiring and tells the external supervisor that the motion envelope is used up.
+                self.stop_signalled = True
+                self.announce()
+
+    def on_s3_authorize(self, m):
+        if m.data and self.att.state == 'S3_SUPERVISION_REQUIRED' and self.s3_authorized is None:
+            self.s3_authorized = 'supervisor'
 
     @profiled
     def on_amcl(self, m):
@@ -240,7 +266,9 @@ class RelocNode(Node):
         t = TransformStamped()
         t.header.stamp, t.header.frame_id, t.child_frame_id = m.header.stamp, 'odom', 'base_footprint'
         tr, ro = t.transform.translation, t.transform.rotation
-        tr.x, tr.y, tr.z, ro.z, ro.w = footprint((p.x, p.y, p.z), (q.x, q.y, q.z, q.w), self.level_q, self.sensor_height)
+        x, y, z, qz, qw = footprint((p.x, p.y, p.z), (q.x, q.y, q.z, q.w), self.level_q, self.sensor_height)
+        x, y, yaw = rc.compose_planar((x, y, 2 * math.atan2(qz, qw)), self.base_ext)
+        tr.x, tr.y, tr.z, ro.z, ro.w = float(x), float(y), float(z), math.sin(yaw / 2), math.cos(yaw / 2)
         self.br.sendTransform(t)
 
     def publish_level_tf(self):
@@ -255,7 +283,7 @@ class RelocNode(Node):
         """(x, y, yaw) in map at header stamp t from the accepted pose and FAST-LIO odometry only."""
         T_ci = interpolate(self.acq.odom_for_propagation, t)
         _, xyyaw, _ = rc.handoff_pose(self.T_map_src, self.T_level_local, self.T_ci_first, T_ci)
-        return xyyaw
+        return rc.compose_planar(xyyaw, self.base_ext)
 
     # ------------------------------------------------------------------ processes
     def start_lio(self):
@@ -283,14 +311,24 @@ class RelocNode(Node):
                 os.killpg(self.lio.pid, signal.SIGKILL); self.lio.wait()
         self.lio = None
 
+    def stage_dir(self):
+        d = self.work / f'attempt{self.att.id}'
+        return d / self.stage if self.stage else d
+
+    def k(self, name):
+        """Mark name of the current stage ('s2:acq_end'); unprefixed in the single-stage baselines."""
+        return f'{self.stage}:{name}' if self.stage else name
+
     def start_search(self):
-        out = self.work / f'attempt{self.att.id}'
+        if self.search is not None and self.search.poll() is None:
+            raise RuntimeError('search worker already running')      # never two searches at once
+        out = self.stage_dir()
         env = {**os.environ, 'LD_LIBRARY_PATH': f"{self.lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
         cmd = [sys.executable, '-B', str(HERE / 'search_v2.py'), '--run', str(out / 'input'), '--out', str(out / 'search'),
                '--binary', self.binary, '--deadline-s', f'{max(1., self.att.remaining() - .5):.3f}']
         self.search = subprocess.Popen(cmd, stdout=open(out / 'search.stdout', 'w'), stderr=subprocess.STDOUT, env=env,
                                        start_new_session=True, preexec_fn=_die_with_parent)
-        self.att.mark('search_spawn', pid=self.search.pid)
+        self.att.mark(self.k('search_spawn'), pid=self.search.pid)
 
     def kill_search(self):
         if self.search and self.search.poll() is None:
@@ -306,13 +344,21 @@ class RelocNode(Node):
         try:
             if st in ('HANDOFF',):
                 if self.mono() - a.marks['state:HANDOFF'] > self.handoff_timeout:
-                    return self.go('HANDOFF_FAILED', reason='amcl_not_available' if self.pose_pub_info is None else 'amcl_not_confirmed')
+                    return self.go('HANDOFF_FAILED', reason='amcl_not_confirmed' if self.pose_pub_info is not None else
+                                   'odom_stale_at_handoff' if self.odom_age() > HANDOFF_ODOM_MAX_AGE_S else 'amcl_not_available')
+                if self.pose_pub_info is not None and (self.lio is None or self.lio.poll() is not None or self.odom_age() > LIO_STALL_S):
+                    # pose already handed over, but the odometry AMCL needs is gone: say so now instead of waiting for the timeout
+                    return self.go('HANDOFF_FAILED', reason='odometry_lost_after_pose')
                 return self.tick_handoff()
             if st == 'ACCEPTED':
                 return
             if a.expired():
                 self.kill_search()
                 return self.go('TIMEOUT', reason=self.timeout_reason())
+            if self.mode == 's2s3' and st in rc.ACCUMULATE_STATES and self.acq.stop_reason is None and a.elapsed() >= self.acq_limit:
+                self.acq.finish('time_limit')      # protocol: no acquisition past 30 s from first input, whatever the stage (also bounds RAM)
+                if self.acq.s2_n is None:
+                    self.acq.s2_n = len(self.acq.clouds)
             if st == 'WAIT_SENSORS':
                 if self.streams['imu'].n and (CustomMsg is None or 'first_lidar' in a.marks):
                     self.go('IMU_CONDITIONING')
@@ -333,7 +379,34 @@ class RelocNode(Node):
                     self.acq.finish('time_limit')
                 if self.acq.stop_reason is not None:
                     self.build_and_search()
-            elif st == 'SEARCHING':
+            elif st == 'S2_ACCUMULATING':
+                if self.lio_fault():
+                    return
+                if self.acq.s2_n is None and self.acq.stop_reason is None and a.elapsed() >= self.acq_limit:
+                    self.acq.finish('time_limit'); self.acq.s2_n = len(self.acq.clouds)
+                if self.acq.s2_n is not None:
+                    self.build_and_search()
+            elif st == 'S3_SUPERVISION_REQUIRED':
+                if self.lio_fault():
+                    return
+                if not rc.s3_viable(a.elapsed(), self.deadline):
+                    return self.go('TIMEOUT', reason='s3_not_authorized_in_budget')
+                if self.s3_authorized is None and self.s3_auto:
+                    self.s3_authorized = 'auto_replay'
+                if self.s3_authorized is not None:
+                    a.mark('s3_authorized', source=self.s3_authorized)
+                    self.stage = 's3'; self.build = None
+                    self.go('S3_ACCUMULATING')
+            elif st == 'S3_ACCUMULATING':
+                if self.build is None and self.lio_fault():
+                    return
+                if self.acq.stop_reason is None and a.elapsed() >= self.acq_limit:
+                    self.acq.finish('time_limit')
+                if self.acq.stop_reason is not None:
+                    self.build_and_search()
+            elif st in rc.SEARCH_STATES:
+                if self.lio_fault():       # without live odometry an accepted pose could not be propagated to the present
+                    return
                 rcode = self.search.poll()
                 if rcode is not None:
                     self.collect_search(rcode)
@@ -342,26 +415,47 @@ class RelocNode(Node):
             if self.att.state not in rc.TERMINAL:
                 self.go('ERROR', reason=f'{type(e).__name__}: {e}'[:200])
 
+    def odom_age(self):
+        return math.inf if self.last_odom_mono is None else self.mono() - self.last_odom_mono
+
+    def lio_fault(self):
+        """FAST-LIO2 died or went silent while its odometry is still needed (further accumulation, or propagating an accepted pose)."""
+        if self.lio is None or self.lio.poll() is not None:
+            self.kill_search()
+            self.go('ERROR', reason=f'fastlio_exited_{self.lio.returncode if self.lio else None}')
+            return True
+        if self.odom_age() > LIO_STALL_S:
+            self.kill_search()
+            self.go('ERROR', reason='lio_stalled')
+            return True
+        return False
+
     def timeout_reason(self):
         s = self.att.state
         return {'WAIT_SENSORS': 'sensors_unavailable', 'IMU_CONDITIONING': 'imu_not_stationary',
-                'LIO_STARTING': 'lio_not_ready', 'ACCUMULATING': 'acquisition', 'SEARCHING': 'search_deadline'}.get(s, s)
+                'LIO_STARTING': 'lio_not_ready', 'ACCUMULATING': 'acquisition', 'SEARCHING': 'search_deadline',
+                'S2_ACCUMULATING': 's2_acquisition', 'S2_SEARCHING': 's2_search_deadline', 'S3_ACCUMULATING': 's3_acquisition',
+                'S3_SEARCHING': 's3_search_deadline', 'S3_SUPERVISION_REQUIRED': 's3_not_authorized'}.get(s, s)
 
     def build_and_search(self):
         """Assemble the submap in a worker thread (callbacks keep draining sensors); polled from tick()."""
         a = self.att
+        s2 = self.stage == 's2'
         if self.build is None:
-            a.mark('acq_end', reason=self.acq.stop_reason)
-            if len(self.acq.clouds) < 3:
-                return self.go('REJECTED', reason='insufficient_submap')
+            a.mark(self.k('acq_end'), reason='s2_exposure' if s2 else self.acq.stop_reason)
+            clouds = list(self.acq.clouds[:self.acq.s2_n]) if s2 else list(self.acq.clouds)   # S3 = every cloud of this attempt, S2 ones included
+            if len(clouds) < 3:
+                return self.no_pose('insufficient_submap')
             self.build = {'done': False, 'error': None, 'man': None, 't0': self.mono()}
-            args = (list(self.acq.odom), list(self.acq.clouds), list(self.acq.imu), self.acq.start_stamp(), self.acq.span_s(),
-                    self.work / f'attempt{a.id}' / 'input')
+            args = (list(self.acq.odom), clouds, list(self.acq.imu), clouds[0][0], clouds[-1][0] - clouds[0][0] + .1,
+                    self.stage_dir() / 'input')
+            self.stage_dir().mkdir(parents=True, exist_ok=True)
+            limit = rc.S3_MAX_RADIUS_M if self.mode == 's3' or self.stage == 's3' else None
 
             def work(b=self.build):
                 try:
                     b['man'] = assemble(args[0], args[1], args[2], self.map_xyz, args[3], args[4], args[5],
-                                        max_radius=rc.S3_MAX_RADIUS_M if self.mode == 's3' else None, max_path=rc.S3_MAX_PATH_M, source='online')
+                                        max_radius=limit, max_path=rc.S3_MAX_PATH_M, source='online')
                 except Exception as e:
                     b['error'] = e
                 b['done'] = True
@@ -371,9 +465,9 @@ class RelocNode(Node):
             return
         if self.build['error'] is not None:
             e = self.build['error']
-            return self.go('REJECTED', reason=f'submap_{e}'[:80]) if isinstance(e, ValueError) else self.go('ERROR', reason=f'submap_{type(e).__name__}')
+            return self.no_pose(f'submap_{e}'[:80]) if isinstance(e, ValueError) else self.go('ERROR', reason=f'submap_{type(e).__name__}')
         man = self.build['man']
-        a.mark('submap_built', build_s=self.mono() - self.build['t0'])
+        a.mark(self.k('submap_built'), build_s=self.mono() - self.build['t0'])
         self.T_ci_first = interpolate(self.acq.odom, man['stamps_s'][0])
         self.T_level_local = np.asarray(man['T_level_local'])
         self.acq.odom_for_propagation = self.acq.odom
@@ -382,12 +476,26 @@ class RelocNode(Node):
         self.publish_level_tf()
         self.details = {'manifest': {k: man[k] for k in ('start_header_s', 'duration_s', 'last_scan_end_s', 'fit_points', 'check_points',
                                                          's3_stop', 'levelling')}, 'acq_stop_reason': self.acq.stop_reason}
-        self.start_search(); self.go('SEARCHING')
+        self.build = None if self.stage else self.build
+        self.start_search(); self.go({'s2': 'S2_SEARCHING', 's3': 'S3_SEARCHING', None: 'SEARCHING'}[self.stage])
+
+    def no_pose(self, decision):
+        """The current stage ended without an accepted pose. S2: ask for supervised S3 if the same 60 s still allow it. Otherwise REJECTED."""
+        a = self.att
+        if self.stage != 's2':
+            return self.go('REJECTED', reason=decision)
+        self.stages['s2'] = {'decision': decision, 'search': self.search_info, 'details': self.details,
+                             'odom_radius_m': getattr(self.acq, 's2_radius', None), 'clouds': self.acq.s2_n}
+        self.search_info = None
+        self.go('S2_INSUFFICIENT', reason='s2_' + decision)
+        if not rc.s3_viable(a.elapsed(), self.deadline):
+            return self.go('TIMEOUT', reason='s3_budget_insufficient')      # abstain: S3 could not finish inside the same deadline
+        self.go('S3_SUPERVISION_REQUIRED')
 
     def collect_search(self, rcode):
         a = self.att
-        a.mark('search_end', returncode=rcode)
-        path = self.work / f'attempt{a.id}' / 'search' / 'search.json'
+        a.mark(self.k('search_end'), returncode=rcode)
+        path = self.stage_dir() / 'search' / 'search.json'
         if rcode != 0 or not path.exists():
             return self.go('ERROR', reason=f'search_worker_exit_{rcode}')
         s = json.loads(path.read_text())
@@ -398,12 +506,14 @@ class RelocNode(Node):
         if s['decision'] == 'timeout':
             return self.go('TIMEOUT', reason='search_deadline')
         if not s['accepted']:
-            return self.go('REJECTED', reason=s['decision'])
+            return self.no_pose(s['decision'])
         if a.expired():
             return self.go('TIMEOUT', reason='accepted_after_deadline')   # an acceptance after the deadline is not a result
         res = json.loads((path.parent / s['primary_id'] / 'result.json').read_text())
         self.T_map_src = np.asarray(res['T_map_lidar_refined'])
-        a.mark('accepted')
+        a.mark('accepted', stage=self.stage)
+        if self.stage:
+            self.reason = None             # the S2 reason stays in metrics['stages']['s2']; a localized S3 result is not "rejected"
         self.go('ACCEPTED')
         self.go('HANDOFF')
 
@@ -413,10 +523,11 @@ class RelocNode(Node):
             return
         if self.init_pub.get_subscription_count() == 0:
             return                                     # AMCL not up yet: wait, bounded by handoff_timeout
-        if self.latest_odom is None:
-            return
+        if self.latest_odom is None or self.odom_age() > HANDOFF_ODOM_MAX_AGE_S:
+            return                                     # stale odometry: the pose "now" is unknown, publish nothing (bounded wait)
         t, T = self.latest_odom
-        _, (x, y, yaw), _ = rc.handoff_pose(self.T_map_src, self.T_level_local, self.T_ci_first, T)
+        _, xyyaw, _ = rc.handoff_pose(self.T_map_src, self.T_level_local, self.T_ci_first, T)
+        x, y, yaw = rc.compose_planar(xyyaw, self.base_ext)
         # The only place in this file that publishes a pose, reachable only from HANDOFF (itself only after ACCEPTED).
         assert a.state == 'HANDOFF'
         m = PoseWithCovarianceStamped()
@@ -459,21 +570,24 @@ class RelocNode(Node):
         ti = a.t_input if a.t_input is not None else a.t_start
         rel = lambda k: (marks[k] - ti) if k in marks else None
         dur = lambda x, y: (marks[y] - marks[x]) if x in marks and y in marks else None
+        K = self.k
         ss = (self.search_info or {}).get('stage_seconds') or {}
         conf = (self.search_info or {}).get('confirmation') or {}
-        sb = a.events and next((e for e in a.events if e['name'] == 'submap_built'), {})
+        sb = a.events and next((e for e in a.events if e['name'] == K('submap_built')), {})
         out = {
             'attempt': a.id, 'state': a.state, 'reason': self.reason, 'accepted': a.state in ('ACCEPTED', 'HANDOFF', 'LOCALIZED', 'HANDOFF_FAILED'),
             'origin_note': 'protocol clock origin = first permitted sensor input (first IMU/LiDAR message of the attempt); '
                            'B = localization startup counts from node process start; A (cold boot) is not measured here',
             'mode': self.mode, 'deadline_s': self.deadline, 'truth_used': False,
+            'mount': {'sensor_height_m': self.sensor_height, 'base_from_body_xyyaw': self.base_ext, 'init_std_m': self.init_std,
+                      'init_yaw_std_deg': self.init_yaw_std, 'status': 'PROVISIONAL_not_measured'},
             'stage_s': {
                 'startup_to_first_input_s': marks.get('first_input', a.t_start) - a.t_start,
                 'imu_time_s': rel('imu_ready'),                                  # input origin -> stationary window passed
                 'lio_time_s': dur('lio_spawn', 'lio_ready'),                     # spawn -> usable odometry + cloud
-                'submap_exposure_s': dur('lio_ready', 'acq_end'),                # accumulation, at replay 1x == sensor time
+                'submap_exposure_s': dur('lio_ready', K('acq_end')),                # accumulation, at replay 1x == sensor time
                 'submap_build_s': sb.get('build_s') if sb else None,
-                'search_worker_wall_s': dur('search_spawn', 'search_end'),
+                'search_worker_wall_s': dur(K('search_spawn'), K('search_end')),
                 'map_field_s': (self.search_info or {}).get('field_seconds'),
                 'fft_primary_s': (self.search_info or {}).get('correlative_seconds'),
                 'fft_confirm_s': conf.get('search_seconds'),
@@ -484,7 +598,7 @@ class RelocNode(Node):
             'total_s': {
                 'protocol_accept_from_first_input': rel('accepted'),
                 'accept_from_lio_ready': (marks['accepted'] - marks['lio_ready']) if 'accepted' in marks and 'lio_ready' in marks else None,
-                'accept_from_acq_end': dur('acq_end', 'accepted'),
+                'accept_from_acq_end': dur(K('acq_end'), 'accepted'),
                 'accept_from_node_start': (marks['accepted'] - a.t_start) if 'accepted' in marks else None,
                 'localized_from_first_input': rel('amcl_confirmed'),
                 'attempt_end_from_first_input': now - ti,
@@ -492,7 +606,16 @@ class RelocNode(Node):
             'marks_rel_first_input_s': {k: v - ti for k, v in marks.items()},
             'streams': {k: s.report() for k, s in self.streams.items()},
             'acquisition': {'clouds': len(self.acq.clouds), 'refused_stale': self.acq.refused, 'stop_reason': self.acq.stop_reason,
-                            'imu_samples': len(self.acq.imu), 'span_s': self.acq.span_s()},
+                            'imu_samples': len(self.acq.imu), 'span_s': self.acq.span_s(), 's2_clouds': self.acq.s2_n,
+                            's2_odom_radius_m': getattr(self.acq, 's2_radius', None),   # own-odometry motion during the S2 exposure
+                            'odom_max_radius_m': self.acq.max_radius, 'odom_path_m': self.acq.path_m()},
+            # mode s2s3 only. stage_s/search above describe the LAST stage run; the earlier S2 stage is kept here.
+            'accepted_stage': self.stage if a.state in ('ACCEPTED', 'HANDOFF', 'LOCALIZED', 'HANDOFF_FAILED') else None,
+            'last_stage': self.stage, 'stages': self.stages, 's2_exposure_s': self.s2_exposure,
+            's3': {'authorized_by': self.s3_authorized, 'supervisor_stop_signalled': self.stop_signalled,
+                   'requested_at_s': rel('state:S3_SUPERVISION_REQUIRED'), 'authorized_at_s': rel('s3_authorized')},
+            's2_stage_s': {'exposure_s': dur('lio_ready', 's2:acq_end'), 'build_s': next((e.get('build_s') for e in a.events if e['name'] == 's2:submap_built'), None),
+                           'search_worker_wall_s': dur('s2:search_spawn', 's2:search_end'), 'decided_at_s': rel('s2:search_end')},
             'imu_gate': {'evaluations': self.gate.evaluations, 'failed': self.gate.failed_evaluations, 'ready_stamp': self.gate.ready_stamp},
             'search': self.search_info, 'details': self.details, 'initialpose': self.pose_pub_info,
             'handoff_samples': self.monitor.samples[-40:], 'callback_profile': {k: {'n': v[0], 'total_s': v[1], 'max_s': v[2]} for k, v in PROFILE.items()}, 'process_start_to_end_s': now - self.process_start,

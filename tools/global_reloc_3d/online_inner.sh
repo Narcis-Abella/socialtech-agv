@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Inside socialtech:reloc-online. One end-to-end replay: relocalizer node + AMCL, input = bag only (no reference, no initial pose).
 # Env: BAG MAPYAML MAPXYZ OUT OFFSET (bag offset where the certified stationary start begins) [PRE=2.5 s of stationary IMU before it]
-#      [PLAY_S=100] [MODE=s3] [REGISTER_BIN] [LAUNCH_EXTRA="with_amcl:=false ..."] [RELAY_SPEC="--spec topic,type,drop,shift ..." + PLAY_ARGS_EXTRA remaps] [BAG_TOPICS] [H=0.53 provisional] [MAX_ATTEMPTS=1] [LEAD=12 s node/AMCL bring-up before the bag starts] [PLAY_ARGS_EXTRA]
+#      [PLAY_S=100] [MODE=s3] [REGISTER_BIN] [LAUNCH_EXTRA="with_amcl:=false ..."] [RELAY_SPEC="--spec topic,type,drop,shift ..." + PLAY_ARGS_EXTRA remaps] [BAG_TOPICS] [H=0.53 provisional] [MAX_ATTEMPTS=1] [LEAD=12 s node/AMCL bring-up before the bag starts] [PLAY_ARGS_EXTRA] [KILL_LIO_AT KILL_LIO_SIG] [AUTH_AT] [KILL_NODE_AT NODE2_ARGS]
 set -eo pipefail
 tools=/tools
 source /ros_env.sh
@@ -30,7 +30,13 @@ if [ -n "${KILL_NODE_AT:-}" ]; then   # restart test: SIGKILL the relocalizer mi
   ( sleep $KILL_NODE_AT; np=$(pgrep -f 'reloc_node.py --ros-args' | head -1); kill -KILL $np; sleep 3
     pgrep -c fastlio_mapping > "$OUT/fastlio_after_kill.txt" || true
     python3 -B $tools/global_reloc_3d/reloc_node.py --ros-args -p use_sim_time:=true -p map_xyz:="$MAPXYZ" -p work_dir:="$OUT/work2" -p mode:=${MODE:-s3} \
-      -p register_binary:=$tools/global_reloc_3d/register_v2 > "$OUT/node2.log" 2>&1 ) &
+      -p register_binary:=$tools/global_reloc_3d/register_v2 ${NODE2_ARGS:-} > "$OUT/node2.log" 2>&1 ) &
+fi
+if [ -n "${KILL_LIO_AT:-}" ]; then    # mid-run FAST-LIO2 fault: KILL = process dies, STOP = process hangs (stays alive, silent)
+  ( sleep $KILL_LIO_AT; lp=$(pgrep -x fastlio_mapping | head -1); echo "lio pid=$lp sig=${KILL_LIO_SIG:-KILL} at $(date +%s.%N)" > "$OUT/lio_fault.txt"; kill -${KILL_LIO_SIG:-KILL} $lp ) &
+fi
+if [ -n "${AUTH_AT:-}" ]; then        # external supervisor stand-in: grants S3 on the real topic AUTH_AT s after the bag starts
+  ( sleep $AUTH_AT; date +%s.%N > "$OUT/auth_wall.txt"; ros2 topic pub -t ${AUTH_TIMES:-3} -r 5 /global_reloc/s3_authorize std_msgs/msg/Bool "data: true" > "$OUT/auth.log" 2>&1 ) &
 fi
 # Stop when the attempt reached a terminal state and (if localized) AMCL had its confirmation window, or the replay ended.
 for _ in $(seq $(( ${PLAY_S:-100} + 10 ))); do
@@ -48,5 +54,7 @@ node_pid=$(pgrep -f 'reloc_node.py --ros-args' | head -1 || true)
 kill -TERM $launch 2>/dev/null || true
 for _ in $(seq 25); do kill -0 $launch 2>/dev/null || break; sleep 1; done
 kill -KILL $launch 2>/dev/null || true
+# children left behind after the whole stack was asked to stop (expected: 0 0 0)
+echo "fastlio=$(pgrep -xc fastlio_mapping) search=$(pgrep -fc search_v2.py) register=$(pgrep -fc register_v2)" > "$OUT/orphans.txt" || true
 python3 $tools/global_reloc_3d/proc_cost.py summarize "$OUT/cost.csv" > "$OUT/cost_summary.json" || true
 ls "$OUT/work"/attempt*/metrics*.json

@@ -23,7 +23,7 @@ class StateTest(unittest.TestCase):
 
     def test_only_search_can_accept(self):
         for s in rc.TRANSITIONS:
-            if s != 'SEARCHING':
+            if s not in rc.SEARCH_STATES:
                 self.assertNotIn('ACCEPTED', rc.TRANSITIONS[s])
         self.assertEqual(rc.TRANSITIONS['ACCEPTED'], {'HANDOFF', 'ERROR'})
 
@@ -83,6 +83,62 @@ class AcqTest(unittest.TestCase):
         a = rc.Acquisition('s2'); self.feed(a, np.zeros(40)); self.assertEqual(a.stop_reason, 's2_exposure')
 
 
+class S2S3Test(unittest.TestCase):
+    def test_s3_only_after_s2_insufficient_and_supervision(self):
+        self.assertEqual({s for s, n in rc.TRANSITIONS.items() if 'S3_ACCUMULATING' in n}, {'S3_SUPERVISION_REQUIRED'})
+        self.assertEqual({s for s, n in rc.TRANSITIONS.items() if 'S3_SUPERVISION_REQUIRED' in n}, {'S2_INSUFFICIENT'})
+        self.assertEqual({s for s, n in rc.TRANSITIONS.items() if 'S2_INSUFFICIENT' in n}, {'S2_ACCUMULATING', 'S2_SEARCHING'})
+        for s in ('S2_INSUFFICIENT', 'S3_SUPERVISION_REQUIRED', 'S2_ACCUMULATING', 'S3_ACCUMULATING'):
+            self.assertNotIn('ACCEPTED', rc.TRANSITIONS[s]); self.assertNotIn('HANDOFF', rc.TRANSITIONS[s])
+        self.assertEqual({s for s, n in rc.TRANSITIONS.items() if 'HANDOFF' in n}, {'ACCEPTED'})
+
+    def test_one_clock_across_s2_and_s3(self):
+        c = Clock(); a = rc.Attempt(1, c); a.input_started()
+        for s in ('WAIT_SENSORS', 'IMU_CONDITIONING', 'LIO_STARTING', 'S2_ACCUMULATING', 'S2_SEARCHING'):
+            a.go(s); c.t += 4.
+        a.go('S2_INSUFFICIENT'); a.go('S3_SUPERVISION_REQUIRED')
+        self.assertAlmostEqual(a.elapsed(), 20.)                    # the S2 time is not given back to S3
+        self.assertTrue(rc.s3_viable(a.elapsed())); c.t += 18.1
+        self.assertFalse(rc.s3_viable(a.elapsed()))                 # 38.1 s used: < 22 s left for build + search
+        a.go('TIMEOUT')
+
+    def test_s2s3_cut_then_s3_limit(self):
+        a = rc.Acquisition('s2s3')
+        xs = [0.] * 40 + list(np.arange(.1, 6, .1))
+        for i, x in enumerate(xs):
+            a.add_odom(i * .1, T(x)); a.add_odom(i * .1 + .05, T(x))
+            if not a.add_cloud(i * .1 + .02, np.zeros((5, 3))): break
+        self.assertEqual(a.s2_n, 30)                                 # 3.0 s at 10 Hz, same rule as the s2 baseline
+        self.assertAlmostEqual(a.s2_radius, 0.)
+        self.assertEqual(a.stop_reason, 'radius'); self.assertLessEqual(a.max_radius, rc.S3_MAX_RADIUS_M)
+        self.assertGreater(len(a.clouds), a.s2_n)                    # accumulation continued past the S2 cut in the same buffers
+        b = rc.Acquisition('s2'); 
+        for i in range(40):
+            b.add_odom(i * .1, T()); b.add_odom(i * .1 + .05, T())
+            if not b.add_cloud(i * .1 + .02, np.zeros((5, 3))): break
+        self.assertEqual(b.s2_n, a.s2_n)
+
+    def test_s2_exposure_parameter(self):
+        for exp, n in ((1., 10), (5., 50)):
+            a = rc.Acquisition('s2s3', s2_exposure=exp)
+            for i in range(80):
+                a.add_odom(i * .1, T()); a.add_odom(i * .1 + .05, T()); a.add_cloud(i * .1 + .02, np.zeros((5, 3)))
+            self.assertEqual(a.s2_n, n)
+
+
+class StampJitterTest(unittest.TestCase):
+    def test_complete_stream_with_alternating_stamps(self):
+        # Mid-360 IMU pattern: steps cluster at 4.25 ms and 5.75 ms, more short than long, mean 5 ms. Nothing is missing.
+        rng = np.random.default_rng(1)
+        steps = np.where(rng.random(4000) < .55, .00425, .00575 + .0011); steps *= .005 / steps.mean()
+        s = rc.StreamStats('imu'); t = 0.
+        for d in steps:
+            t += d; s.add(t, t)
+        r = s.report()
+        self.assertAlmostEqual(r['rate_hz_stamp'], 200., delta=.2)       # the stream is complete
+        self.assertGreater(r['lost_estimate'], 0)                        # the gap counter is fooled: documented, do not trust it here
+
+
 class HandoffTest(unittest.TestCase):
     def test_pose_propagates_with_odometry(self):
         T_map_src = T(10., .5, 4.); T_ci_first = T(0.); T_ci_now = T(1.5, .2)
@@ -90,6 +146,11 @@ class HandoffTest(unittest.TestCase):
         ref = T_map_src @ T_ci_now
         self.assertAlmostEqual(xyyaw[0], ref[0, 3]); self.assertAlmostEqual(xyyaw[2], .7)
         np.testing.assert_allclose(q, [0, 0, 0, 1], atol=1e-12)
+
+    def test_mount_extrinsic(self):
+        self.assertEqual(rc.compose_planar((1., 2., .3), (0., 0., 0.)), (1., 2., .3))       # default: behaviour of note 15 unchanged
+        x, y, w = rc.compose_planar((1., 2., np.pi / 2), (.5, 0., .1))                      # base 0.5 m ahead of the sensor, robot facing +y
+        self.assertAlmostEqual(x, 1.); self.assertAlmostEqual(y, 2.5); self.assertAlmostEqual(w, np.pi / 2 + .1)
 
     def test_monitor_needs_sustained_coherence(self):
         m = rc.HandoffMonitor()

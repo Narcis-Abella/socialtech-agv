@@ -20,12 +20,22 @@ LIO_READY_MAX_S = 5.      # protocol: usable odometry + cloud within 5 s of the 
 S3_MAX_RADIUS_M = 2.8
 S3_MAX_PATH_M = 6.
 S2_EXPOSURE_S = 3.
+# Planning estimate only (never an acceptance threshold): worst submap build (5.7 s) + worst search worker (15.3 s) observed in
+# note 15 (development data) + 1 s. S3 is not started when less than this remains of the single 60 s budget.
+S3_COMPUTE_RESERVE_S = 22.
 
 TRANSITIONS = {
     'IDLE': {'WAIT_SENSORS', 'ERROR'},
     'WAIT_SENSORS': {'IMU_CONDITIONING', 'TIMEOUT', 'ERROR'},
     'IMU_CONDITIONING': {'LIO_STARTING', 'TIMEOUT', 'ERROR'},
-    'LIO_STARTING': {'ACCUMULATING', 'TIMEOUT', 'ERROR'},
+    'LIO_STARTING': {'ACCUMULATING', 'S2_ACCUMULATING', 'TIMEOUT', 'ERROR'},
+    # mode s2s3: stationary S2 first, supervised S3 only if S2 gives no accepted pose; one attempt, one clock (protocol 02, line 141)
+    'S2_ACCUMULATING': {'S2_SEARCHING', 'S2_INSUFFICIENT', 'TIMEOUT', 'ERROR'},
+    'S2_SEARCHING': {'ACCEPTED', 'S2_INSUFFICIENT', 'TIMEOUT', 'ERROR'},
+    'S2_INSUFFICIENT': {'S3_SUPERVISION_REQUIRED', 'TIMEOUT', 'ERROR'},
+    'S3_SUPERVISION_REQUIRED': {'S3_ACCUMULATING', 'TIMEOUT', 'ERROR'},
+    'S3_ACCUMULATING': {'S3_SEARCHING', 'REJECTED', 'TIMEOUT', 'ERROR'},
+    'S3_SEARCHING': {'ACCEPTED', 'REJECTED', 'TIMEOUT', 'ERROR'},
     'ACCUMULATING': {'SEARCHING', 'REJECTED', 'TIMEOUT', 'ERROR'},
     'SEARCHING': {'ACCEPTED', 'REJECTED', 'TIMEOUT', 'ERROR'},
     'ACCEPTED': {'HANDOFF', 'ERROR'},
@@ -33,6 +43,13 @@ TRANSITIONS = {
     'LOCALIZED': set(), 'HANDOFF_FAILED': set(), 'REJECTED': set(), 'TIMEOUT': set(), 'ERROR': set(),
 }
 TERMINAL = {s for s, n in TRANSITIONS.items() if not n}
+SEARCH_STATES = {'SEARCHING', 'S2_SEARCHING', 'S3_SEARCHING'}
+ACCUMULATE_STATES = {'ACCUMULATING', 'S2_ACCUMULATING', 'S2_SEARCHING', 'S2_INSUFFICIENT', 'S3_SUPERVISION_REQUIRED', 'S3_ACCUMULATING'}
+
+
+def s3_viable(elapsed, deadline=None, reserve=S3_COMPUTE_RESERVE_S):
+    """Can a supervised S3 stage still build, search, verify and decide inside the SAME deadline? The clock is never restarted."""
+    return (DEADLINE_S if deadline is None else deadline) - elapsed >= reserve
 
 
 class IllegalTransition(Exception):
@@ -87,7 +104,11 @@ class Attempt:
 
 
 class StreamStats:
-    """Messages received / expected / lost from header stamps (nominal period = running median of the gaps)."""
+    """Messages received / expected / lost from header stamps (nominal period = running median of the gaps).
+
+    lost_estimate is only valid for evenly stamped streams. The Mid-360 IMU stamps alternate around 4.25 / 5.75 ms (median 4.79 ms,
+    mean 5.00 ms), so every long step counts as a lost sample and a complete 200 Hz stream reads as 7-8 % lost (note 16).
+    For completeness use rate_hz_stamp (mean rate over header time) against the sensor's specified rate."""
 
     def __init__(self, name):
         self.name = name
@@ -95,6 +116,7 @@ class StreamStats:
         self.lost = 0
         self.gaps = collections.deque(maxlen=200)
         self.last = None
+        self.first_stamp = None
         self.first_mono = None
         self.last_mono = None
         self.nonmonotonic = 0
@@ -103,6 +125,8 @@ class StreamStats:
 
     def add(self, stamp, mono):
         self.n += 1
+        if self.first_stamp is None:
+            self.first_stamp = stamp
         self.first_mono = self.first_mono or mono
         self.last_mono = mono
         if self.last is not None:
@@ -125,6 +149,7 @@ class StreamStats:
         span = (self.last_mono - self.first_mono) if self.first_mono else 0.
         return {'received': self.n, 'lost_estimate': self.lost, 'nonmonotonic': self.nonmonotonic, 'max_gap_s': self.max_gap_s,
                 'rate_hz_wall': (self.n - 1) / span if span > 0 else None,
+                'rate_hz_stamp': (self.n - 1) / (self.last - self.first_stamp) if self.n > 1 and self.last > self.first_stamp else None,
                 'nominal_period_s': float(np.median(self.gaps)) if self.gaps else None,
                 'loss_events_first30': self.loss_events[:30], 'loss_events_n': len(self.loss_events)}
 
@@ -173,9 +198,12 @@ class Acquisition:
     Messages older than min_stamp (the last stamp the previous FAST-LIO process produced) are refused, so two attempts never mix.
     """
 
-    def __init__(self, mode='s3', min_stamp=-math.inf):
-        self.mode = mode
+    def __init__(self, mode='s3', min_stamp=-math.inf, s2_exposure=S2_EXPOSURE_S):
+        self.mode = mode                # s3 | s2 (baselines) | s2s3 (S2 cut, then keep accumulating under the S3 limits)
         self.min_stamp = min_stamp
+        self.s2_exposure = s2_exposure
+        self.s2_n = None                # number of leading clouds that form the S2 submap
+        self.max_radius = 0.            # own-odometry XY radius from the first cloud (s3/s2s3), recorded, never from a reference
         self.odom, self.clouds, self.imu = [], [], []
         self.stop_reason = None
         self.refused = 0
@@ -199,28 +227,39 @@ class Acquisition:
             self.refused += 1
             return True
         self.clouds.append((t, xyz))
-        if self.mode == 's2' and t - self.clouds[0][0] + .1 >= S2_EXPOSURE_S:
-            self.stop_reason = 's2_exposure'
-            return False
-        if self.mode == 's3':
-            # Incremental form of lio_submap.s3_limit (same radius/path definitions, first violation excluded), O(log n) per cloud.
-            try:
-                if self._first is None:
-                    self._first_inv = np.linalg.inv(interpolate(self.odom, t)); self._first = True
-                    self._xy0 = np.zeros(2); self._last_xy = self._xy0; self._path = 0.
-                    return True
-                rel = self._first_inv @ interpolate(self.odom, t)
-            except ValueError:
-                return True               # odometry bracket not yet available for the newest cloud
-            xy = rel[:2, 3]
-            path = self._path + float(np.linalg.norm(xy - self._last_xy))
-            radius = float(np.linalg.norm(xy - self._xy0))
-            if radius > S3_MAX_RADIUS_M or path > S3_MAX_PATH_M:
-                self.stop_reason = 'radius' if radius > S3_MAX_RADIUS_M else 'path'
-                self.clouds = self.clouds[:-1]
+        if self.mode == 's2':
+            if t - self.clouds[0][0] + .1 >= self.s2_exposure:
+                self.s2_n = len(self.clouds)
+                self.stop_reason = 's2_exposure'
                 return False
-            self._path, self._last_xy = path, xy
+            return True
+        # Incremental form of lio_submap.s3_limit (same radius/path definitions, first violation excluded), O(log n) per cloud.
+        try:
+            if self._first is None:
+                self._first_inv = np.linalg.inv(interpolate(self.odom, t)); self._first = True
+                self._xy0 = np.zeros(2); self._last_xy = self._xy0; self._path = 0.
+                return True
+            rel = self._first_inv @ interpolate(self.odom, t)
+        except ValueError:
+            return True               # odometry bracket not yet available for the newest cloud
+        xy = rel[:2, 3]
+        path = self._path + float(np.linalg.norm(xy - self._last_xy))
+        radius = float(np.linalg.norm(xy - self._xy0))
+        if radius > S3_MAX_RADIUS_M or path > S3_MAX_PATH_M:
+            self.stop_reason = 'radius' if radius > S3_MAX_RADIUS_M else 'path'
+            self.clouds = self.clouds[:-1]
+            if self.mode == 's2s3' and self.s2_n is None:
+                self.s2_n = len(self.clouds)
+            return False
+        self._path, self._last_xy = path, xy
+        self.max_radius = max(self.max_radius, radius)
+        if self.mode == 's2s3' and self.s2_n is None and t - self.clouds[0][0] + .1 >= self.s2_exposure:
+            self.s2_n = len(self.clouds)
+            self.s2_radius = self.max_radius      # own-odometry motion during the S2 exposure (diagnostic: was it really stationary?)
         return True
+
+    def path_m(self):
+        return getattr(self, '_path', 0.)
 
     def start_stamp(self):
         return self.clouds[0][0] if self.clouds else None
@@ -244,6 +283,14 @@ def handoff_pose(T_map_src, T_level_local, T_ci_first, T_ci_now):
     yaw = math.atan2(T_now[1, 0], T_now[0, 0])
     q = Rotation.from_matrix(T_src_ci[:3, :3]).as_quat()
     return T_map_ci, (float(T_now[0, 3]), float(T_now[1, 3]), yaw), q
+
+
+def compose_planar(xyyaw, ext):
+    """Pose of base_footprint from the pose of the IMU-origin proxy and the planar mount extrinsic (x, y, yaw of the base in the
+    levelled body frame). (0, 0, 0) = the proxy itself (PROVISIONAL default: the mount has not been measured)."""
+    x, y, w = xyyaw
+    ex, ey, ew = ext
+    return (x + math.cos(w) * ex - math.sin(w) * ey, y + math.sin(w) * ex + math.cos(w) * ey, w + ew)
 
 
 def yaw_diff_deg(a, b):
