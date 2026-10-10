@@ -87,6 +87,8 @@ def check(d, expect='.*', evidence='', control=''):
     cls = (ev or {}).get('class', '')
     if cls in ('wrong_accept', 'pose_without_acceptance'):
         fails.append('C1')
+    if cls == 'unscorable_reference_gap' and m['initialpose'] is not None:     # a published pose nobody could score is not a pass (h27)
+        fails.append('C?')
     if not re.fullmatch(expect, obs):
         fails.append('EXPECT')
     first_inj = min((float(t) for t, c in inj), default=None)

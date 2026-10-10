@@ -70,6 +70,9 @@ run h24_clock_forward_after_localized "${LOC}.*" h00 "inj_rc==[0]" $POST CLOCK_J
 run h25_lio_killed_after_localized "${LOC}LOCALIZATION_LOST\(fastlio_exited_-9\)" h00 "odom>50" $POST KILL_LIO_AT=35 KILL_LIO_SIG=KILL
 run h26_lio_frozen_after_localized "${LOC}LOCALIZATION_LOST\(odometry_stalled\)" h00 "odom>50" $POST KILL_LIO_AT=35 KILL_LIO_SIG=STOP
 run h27_lio_diverges_in_s2 '(ERROR|TIMEOUT|REJECTED|HANDOFF_FAILED)\(.*' h40 "odom>5 and relay['imu']['altered']>500" RELAY_SPEC="$(relay 0,0 0,0,after=4,gyrobias=0.5)" PLAY_ARGS_EXTRA="$REMAP"
+# smaller steps of gyro bias: does a slowly diverging odometry carry a wrong pose through the hand-over? (added after h27 was read by hand)
+run h44_lio_gyro_bias_0p1_in_s2 '(ERROR|TIMEOUT|REJECTED|HANDOFF_FAILED)\(.*' h40 "odom>5 and relay['imu']['altered']>500" $POST RELAY_SPEC="$(relay 0,0 0,0,after=4,gyrobias=0.1)" PLAY_ARGS_EXTRA="$REMAP"
+run h45_lio_gyro_bias_0p2_in_s2 '(ERROR|TIMEOUT|REJECTED|HANDOFF_FAILED)\(.*' h40 "odom>5 and relay['imu']['altered']>500" $POST RELAY_SPEC="$(relay 0,0 0,0,after=4,gyrobias=0.2)" PLAY_ARGS_EXTRA="$REMAP"
 run h28_lio_diverges_after_localized "${LOC}LOCALIZATION_LOST\(.*" h40 "$FED and relay['imu']['altered']>500" $POST RELAY_SPEC="$(relay 0,0 0,0,after=35,gyrobias=0.5)" PLAY_ARGS_EXTRA="$REMAP"
 run h29_lio_acc_x3_after_localized "${LOC}LOCALIZATION_LOST\(.*" h40 "$FED and relay['imu']['altered']>500" $POST RELAY_SPEC="$(relay 0,0 0,0,after=35,accscale=3)" PLAY_ARGS_EXTRA="$REMAP"
 # --- AMCL
