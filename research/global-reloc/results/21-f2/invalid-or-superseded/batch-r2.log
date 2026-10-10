@@ -1,0 +1,21 @@
+eco01-z03-s2s3x3-own-r2 correct_accept LOCALIZED None stage= s2 s2= None t_acc= 18.740984962962102 t_end= 24.0
+hospital-z00-s2s3x3-own-r2 correct_accept LOCALIZED None stage= s3 s2= ambiguous_no_alternative_margin t_acc= 41.76918987301178 t_end= 47.1
+eco01-z03-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 42.4
+BATCH_DONE
+hospital-z00-s2s3x3-own-r2 correct_accept LOCALIZED None stage= s3 s2= ambiguous_no_alternative_margin t_acc= 41.76918987301178 t_end= 47.1
+BATCH_DONE
+eco01-c00-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 31.3
+eco01-c02-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 45.1
+eco01-c04-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 40.9
+eco03-c00-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 44.1
+eco03-c01-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 44.9
+hospital-c00-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 34.7
+hospital-c04-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 32.9
+eco01-c01-s2s3x3-hole-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 45.0
+eco01-c02-s2s3x3-hole-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 44.1
+eco01-c04-s2s3x3-hole-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 39.4
+eco01-z03-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 42.4
+hospital-z00-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 42.4
+hospital-z04-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 46.2
+hospital-z07-s2s3x3-cross-r2 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 47.8
+BATCH_DONE

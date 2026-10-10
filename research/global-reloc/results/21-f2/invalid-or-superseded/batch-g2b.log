@@ -1,0 +1,8 @@
+g00_nominal-g2b work/attempt1:LOCALIZED(None) stage=s2 pose=True t=24.3 | orphans: fastlio=0 search=0 register=0
+BATCH_DONE
+g03_lidar_drop30-g2b work/attempt1:LOCALIZED(None) stage=s2 pose=True t=23.6 | orphans: fastlio=0 search=0 register=0
+BATCH_DONE
+g04_imu_drop30-g2b work/attempt1:TIMEOUT(imu_not_stationary) stage=None pose=False t=60.0 | orphans: fastlio=0 search=0 register=0
+BATCH_DONE
+g05_imu_stamp_shift-g2b work/attempt1:ERROR(lio_not_ready_5s) stage=None pose=False t=7.5 | orphans: fastlio=0 search=0 register=0
+BATCH_DONE

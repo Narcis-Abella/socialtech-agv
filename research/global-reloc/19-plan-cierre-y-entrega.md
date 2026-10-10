@@ -20,7 +20,7 @@ Evidence levels, never mixed:
 | Phase | Status | Level it can deliver |
 |---|---|---|
 | F1 Audit and freeze | **VERIFIED** (2026-10-10) | `VALIDATED_IN_REPLAY` |
-| F2 Robustness | PENDING | `VALIDATED_IN_REPLAY` |
+| F2 Robustness | **PARTIAL** (2026-10-10), candidate `GR-S2S3-F2` = `98926f7`; one critical defect open (note 21, 4b) | `VALIDATED_IN_REPLAY` |
 | F3 Performance and timeout | PENDING | `VALIDATED_IN_REPLAY`; cold boot part BLOCKED_PHYSICAL |
 | F4 Physical calibration | BLOCKED_PHYSICAL | precondition of H1 |
 | F5 Independent benchmark | BLOCKED_PHYSICAL (data to record) | `FORMALLY_BENCHMARKED` |
@@ -35,21 +35,13 @@ Evidence levels, never mixed:
 - Closing criterion (met): full audit, evidence checked, S2 / S3 / negative reproduced, tests run, candidate identified, decisions documented, no open bug that invalidates the candidate.
 - Carried forward, not blocking: findings O1-O9 of note 20; the four decisions are documented but not yet taken by Narcís.
 
-## F2 — Robustness — PENDING
+## F2 — Robustness — PARTIAL
 
-- Objective: close or consciously accept the open findings and the untested fault cases, without touching the gate or the search.
-- Pending (each: evidence first, then a regression, then a new candidate name if method code changes):
-  1. O1: both sensor streams absent -> no terminal state. Decide a start-up timeout or an external watchdog; test it.
-  2. O2: define and test what the navigation side reads to enable motion (`/global_reloc/state == LOCALIZED`); behaviour of the TF after `HANDOFF_FAILED`.
-  3. O3: AMCL lost after `LOCALIZED` (replay: sensor blanked for 20 s after handoff). Record, then decide whether the node must supervise.
-  4. O4: memory of a long-lived node after `LOCALIZED` (measure PSS over 30 min of replay); bound the buffers if it grows.
-  5. Untested in note 16: reversed-order stamps, a stamp jump to epoch end to end (unit-tested only), FAST-LIO2 alive but diverged, symmetric places, both streams absent.
-  6. FAST-LIO2 start-up hang (1 in about 100): try to reproduce with 200 cold starts on one window; record the rate with its Wilson bound; no fix without a cause.
-  7. O7: decide whether the evaluator may score a stamp that coincides with a reference sample; if changed, re-score every table with the new evaluator and say so.
-  8. A ROS-free test seam for `reloc_node.py` decision paths (tick with fake clock) if the fixes above touch it.
-- Evidence to produce: fault table like `results/16-s2s3/table-faults.csv` on the new candidate, with `orphans` and `pose_published` per row.
-- Closing criterion: every item above is fixed with a regression or accepted in writing with its reason; all note-16 fault cases re-run on the resulting candidate with 0 poses without `ACCEPTED` and 0 orphans; S2 / S3 / negative reproduced again.
-- Links: note 20 sections 2 and 8, note 16 section 5.
+- Done: O1 (start-up timeout), O2 (permit heartbeat + fail-closed gate, tested against the real `tracer_base` on a virtual CAN bus), O3 (revocable `LOCALIZED`), O4 (bounded buffers), plus an input-stamp integrity rule after a real wrong acceptance was found under reordered LiDAR input (case h15). Fault relay of F1 corrected (it never delivered to FAST-LIO2); F1 relay rows re-run on the frozen code.
+- Evidence: [21-fase2-robustez.md](21-fase2-robustez.md), `results/21-f2/`, NX `/home/jetson/work/reloc-f2c-20261010/`.
+- **Open, critical:** FAST-LIO2 diverging during the S2 search can carry a wrong pose to `/initialpose` (case h27, 2 of 3 runs; no navigation permit given). Needs a design decision (note 21, section 4b), then the matrix and the restarts again.
+- Result: 46 fault cases valid, 43 conform, 1 unsafe (h27), 2 wrong predictions with correct behaviour; 200 software restarts 188 `LOCALIZED`, 12 safe timeouts, 0 wrong acceptance, 0 FAST-LIO2 start failure; F1 regressions unchanged except the two relay artefacts.
+- Not closed here, moved to physical phases: base firmware command timeout, bypass of a topic-level gate, cold boot, live driver, memory beyond 8 min, slow odometry drift, NVMe stalls of the NX. See note 21 section 9.
 
 ## F3 — Performance and timeout — PENDING (cold boot BLOCKED_PHYSICAL)
 

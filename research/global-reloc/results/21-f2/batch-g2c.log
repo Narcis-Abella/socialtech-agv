@@ -1,0 +1,26 @@
+g00_nominal-g2c work/attempt1:LOCALIZED(None) stage=s2 pose=True t=24.3 | orphans: fastlio=0 search=0 register=0
+g01_lidar_missing-g2c work/attempt1:TIMEOUT(sensors_unavailable) stage=None pose=False t=60.0 | orphans: fastlio=0 search=0 register=0
+g02_imu_missing-g2c work/attempt1:TIMEOUT(sensors_unavailable) stage=None pose=False t=60.0 | orphans: fastlio=0 search=0 register=0
+g03_lidar_drop30-g2c work/attempt1:LOCALIZED(None) stage=s2 pose=True t=24.3 | orphans: fastlio=0 search=0 register=0
+g04_imu_drop30-g2c work/attempt1:TIMEOUT(imu_not_stationary) stage=None pose=False t=60.0 | orphans: fastlio=0 search=0 register=0
+g05_imu_stamp_shift-g2c work/attempt1:ERROR(lio_not_ready_5s) stage=None pose=False t=7.5 | orphans: fastlio=0 search=0 register=0
+g06_lio_exits_at_start-g2c work/attempt1:ERROR(fastlio_exited_1) stage=None pose=False t=2.3 | orphans: fastlio=0 search=0 register=0
+g07_lio_hangs_at_start-g2c work/attempt1:ERROR(lio_not_ready_5s) stage=None pose=False t=7.3 | orphans: fastlio=0 search=0 register=0
+g08_lio_killed_in_s2_search-g2c work/attempt1:ERROR(fastlio_exited_-9) stage=None pose=False t=10.4 | orphans: fastlio=0 search=0 register=0
+g09_lio_frozen_in_s2_search-g2c work/attempt1:ERROR(lio_stalled) stage=None pose=False t=18.4 | orphans: fastlio=0 search=0 register=0
+g10_lio_frozen_in_s2_accum-g2c work/attempt1:ERROR(lio_stalled) stage=None pose=False t=13.9 | orphans: fastlio=0 search=0 register=0
+g11_lio_killed_late_forced_s3-g2c work/attempt1:ERROR(fastlio_exited_-9) stage=None pose=False t=16.4 | orphans: fastlio=0 search=0 register=0
+g12_lio_killed_after_handoff-g2c work/attempt1:HANDOFF_FAILED(odometry_lost_after_pose) stage=s2 pose=True t=21.0 | orphans: fastlio=0 search=0 register=0
+g13_gicp_binary_false-g2c work/attempt1:REJECTED(reject_no_hypothesis) stage=None pose=False t=30.7 | orphans: fastlio=0 search=0 register=0
+g14_gicp_binary_missing-g2c work/attempt1:ERROR(search_worker_exit_1) stage=None pose=False t=11.3 | orphans: fastlio=0 search=0 register=0
+g15_gicp_never_returns-g2c work/attempt1:TIMEOUT(search_deadline) stage=None pose=False t=60.2 | orphans: fastlio=0 search=0 register=0
+g16_deadline15_s2_search-g2c work/attempt1:TIMEOUT(s2_search_deadline) stage=None pose=False t=15.2 | orphans: fastlio=0 search=0 register=0
+g17_deadline35_s3-g2c work/attempt1:TIMEOUT(s3_budget_insufficient) stage=None pose=False t=15.9 | orphans: fastlio=0 search=0 register=0
+g18_amcl_absent-g2c work/attempt1:HANDOFF_FAILED(amcl_not_available) stage=s2 pose=False t=49.2 | orphans: fastlio=0 search=0 register=0
+g19_s3_never_authorized-g2c work/attempt1:TIMEOUT(s3_not_authorized_in_budget) stage=None pose=False t=38.3 | orphans: fastlio=0 search=0 register=0
+g20_s3_authorized_by_topic-g2c work/attempt1:LOCALIZED(None) stage=s3 pose=True t=45.8 | orphans: fastlio=0 search=0 register=0
+g21_s3_grant_too_early_ignored-g2c work/attempt1:TIMEOUT(s3_not_authorized_in_budget) stage=None pose=False t=38.3 | orphans: fastlio=0 search=0 register=0
+g22_s3_grant_too_late-g2c work/attempt1:TIMEOUT(s3_not_authorized_in_budget) stage=None pose=False t=38.3 | orphans: fastlio=0 search=0 register=0
+g23_node_sigkill_restart-g2c work2/attempt1:TIMEOUT(imu_not_stationary) stage=None pose=False t=60.0 | orphans: fastlio=0 search=0 register=0
+g24_second_attempt_after_motion-g2c work/attempt1:TIMEOUT(imu_not_stationary) stage=None pose=False t=60.0 | work/attempt2:LOCALIZED(None) stage=s2 pose=True t=24.7 | orphans: fastlio=0 search=0 register=0
+BATCH_DONE

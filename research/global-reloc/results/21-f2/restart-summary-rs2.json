@@ -1,0 +1,101 @@
+{
+ "kind": "software_restart (fresh container, node and FAST-LIO2 on a warm board), not a cold boot",
+ "runs": 200,
+ "valid": 200,
+ "invalid": [],
+ "verdict": {
+  "PASS": 200
+ },
+ "invariant_failures_all_rows": [],
+ "observed": {
+  "LOCALIZED(None)/LOCALIZED(None)": 188,
+  "TIMEOUT(imu_not_stationary)": 2,
+  "TIMEOUT(s3_budget_insufficient)": 10
+ },
+ "class": {
+  "correct_accept": 188,
+  "false_reject_timeout": 12
+ },
+ "by_dataset": {
+  "eco01": {
+   "LOCALIZED(None)": 54
+  },
+  "hospital": {
+   "LOCALIZED(None)": 90,
+   "TIMEOUT(s3_budget_insufficient)": 10,
+   "TIMEOUT(imu_not_stationary)": 1
+  },
+  "eco03": {
+   "LOCALIZED(None)": 44,
+   "TIMEOUT(imu_not_stationary)": 1
+  }
+ },
+ "localized": {
+  "k": 188,
+  "n": 200,
+  "wilson95": [
+   0.8981,
+   0.9653
+  ]
+ },
+ "wrong_accept": {
+  "k": 0,
+  "n": 200,
+  "wilson95": [
+   0.0,
+   0.0188
+  ]
+ },
+ "pose_without_acceptance": 0,
+ "fastlio_start_failures": {
+  "k": 0,
+  "n": 200,
+  "wilson95": [
+   0.0,
+   0.0188
+  ],
+  "runs": []
+ },
+ "orphans_nonzero": [],
+ "localized_s": {
+  "n": 188,
+  "median": 23.31,
+  "p95": 39.83,
+  "max": 48.46,
+  "min": 19.91
+ },
+ "accept_s": {
+  "n": 188,
+  "median": 17.81,
+  "p95": 34.56,
+  "max": 42.99,
+  "min": 14.57
+ },
+ "attempt_end_s_not_localized": {
+  "n": 12,
+  "median": 40.28,
+  "p95": 60.02,
+  "max": 60.03,
+  "min": 38.92
+ },
+ "xy_err_m_accepted": {
+  "n": 188,
+  "median": 0.03,
+  "p95": 0.06,
+  "max": 0.08,
+  "min": 0.0
+ },
+ "pss_peak_mb": {
+  "n": 200,
+  "median": 255.1,
+  "p95": 322.49,
+  "max": 381.4,
+  "min": 124.8
+ },
+ "mem_available_mb": {
+  "first_before": 14171,
+  "last_after": 14203,
+  "min_after": 14166,
+  "slope_mb_per_run": 0.065
+ }
+}

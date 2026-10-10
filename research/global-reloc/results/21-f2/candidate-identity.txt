@@ -1,0 +1,72 @@
+# Candidate GR-S2S3-F2 (2026-10-10). sha256 unless noted. Paths under /home/jetson are on the Orin NX.
+status: PARTIAL - open critical defect, note 21 section 4b (wrong /initialpose when FAST-LIO2 diverges during the search). Not a release candidate.
+method commit 98926f7 (98926f7a5c8c781da970a248c3047d94f086c5d4); harness commit d8c2e05 (d8c2e05470a455dee6d4ec92eb216ab5f769ea52); branch feat/global-reloc, local, not pushed
+predecessors: F1 GR-S2S3-F1 = c026a7b (frozen, untouched); 17172ab (first F2 method tree: O1-O4, superseded by 98926f7 after case h15)
+
+## method code (tools/) - changed against F1: reloc_node.py, reloc_core.py, launch; new: nav_gate.py; identical to F1: all others
+1a798be8aa7f1d2a72c9ad75f056577c4207d86db6395e692600baac3a626515  global_reloc_3d/reloc_node.py
+fbe85728de89e59e6a2545ffcb2631fa2f27949feb090f20c3a1c20752684bea  global_reloc_3d/reloc_core.py
+2aaa901004a6e70fded218f4b8135413af66780c2cc9b8a15fe588cf561d06a5  global_reloc_3d/nav_gate.py
+befad8238bd56744bb48c074a0d9a421ba91a2ae2026b82078a9470861693f26  global_reloc_3d/verify.py
+97d325ae05d9ae8ea02fc56cb75cbafcb850136d59104b1ba1ecdc01544d44f9  global_reloc_3d/search_v2.py
+8744868dc132124fe8636c0901ab6e0c98d00bf7e89a5e30e24e0e3006070341  global_reloc_3d/correlative_search.py
+ac17d83e19fbf3d30aececb01a65bf89bb8138023972a8a262cbfa0da60fe470  global_reloc_3d/search_tiles.py
+b3cd2f27abf59356cc67ad392218db284905fb12a4ea3afde0f16753af8fc098  global_reloc_3d/lio_submap.py
+293f9517fbb13160ece2c444ebc2bd68469dc610cd7fbf1f0ffd271e109f9899  global_reloc_3d/imu_ready.py
+7522f7d33ca1e3e8733d47d758f2c99e56f0e8ed4e373d0f7643afce63f7f6c7  global_reloc_3d/register_v2.cpp
+c19dca447fa032d0d3b76ce9116627f3ae8b710ada1f95bd6175a9899d7aa589  global_reloc_3d/launch/reloc_online.launch.py
+b1b06eaf65f7942e471ba6eb62910228401a4d65ba2d0a72c0dd1b94a31cfa89  nav_bench/planar_odom.py
+df25cf2c74ed0e0306365651d7d9525ffb3bbf68263550cc900d7ceb349424ac  nav_bench/config/amcl.yaml
+f6d3a4bcc00a89cfaab06801394cacd4cbfa5bb07e7ae069ab775220278f7c7b  nav_bench/config/scan.yaml
+31e3db4fa4df016c4fae73c1a10d676bf91db5f72b7731e242b9a41de1f202cf  nav_bench/overlay.py
+
+## harness and evaluator (tools/global_reloc_3d/)
+b374db0ef81f3b57764d54659762437197fac20ad2cadeb421d3bd4429c2d5ba  run_online.sh
+aba8c0f55304ece3b95f56192e4966c6c8257852c4bd83466561c0e49c603466  online_inner.sh
+ef0428de612c51943659e94156b4ff234aa92bf2a795eff52a502208718f637b  fault_relay.py
+e5215378a8570ec296c679e739f10a373b520200c246ffa16a76e42aca7d9ff0  f2_check.py
+ad4ecd554438ef6ee59db57a757b939eee6a06b16a4d35bf00583a032a9d259a  batch_faults_f2.sh
+a9f3a23a9371cf5c7bf353ceed11406bb3e8934b7acb232db987fc2a425c5365  batch_faults_s2s3.sh
+fe99725d4a1dd5641fbf5ca31181f4530fbe50e4bc113316228796e669649b39  batch_s2s3.sh
+b4853bf1a38c225b1b02d858e54e8fd4fe3429e2be06735018dfa1cf62604e7a  batch_restarts.sh
+4d3c5636edeadd27c985f4c2ab91e49da7dc83f4bea4e4367df371def8047c0b  gen_restart_cases.py
+3ef1a92ce2609a33dc1cb106fc5c9f34e0f40279cc6931f09f1dfa265d985f80  restart_summary.py
+905a1be85bf4af3e70edd8c71ecb3704b704223d73f5bdbf5a19a7c78210ab24  io_stall_audit.py
+660f695e170d784704a09dd15810fa7ada3477f880c107e154a44f1732ed3a2c  mem_trend.py
+cc7372534fa452fc5aa71d84ac8ec981a3a728eced0f9dc44b11de93a6014a7a  gate_probe.py
+755bf664b21017a1693e99ec526ee43f36558903d258dacd233eb87778ebebe9  permit_stub.py
+a50d197ef69d9efa62c6c3e0526d19e5000c196cffda09ce5b55bd4959f2881b  gate_can_test.sh
+646e9c13b61b1ea2d341c4e7f23070c0829be45b047b5bc4f504bad0e55eac19  gate_can_check.py
+530a64d4b87a74bae6ac15b3376c7fe061929741cbf7d1934e233df4d7548574  evaluate_online.py
+e7b5853b8ddceba7f350c792560036337be8ab4b39aa730ee009d6bb7e737a08  evaluate.py
+14387fe06802060e3757ee58a7512298f3b439d849ee67d403ff723c12d83815  docker/Dockerfile.online
+8c15ab2dfcc14752bc3e57b430af2bfc9800288994055121ff973ec64a23bb8f  docker/Dockerfile.gate-can
+
+## binaries and images outside git (NX)
+adeb0ee95bd70190df9cf61a0bd09139c7c376da684ac99a197beaafcc226330  register_v2 (aarch64, same binary as F1; build command still not recorded in the repo)
+socialtech:reloc-online  sha256:a15d214c9f5cc406c13bda10063f729b6b1cc6e5de6a4ffd2a2e035f43635845  (method image, same as F1)
+socialtech:mapper-verify sha256:88380b4b1b720a2e5f3b65fd0091ba7d9229fb409d87ce96f04184b981ed330c  (evaluator image)
+socialtech:gate-can      sha256:54430fca54a59be70c41211527c4248d7b66d7c74bdc914a1042abfe9beebdc2  (vcan test only; local build, id not reproducible bit for bit)
+tracer_base: unmodified, from the image, tracer_ros2 commit 2c4938db
+
+## deployed trees on the NX (full listings in this folder)
+tools-sha256-f2c.txt  /home/jetson/work/reloc-f2c-20261010/tools at the start of the final campaign (method = 98926f7)
+tools-sha256-f2d.txt  same tree after adding batch_faults_f2.sh cases h41-h43, io_stall_audit.py, restart_summary.py; every other file identical
+invalid-or-superseded/tools-sha256-f2a.txt, -f2b.txt  earlier trees (method 17172ab)
+tools-sha256-f2e.txt  same tree with the final f2_check.py and batch_faults_f2.sh (h44, h45); method files identical
+
+## result tables (sha256)
+8d05547e38d112c1b47aedca72b87db79cb93c359a86dcf0ef5b9f3c071a0a09  table-f2c.csv
+9bc97570fe711bf38516f082f55d7067e5a1e43d6ff69334299a10e339b348af  table-f2d.csv
+e81cc6d67234b2ad1d293d64feb2cccb95bb3f4ec663b3c71a78ad9211258489  table-rs2.csv
+8da8f148d153c41c3824dc267b3607142330b9d5c2adddd3dd210b9aabdc92f1  restart-summary-rs2.json
+2ea30dc5c18fd9a1e3e5ee6c234521f17ebe12b1afc26f077e5a1f8a6d030220  stalls-f2c.csv
+9d1c97fa44e0edbd724f97c2ad777f8838428db696915e5582f47fd1d7070a3b  batch-g2c.log
+7bdcb90507c7ffb85d75a81ae0770f3eead13d9b566621691bd6665e867a2c7f  batch-r2c.log
+3c2d758d9ae98124f5b802c0702a6727d9da423b23df18a2333bddc0f8e0ab4e  gate-can/result.json
+e4a3f0ad5960ea5e1005a247fea600b53a8333c7cbf80bdfdf2c4cfe0369691a  gate-can/candump_all.log
+740276d601b599f35fe7b98aa98317c2c04fee1b6996fb23c11dd15f02289b9b  cases-restarts.csv
+d1985ee6cb80be2c794ca066b1a62f001175a0eba1eda35e8c6f9483e573a369  mem-f1ref-m1.json
+ef86ab6bc493ffadeda1465148aac099c3a4125c85757a9a46cfc939aa8e2be8  mem-f2b-m1.json
+f59941039f922e159f436e90d76bb85b384cf0a54b19a006adbb94fd066d93ff  mem-f2c-m2.json
+61af7e6f26a92a3b7bd9315e326893c0495507ce0eeb8132c8083bae4b8ac24e  table-f2e.csv

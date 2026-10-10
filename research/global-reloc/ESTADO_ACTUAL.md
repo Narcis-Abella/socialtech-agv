@@ -1,33 +1,32 @@
 # SOCIALTECH — ESTADO ACTUAL
 
-Fecha: 2026-10-10 · Rama: `feat/global-reloc` · Candidato congelado `GR-S2S3-F1` = commit `c026a7b` (commits locales, sin push).
+Fecha: 2026-10-10 · Rama: `feat/global-reloc` (commits locales, sin push) · F1 congelado `GR-S2S3-F1` = `c026a7b`, intacto · Candidato F2 `GR-S2S3-F2` = método `98926f7`, arnés `d8c2e05`.
 
 ## Fase actual
-Fase 1 (auditoría y congelación) **VERIFIED**. Fase 2 no iniciada: espera revisión. Nivel: `VALIDATED_IN_REPLAY`, datos de desarrollo. Nada probado en hardware.
+Fase 1 **VERIFIED**. Fase 2 (robustez) **PARTIAL**: un defecto crítico abierto. Fase 3 no iniciada. Nivel: `VALIDATED_IN_REPLAY`, datos de desarrollo. Nada probado en hardware; el robot no se ha movido; `can0` sin uso.
 
-## Último resultado (nota 20)
-- Auditoría de `reloc_core.py` / `reloc_node.py`: una sola publicación de `/initialpose`, solo desde `HANDOFF` tras `ACCEPTED`; ningún código del método lee la referencia; un reloj de 60 s sin reinicio S2/S3.
-- 2 bugs demostrados y corregidos con regresión: (B1) un salto de sello IMU bloqueaba el nodo y el deadline (5,5 s por cada 1e5 s de salto); (B2) el contenedor del método montaba el directorio del mapa, que contiene `alidarState.txt` (nunca leído; ahora no se monta y hay guarda).
-- Nota 16 recalculada desde las tablas: coincide, con 1 errata (el máx. XY 0,068 m es de S3; S2 máx. 0,052 m).
-- Reproducción NX 1x con el árbol congelado: S2 eco01 z03 correcto (18,9 s, 0,014 m); S3 hospital z00 correcto (41,8 s, 0,067 m; primer intento no puntuable por hueco de referencia, conservado); mapa equivocado rechazado, sin pose.
-- Tests: 43 pasan, 1 omitido (portátil e imagen NX); `nav_bench` completo en la imagen.
+## Último resultado (nota 21)
+- O1-O4 corregidos y probados: timeout sin sensores (30 s), permiso de navegación con latido + gate de fallo cerrado, `LOCALIZED` revocable (`LOCALIZATION_LOST`), buffers acotados. Añadido: rechazo de marcas de tiempo desordenadas (caso h15, aceptación errónea real, corregida).
+- Matriz de fallos: 46 casos válidos; 43 conformes, 2 predicciones mías erróneas con comportamiento correcto (h44, h45), **1 inseguro (h27)**.
+- 200 reinicios software: 188 `LOCALIZED` correctos, 12 timeouts seguros (dos ventanas), 0 aceptación errónea, 0 fallos de arranque de FAST-LIO2.
+- Gate contra `tracer_base` real en vcan: bloquea, revoca en 0,39 s; riesgos medidos (bypass, último comando retenido).
+- Inyector de F1 no entregaba a FAST-LIO2: `g03`/`f03` de las notas 15-16 eran artefacto (dan `LOCALIZED`); `g05`/`f05` confirmados.
 
 ## Problemas principales
-- Fiabilidad desconocida: 5 bloques estacionarios, mapas propios.
-- Hallazgos abiertos O1-O9 (nota 20): sin sensores no hay estado terminal; tras `HANDOFF_FAILED` AMCL conserva la pose; sin supervisión de AMCL tras `LOCALIZED`; memoria del nodo sin acotar; `register_v2` sin receta de compilación.
-- Cuelgue de arranque de FAST-LIO2 (~1/100), causa desconocida.
-- Montaje, altura y covarianza provisionales; sensor hacia el techo; cold boot sin medir.
+- **Abierto, crítico (nota 21 §4b):** si FAST-LIO2 diverge durante la búsqueda S2, la pose se propaga por odometría corrupta y sale un `/initialpose` ~3,5 m erróneo (2 de 3 ejecuciones de h27). Sin permiso de navegación en ninguna. Requiere decisión de diseño (reverificar contra el mapa al publicar).
+- El NVMe de la NX bloquea E/S hasta 30 s (75 timeouts de kernel desde el 5-oct).
+- Timeout de comandos del firmware de la base sin verificar; el gate a nivel de topic se puede saltar.
+- Memoria solo medida 8 min; cold boot y driver real sin probar.
 
-## Decisiones pendientes de Narcís (nota 20, sección 7)
-1. Deadline único 60 s primer sensor → `ACCEPTED`; `LOCALIZED` y cold boot aparte.
-2. Regla de muestras IMU: 95 % escrito, 99,3-99,5 % efectivo (se mantiene congelada).
-3. Convenio `base_footprint` (provisional).
-4. Puerta de aceptación congelada; puerta por banda solo diagnóstica.
+## Decisiones pendientes de Narcís
+1. Corrección de §4b: opción A (reverificación), B (S2 solo si sigue parado) o C.
+2. Gate dentro del driver o SROS2.
+3. Las cuatro de la nota 20 (deadline, regla IMU, `base_footprint`, puerta).
 
 ## Siguientes acciones
-1. Revisión humana de la Fase 1.
-2. Fase 2 (robustez): O1-O4, fallos no probados, 200 arranques de FAST-LIO2.
-3. Fases 4-6 bloqueadas por medición física y grabación de datos.
+1. Decidir e implementar la corrección de §4b; repetir matriz, regresiones F1 y 200 reinicios.
+2. Revisar el NVMe de la NX.
+3. No avanzar a Fase 3 hasta cerrar F2.
 
 ## Referencias
-Plan `19-plan-cierre-y-entrega.md`; auditoría `20-auditoria-fase1-congelacion.md`; identidad `results/19-f1-audit/candidate-identity.txt`; notas 15-18. NX: `/home/jetson/work/reloc-f1-audit-20261010/` (auditoría), `reloc-s2s3-20261010/` (nota 16, intacta).
+Nota `21-fase2-robustez.md`; plan `19-plan-cierre-y-entrega.md`; identidad y tablas `results/21-f2/`. NX: `/home/jetson/work/reloc-f2c-20261010/` (final), `reloc-f2-20261010/` (anteriores e inválidas, `f1ref/`). Raíces F1 intactas.

@@ -1,0 +1,85 @@
+{
+ "frames_total": 502,
+ "phases": [
+  {
+   "phase": "false",
+   "seconds": 3.0,
+   "frames": 30,
+   "nonzero": 0,
+   "first_nonzero_after_s": null,
+   "last_nonzero_after_s": null,
+   "pass": true
+  },
+  {
+   "phase": "true",
+   "seconds": 5.01,
+   "frames": 50,
+   "nonzero": 48,
+   "first_nonzero_after_s": 0.213,
+   "last_nonzero_after_s": 4.913,
+   "pass": true
+  },
+  {
+   "phase": "false",
+   "seconds": 3.0,
+   "frames": 50,
+   "nonzero": 0,
+   "first_nonzero_after_s": null,
+   "last_nonzero_after_s": null,
+   "pass": true
+  },
+  {
+   "phase": "true",
+   "seconds": 5.01,
+   "frames": 51,
+   "nonzero": 48,
+   "first_nonzero_after_s": 0.302,
+   "last_nonzero_after_s": 5.002,
+   "pass": true
+  },
+  {
+   "phase": "silent",
+   "seconds": 3.0,
+   "frames": 50,
+   "nonzero": 4,
+   "first_nonzero_after_s": 0.094,
+   "last_nonzero_after_s": 0.394,
+   "pass": true
+  },
+  {
+   "phase": "true",
+   "seconds": 5.01,
+   "frames": 50,
+   "nonzero": 48,
+   "first_nonzero_after_s": 0.293,
+   "last_nonzero_after_s": 4.993,
+   "pass": true
+  },
+  {
+   "phase": "exit",
+   "seconds": 3.28,
+   "frames": 52,
+   "nonzero": 0,
+   "first_nonzero_after_s": null,
+   "last_nonzero_after_s": null,
+   "pass": true
+  }
+ ],
+ "gate_enforced": true,
+ "bypass_direct_publish_nonzero_frames": 5,
+ "can_ids_seen": {
+  "421": 1,
+  "111": 502
+ },
+ "gate_killed_while_open": {
+  "last_frame_before_kill": [
+   100,
+   50
+  ],
+  "frames_after_kill": 0,
+  "nonzero_frames_after_kill": 0,
+  "last_frame_after_kill_at_s": null,
+  "meaning": "no frame after the kill and a non-zero last frame = the last command stands until the base firmware times out"
+ },
+ "note": "bypass > 0 is expected: a publisher on the gated topic itself is not stopped by the gate, only reported by it"
+}
