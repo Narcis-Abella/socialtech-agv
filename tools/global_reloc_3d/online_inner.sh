@@ -9,6 +9,10 @@ set -u
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:?unique id per run}
 export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 mkdir -p "$OUT"
+# Method/evaluator separation: refuse to run if a reference trajectory is visible in this container.
+if find /map /prior "$(dirname "$MAPYAML")" "$(dirname "$MAPXYZ")" -name 'alidarState*' 2>/dev/null | grep -q .; then
+  echo "reference trajectory visible in the method container: aborting" | tee "$OUT/reference_visible.txt"; exit 3
+fi
 python3 $tools/nav_bench/overlay.py set_initial_pose=false > "$OUT/overrides.yaml"
 python3 -B $tools/global_reloc_3d/proc_cost.py sample "$OUT/cost.csv" > "$OUT/cost.log" 2>&1 & cost=$!
 ros2 launch $tools/global_reloc_3d/launch/reloc_online.launch.py map:="$MAPYAML" map_xyz:="$MAPXYZ" work_dir:="$OUT/work" overrides:="$OUT/overrides.yaml" \

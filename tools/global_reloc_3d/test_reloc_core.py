@@ -58,6 +58,36 @@ class GateTest(unittest.TestCase):
         r = imu_stream(g, 4., t0=3.005)
         self.assertGreaterEqual(g.ready_stamp, 4.99)
 
+    def test_stamp_jump_does_not_block_the_node(self):
+        # Regression: a forward stamp jump (sensor clock -> epoch on time sync) made add() walk the 0.1 s grid across the whole
+        # jump inside the IMU callback: 5.5 s for 1e5 s, hours for an epoch jump, with the 60 s deadline not served meanwhile.
+        import time
+        g = rc.ImuGate()
+        for i in range(100):
+            g.add(i * .005, [0, 0, 0], [0, 0, 1])
+        t = time.monotonic()
+        self.assertFalse(g.add(1e6, [0, 0, 0], [0, 0, 1]))
+        self.assertLess(time.monotonic() - t, .5)
+        self.assertEqual(g.evaluations, 0)
+        ready = None                       # the gate still opens after 2 s of still samples on the new time base
+        for i in range(1, 500):
+            if g.add(1e6 + i * .005, [0, 0, 0], [0, 0, 1]):
+                ready = i * .005
+                break
+        self.assertIsNotNone(ready)
+        self.assertAlmostEqual(ready, 2.0, delta=.11)
+
+    def test_short_gap_gives_the_same_ready_time_as_before(self):
+        # 5 s gap: values recorded from the pre-fix grid walk (ab28151), which could still cross a gap this short.
+        g = rc.ImuGate()
+        for i in range(100):
+            g.add(i * .005, [0, 0, 0], [0, 0, 1])
+        for i in range(600):
+            if g.add(5.5 + i * .005, [0, 0, 0], [0, 0, 1]):
+                break
+        self.assertAlmostEqual(g.ready_stamp, 7.5, places=6)
+        self.assertEqual((g.evaluations, g.failed_evaluations), (20, 19))
+
 
 def T(x=0., yaw=0., y=0.):
     M = np.eye(4); M[:3, :3] = Rotation.from_euler('z', yaw).as_matrix(); M[:3, 3] = [x, y, 0]; return M

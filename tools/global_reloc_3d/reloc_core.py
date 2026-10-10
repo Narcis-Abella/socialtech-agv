@@ -175,6 +175,10 @@ class ImuGate:
             self.t.popleft(); self.g.popleft(); self.a.popleft()
         if self.next_eval is None:
             self.next_eval = self.t[0] + imu_ready.WINDOW_S
+        if self.next_eval < self.t[0]:
+            # Stamp jump (driver time sync): every grid time up to the oldest kept sample has an empty window and would be skipped
+            # one by one below, blocking the executor (and the deadline) for 55 us per second of jump. Skip them in one step.
+            self.next_eval += math.ceil((self.t[0] - self.next_eval) / self.step) * self.step
         while stamp >= self.next_eval:
             T = self.next_eval
             self.next_eval += self.step
