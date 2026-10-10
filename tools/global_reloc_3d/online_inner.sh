@@ -26,6 +26,12 @@ start=$(python3 -c "print(max(0.,$OFFSET-${PRE:-2.5}))")
 date +%s.%N > "$OUT/play_wall_start.txt"
 ros2 bag play "$BAG" --clock --rate 1.0 --start-offset $start --playback-duration ${PLAY_S:-100} ${PLAY_ARGS_EXTRA:-} > "$OUT/play.log" 2>&1 &
 play=$!
+if [ -n "${KILL_NODE_AT:-}" ]; then   # restart test: SIGKILL the relocalizer mid-attempt, check FAST-LIO2 died with it, start a fresh node
+  ( sleep $KILL_NODE_AT; np=$(pgrep -f 'reloc_node.py --ros-args' | head -1); kill -KILL $np; sleep 3
+    pgrep -c fastlio_mapping > "$OUT/fastlio_after_kill.txt" || true
+    python3 -B $tools/global_reloc_3d/reloc_node.py --ros-args -p use_sim_time:=true -p map_xyz:="$MAPXYZ" -p work_dir:="$OUT/work2" -p mode:=${MODE:-s3} \
+      -p register_binary:=$tools/global_reloc_3d/register_v2 > "$OUT/node2.log" 2>&1 ) &
+fi
 # Stop when the attempt reached a terminal state and (if localized) AMCL had its confirmation window, or the replay ended.
 for _ in $(seq $(( ${PLAY_S:-100} + 10 ))); do
   sleep 1

@@ -26,7 +26,7 @@ def pct(v, q):
 
 
 def stats(v):
-    return f'{pct(v, 50):.1f} / {pct(v, 95):.1f} / {max(v):.1f} (N={len(v)})' if v else 'n/a'
+    return f'{pct(v, 50):.2f} / {pct(v, 95):.2f} / {max(v):.2f} (N={len(v)})' if v else 'n/a'
 
 
 def main():
@@ -34,13 +34,13 @@ def main():
     groups = defaultdict(list)
     for r in rows:
         groups[(r['scenario'], r['variant'])].append(r)
-    print('| scenario | variant | N | correct_accept | wrong_accept | false_reject | correct_reject | unscorable | wrong_accept 95 % upper (Wilson) |\n|---|---|---|---|---|---|---|---|---|')
+    print('| scenario | variant | N | correct_accept | wrong_accept | false_reject | correct_reject | error_no_pose | unscorable | wrong_accept 95 % upper (Wilson) |\n|---|---|---|---|---|---|---|---|---|---|')
     for (sc, va), g in sorted(groups.items()):
         c = lambda k: sum(r['classification'] == k for r in g)
         fr = sum(r['classification'].startswith('false_reject') for r in g)
         n_scored = len(g) - c('unscorable_reference_gap')
         w = wilson(c('wrong_accept'), n_scored)[1]
-        print(f"| {sc} | {va} | {len(g)} | {c('correct_accept')} | {c('wrong_accept')} | {fr} | {c('correct_reject')} | {c('unscorable_reference_gap')} | {w:.2f} |")
+        print(f"| {sc} | {va} | {len(g)} | {c('correct_accept')} | {c('wrong_accept')} | {fr} | {c('correct_reject')} | {c('error_no_pose')} | {c('unscorable_reference_gap')} | {w:.2f} |")
     pos = [r for r in rows if r['variant'] == 'own' and r['classification'] == 'correct_accept' and r['scenario'] == 's3']
     f = lambda k: [float(r[k]) for r in pos if r[k] != '']
     print(f'\nLatency of correct accepts, S3 positives (median / p95 / max seconds), N={len(pos)}:\n')

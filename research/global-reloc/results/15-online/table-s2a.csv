@@ -1,0 +1,6 @@
+run,dataset,window,scenario,variant,startup_time,imu_time,lio_time,submap_time,submap_build,fft_time,gicp_time,verification_time,search_wall,handoff_time,total_time_protocol,total_from_node_start,localized_total,cpu_mean_pct,cpu_p95_pct,rss_peak_mb,pss_peak_mb,search_child_maxrss_mb,gpu_max_pct,drops_imu_pct,drops_witness_imu_pct,drops_lidar,drops_odom,state,reason,accepted,classification,xy_err_m,yaw_err_deg,amcl_xy_median_m,amcl_frac_within,acq_stop,valid
+eco03-s2a3-s2-own-s2a,eco03,s2a3,s2,own,11.329,4.501,0.676,3.014,0.5,5.368,3.271,0.702,9.342,5.205,18.066,29.395,23.321,65.9,218.4,352.7,237.4,84.0,0,6.66,6.55,8,5,LOCALIZED,,True,correct_accept,0.0281,0.115,0.025,1.0,s2_exposure,yes
+eco03-s2b1-s2-own-s2a,eco03,s2b1,s2,own,11.335,4.501,0.677,3.014,0.55,5.371,3.28,0.692,9.342,5.156,18.116,29.451,23.322,65.9,216.6,351.3,236.3,84.1,0,6.66,6.53,8,5,LOCALIZED,,True,correct_accept,0.0281,0.115,0.025,1.0,s2_exposure,yes
+Startup finished in 6.459s (kernel) + 10.672s (userspace) = 17.132s 
+graphical.target reached after 10.605s in userspace.
+2026-10-05 11:41:30

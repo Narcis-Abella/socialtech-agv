@@ -438,6 +438,7 @@ class RelocNode(Node):
         self.kill_search()
         if a.state not in ('LOCALIZED', 'HANDOFF_FAILED'):
             self.stop_lio()               # nothing to track: a failed attempt leaves no FAST-LIO behind (success keeps it for AMCL)
+        (self.work / f'attempt{a.id}').mkdir(parents=True, exist_ok=True)   # early failures happen before any worker dir exists
         try:
             out = self.build_metrics()
             rc.dump(self.work / f'attempt{a.id}' / 'metrics.json', out)
@@ -501,6 +502,7 @@ class RelocNode(Node):
     def shutdown(self):
         if self.att.state not in rc.TERMINAL:      # interrupted attempt: keep what was measured, flagged as such
             try:
+                (self.work / f'attempt{self.att.id}').mkdir(parents=True, exist_ok=True)
                 out = self.build_metrics(); out['interrupted'] = True
                 rc.dump(self.work / f'attempt{self.att.id}' / 'metrics_interrupted.json', out)
             except Exception:
