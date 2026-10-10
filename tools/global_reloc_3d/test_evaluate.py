@@ -49,6 +49,17 @@ class ClassTest(unittest.TestCase):
         self.assertEqual(classify(self.m(), lambda t: self.ref(t, bad), False)['class'], 'unscorable_reference_gap')
         self.assertEqual(classify(self.m(stamp=10.2), self.ref, False)['class'], 'correct_accept')     # exactly on a sample, bracket 0.1 s
 
+    def test_a_gap_keeps_the_class_but_the_pose_still_gets_a_labelled_number(self):
+        rows = np.array([[t, 1., 2., 0., 0, 0, 0, 1] for t in (10., 10.1, 10.301, 10.4)])       # one sample missing: 0.201 s bracket
+        narrow, wide = (lambda t: reference_at(rows, t)), (lambda t: reference_at(rows, t, .5))
+        c = classify(self.m(stamp=10.2), narrow, False, wide)
+        self.assertEqual(c['class'], 'unscorable_reference_gap')
+        self.assertTrue(c['initialpose_error_wide_bracket']['within_limits'])
+        w = classify(self.m(stamp=10.2, x=3.), narrow, False, wide)
+        self.assertEqual(w['class'], 'unscorable_reference_gap')            # never promoted to a success or hidden
+        self.assertFalse(w['initialpose_error_wide_bracket']['within_limits'])
+        self.assertNotIn('initialpose_error_wide_bracket', classify(self.m(stamp=10.2), narrow, False))
+
     def test_negative_accept_is_wrong_even_in_a_gap(self):
         self.assertEqual(classify(self.m(stamp=10.6), self.ref, True)['class'], 'wrong_accept')      # F1 evaluator said "unscorable"
         self.assertEqual(classify(self.m(), self.ref, True)['class'], 'wrong_accept')

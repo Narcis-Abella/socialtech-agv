@@ -61,6 +61,20 @@ run h20_imu_stamp_plus_1000s_after_localized "${LOC}LOCALIZATION_LOST\(.*" h40 "
 run h41_lidar_reversed_from_s2_search '(ERROR|HANDOFF_FAILED)\(input_stamp_backward_lidar\)' h40 "odom>5 and relay['lidar']['swapped']>5 and lidar_nonmono>=1" $POST RELAY_SPEC="$(relay 0,0,swap=0.2,after=8 0,0)" PLAY_ARGS_EXTRA="$REMAP"
 run h42_lidar_reversed_after_localized "${LOC}LOCALIZATION_LOST\(input_stamp_backward_lidar\)" h40 "$FED and relay['lidar']['swapped']>=1" $POST RELAY_SPEC="$(relay 0,0,swap=0.2,after=35 0,0)" PLAY_ARGS_EXTRA="$REMAP"
 run h43_imu_reversed_after_localized "${LOC}LOCALIZATION_LOST\(input_stamp_backward_imu\)" h40 "$FED and relay['imu']['swapped']>=1" $POST RELAY_SPEC="$(relay 0,0 0,0,swap=0.05,after=35)" PLAY_ARGS_EXTRA="$REMAP"
+# --- FAST-LIO2 fed a faulty IMU at different moments, strengths and durations (added with the map check, after h27).
+# Nominal timeline on this window: S2 exposure 2.9-6.1 s, search to ~19.5 s, /initialpose ~20 s, LOCALIZED ~24 s.
+# Expectation for all: no pose that the evaluator scores wrong (C1) or cannot score (C?); the state may be any safe terminal.
+DIV="odom>5 and relay['imu']['altered']>300 and relay['imu']['max_matched_subscribers']>=2"
+run d01_gyro_0p5_from_8_search "$SAFE" h40 "$DIV" $POST RELAY_SPEC="$(relay 0,0 0,0,after=8,gyrobias=0.5)" PLAY_ARGS_EXTRA="$REMAP"
+run d02_gyro_0p5_from_15_late_search "$SAFE" h40 "$DIV" $POST RELAY_SPEC="$(relay 0,0 0,0,after=15,gyrobias=0.5)" PLAY_ARGS_EXTRA="$REMAP"
+run d03_gyro_0p3_from_4 "$SAFE" h40 "$DIV" $POST RELAY_SPEC="$(relay 0,0 0,0,after=4,gyrobias=0.3)" PLAY_ARGS_EXTRA="$REMAP"
+run d04_gyro_1p0_from_8 "$SAFE" h40 "$DIV" $POST RELAY_SPEC="$(relay 0,0 0,0,after=8,gyrobias=1.0)" PLAY_ARGS_EXTRA="$REMAP"
+run d05_gyro_0p5_6_to_12_transient "$SAFE" h40 "$DIV" $POST RELAY_SPEC="$(relay 0,0 0,0,after=6,until=12,gyrobias=0.5)" PLAY_ARGS_EXTRA="$REMAP"
+run d06_acc_x1p5_from_8 "$SAFE" h40 "$DIV" $POST RELAY_SPEC="$(relay 0,0 0,0,after=8,accscale=1.5)" PLAY_ARGS_EXTRA="$REMAP"
+run d07_gyro_0p5_from_18_at_handover "$SAFE" h40 "$DIV" $POST RELAY_SPEC="$(relay 0,0 0,0,after=18,gyrobias=0.5)" PLAY_ARGS_EXTRA="$REMAP"
+run d08_gyro_0p5_from_21_after_pose "$SAFE" h40 "$DIV" $POST RELAY_SPEC="$(relay 0,0 0,0,after=21,gyrobias=0.5)" PLAY_ARGS_EXTRA="$REMAP"
+run d09_gyro_0p3_after_localized "${LOC}LOCALIZATION_LOST\(.*" h40 "$FED and relay['imu']['altered']>300" $POST RELAY_SPEC="$(relay 0,0 0,0,after=35,gyrobias=0.3)" PLAY_ARGS_EXTRA="$REMAP"
+run d10_acc_x1p5_after_localized "${LOC}.*" h40 "$FED and relay['imu']['altered']>300" $POST RELAY_SPEC="$(relay 0,0 0,0,after=35,accscale=1.5)" PLAY_ARGS_EXTRA="$REMAP"
 # --- /clock
 run h21_clock_back_in_s2_search "$SAFE" h00 "inj_rc==[0] and time_jump_logs>0" CLOCK_JUMP_AT=8 CLOCK_JUMP_SEC=1000
 run h22_clock_forward_in_s2_search "$SAFE" h00 "inj_rc==[0]" CLOCK_JUMP_AT=8 CLOCK_JUMP_SEC=2000000000

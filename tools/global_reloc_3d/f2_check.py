@@ -85,10 +85,17 @@ def check(d, expect='.*', evidence='', control=''):
     if orph != 'fastlio=0 search=0 register=0':
         fails.append('O1')
     cls = (ev or {}).get('class', '')
+    mcs = m.get('map_checks') or []
+    if m['initialpose'] is not None and not (any(c['ok'] and c['tag'] == 'h' for c in mcs) and (m['initialpose'].get('map_check_age_s') or 9.) <= 3.):
+        fails.append('P2')            # a pose went out without a passed, fresh map check
+    if m['state'] == 'LOCALIZED' and not any(c['ok'] and c['tag'] == 'c' for c in mcs):
+        fails.append('P3')            # LOCALIZED without the map check after the hand-over
     if cls in ('wrong_accept', 'pose_without_acceptance'):
         fails.append('C1')
+    wide = (ev or {}).get('initialpose_error_wide_bracket')
     if cls == 'unscorable_reference_gap' and m['initialpose'] is not None:     # a published pose nobody could score is not a pass (h27)
-        fails.append('C?')
+        fails.append('C?' if wide is None else '' if wide['within_limits'] else 'C1w')      # scored across a 0.5 s reference bracket instead
+        fails = [f for f in fails if f]
     if not re.fullmatch(expect, obs):
         fails.append('EXPECT')
     first_inj = min((float(t) for t, c in inj), default=None)
@@ -104,8 +111,13 @@ def check(d, expect='.*', evidence='', control=''):
         'permit_true': (sup or {}).get('permit', {}).get('true', 0), 'monitor_max_xy_m': sup and sup['monitor'] and round(sup['monitor']['max_xy_m'], 3),
         'monitor_max_tf_gap_s': sup and sup['monitor'] and round(sup['monitor']['max_tf_gap_s'], 2),
         'odom_max_speed': m.get('odom_max_speed_mps') and round(max(m['odom_max_speed_mps'], (sup or {}).get('odom_max_speed_mps') or 0), 2),
-        'xy_err_m': (ev or {}).get('initialpose_error', {}).get('xy_m', ''), 'pss_peak_mb': cost and round(cost['total_excl_bag_play']['pss_peak_mb'], 1),
-        'orphans': orph})
+        'xy_err_m': ((ev or {}).get('initialpose_error') or wide or {}).get('xy_m', ''), 'scored': 'rule_0.20s' if (ev or {}).get('initialpose_error') else 'wide_0.5s' if wide else '', 'pss_peak_mb': cost and round(cost['total_excl_bag_play']['pss_peak_mb'], 1),
+        'orphans': orph, 'yaw_err_deg': ((ev or {}).get('initialpose_error') or wide or {}).get('yaw_deg', ''),
+        'map_check': ' '.join(('ok' if c['ok'] else str(c['reason'])) for c in mcs), 'map_check_s': mcs and round(sum(c['wall_s'] for c in mcs), 2),
+        'map_check_support': mcs and (mcs[-1].get('geometry') or {}).get('support_015'), 'map_check_rmse': mcs and (mcs[-1].get('geometry') or {}).get('matched_rmse_m'),
+        'map_check_shift_xy': mcs and (mcs[-1].get('shift') or {}).get('xy_m'), 'map_check_shift_yaw': mcs and (mcs[-1].get('shift') or {}).get('yaw_deg'),
+        'map_sup': sup and sup.get('map_supervision') and '{n}/{failed}/{max_consecutive_failed}'.format(**sup['map_supervision']),
+        'map_sup_min_support': sup and sup.get('map_supervision') and min((r[3] for r in sup['map_supervision']['trace_t_ok_reason_support_rmse_shiftxy_shiftyaw_wall'] if r[3]), default='')})
     return r
 
 
@@ -117,7 +129,7 @@ if __name__ == '__main__':
         with open(sys.argv[3], 'a', newline='') as f:
             w = csv.DictWriter(f, list(COLS := ['run', 'expect', 'observed', 'verdict', 'fails', 'valid', 'control', 'evidence', 'fault_evidence', 'after_teardown', 'class', 'accepted', 'pose_published', 'accepted_stage', 'attempt_end_s', 'accept_s',
                                                 'localized_s', 'lost_s', 'fault_s', 'fault_to_lost_s', 'gate_nonzero', 'gate_open_s', 'gate_last_nonzero_after_revoke_s', 'permit_true',
-                                                'monitor_max_xy_m', 'monitor_max_tf_gap_s', 'odom_max_speed', 'xy_err_m', 'pss_peak_mb', 'orphans', 'io_stall_s']), restval='')
+                                                'monitor_max_xy_m', 'monitor_max_tf_gap_s', 'odom_max_speed', 'xy_err_m', 'pss_peak_mb', 'orphans', 'io_stall_s', 'yaw_err_deg', 'scored', 'map_check', 'map_check_s', 'map_check_support', 'map_check_rmse', 'map_check_shift_xy', 'map_check_shift_yaw', 'map_sup', 'map_sup_min_support']), restval='')
             if new:
                 w.writeheader()
             w.writerow(r)

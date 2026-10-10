@@ -16,10 +16,10 @@ def pose(p, q):
     return T
 
 
-def reference_at(rows, t):
+def reference_at(rows, t, max_gap=.20):
     i = np.searchsorted(rows[:, 0], t)
-    if i == 0 or i == len(rows) or rows[i, 0]-rows[i-1, 0] > .20:
-        raise ValueError('reference timestamp not bracketed within 0.20 s')
+    if i == 0 or i == len(rows) or rows[i, 0]-rows[i-1, 0] > max_gap:
+        raise ValueError(f'reference timestamp not bracketed within {max_gap:.2f} s')
     a, b = rows[i-1], rows[i]
     if not (np.isfinite(t) and np.isfinite(a).all() and np.isfinite(b).all()):
         raise ValueError('reference not finite at this timestamp')

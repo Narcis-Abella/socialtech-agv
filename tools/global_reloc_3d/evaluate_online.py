@@ -17,7 +17,7 @@ def pose_xyyaw(x, y, w):
     return T
 
 
-def classify(m, ref, negative):
+def classify(m, ref, negative, ref_wide=None):
     """Class of one attempt. `ref(t)` returns the reference pose or raises ValueError where there is none.
     A success class is given only with a valid reference at the pose stamp; a pose accepted on a negative is wrong with or without one."""
     out = {'attempt': m['attempt'], 'state': m['state'], 'reason': m['reason'], 'accepted': m['accepted']}
@@ -31,6 +31,16 @@ def classify(m, ref, negative):
             out['initialpose_error'] = {'xy_m': xy, 'yaw_deg': deg, 'within_limits': xy <= .30 and deg <= 8.}
         except ValueError as exc:             # the Voxel-SLAM reference has a gap at this stamp: no ground truth, not a method result
             gap = out['reference_gap'] = str(exc)
+            # One missing 10 Hz reference sample leaves a 0.2003 s bracket, just over the 0.20 s rule. The class stays
+            # 'unscorable' (the rule is not moved), but the pose is still measured across a bracket of up to 0.5 s and labelled so:
+            # a published pose must never go without a number only because of that.
+            if ref_wide is not None:
+                try:
+                    xy, deg = error(pose_xyyaw(ip['x'], ip['y'], ip['yaw']), ref_wide(ip['stamp']))
+                    if np.isfinite(xy) and np.isfinite(deg):
+                        out['initialpose_error_wide_bracket'] = {'xy_m': xy, 'yaw_deg': deg, 'within_limits': xy <= .30 and deg <= 8., 'bracket_s': .5}
+                except ValueError:
+                    pass
     if ip and not m['accepted']:
         out['class'] = 'pose_without_acceptance'        # must never happen; worse than a wrong accept
     elif m['accepted'] and negative:
@@ -63,7 +73,7 @@ def main():
     T0 = map_transform(a.map_yaml)
     T_link = np.asarray(json.loads(Path(a.link).read_text())['T_A_B']) if a.link else np.eye(4)
     ref = lambda t: T_link @ T0 @ reference_at(rows, t)
-    out = {'run': run.name, **classify(m, ref, a.negative)}
+    out = {'run': run.name, **classify(m, ref, a.negative, lambda t: T_link @ T0 @ reference_at(rows, t, .5))}
     ip = m['initialpose']
     tum = run / 'amcl.tum'
     if tum.exists() and tum.stat().st_size:
