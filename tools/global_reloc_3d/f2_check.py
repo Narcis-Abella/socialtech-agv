@@ -17,6 +17,7 @@ import re
 import sys
 
 GATE_CLOSE_S = .7     # permit TTL 0.5 s + gate tick 0.05 s + scheduling margin
+IO_STALL_S = 3.       # the cost sampler period is 0.5 s
 
 
 def load(p):
@@ -50,8 +51,15 @@ def check(d, expect='.*', evidence='', control=''):
            'time_jump_logs': sum('jump' in l.lower() for l in open(d + '/launch.log', errors='replace')) if os.path.exists(d + '/launch.log') else 0,
            'inj': len(inj), 'gate': [e[2] for e in (probe or {}).get('gate_status_edges', [])],
            'inj_rc': [int(l.split()[0][3:]) for l in open(d + '/injected_rc.txt')] if os.path.exists(d + '/injected_rc.txt') else []}
+    # The NX's NVMe stalls every file write for up to 30 s a few times per hour (kernel: "nvme0: I/O ... timeout, completion polled").
+    # The 2 Hz cost sampler writes a row per process and stops with it: a hole in its time axis is that stall, seen from inside the run.
+    ts = sorted({float(l.split(',')[0]) for l in list(open(d + '/cost.csv'))[1:]}) if os.path.exists(d + '/cost.csv') else []
+    stall = max((b - a for a, b in zip(ts, ts[1:])), default=0.)
+    r['io_stall_s'] = round(stall, 1)
     try:
-        valid = bool(eval(evidence, {}, env)) if evidence else True
+        valid = bool(eval(evidence, dict(env))) if evidence else True
+        if stall > IO_STALL_S:
+            valid = False; after += f' platform_io_stall:{stall:.1f}s'
     except Exception as e:
         valid = False; after += f' evidence_error:{type(e).__name__}:{e}'
     r.update(control=control, evidence=evidence, valid=valid, after_teardown=after.strip(),
@@ -107,7 +115,7 @@ if __name__ == '__main__':
         with open(sys.argv[3], 'a', newline='') as f:
             w = csv.DictWriter(f, list(COLS := ['run', 'expect', 'observed', 'verdict', 'fails', 'valid', 'control', 'evidence', 'fault_evidence', 'after_teardown', 'class', 'accepted', 'pose_published', 'accepted_stage', 'attempt_end_s', 'accept_s',
                                                 'localized_s', 'lost_s', 'fault_s', 'fault_to_lost_s', 'gate_nonzero', 'gate_open_s', 'gate_last_nonzero_after_revoke_s', 'permit_true',
-                                                'monitor_max_xy_m', 'monitor_max_tf_gap_s', 'odom_max_speed', 'xy_err_m', 'pss_peak_mb', 'orphans']), restval='')
+                                                'monitor_max_xy_m', 'monitor_max_tf_gap_s', 'odom_max_speed', 'xy_err_m', 'pss_peak_mb', 'orphans', 'io_stall_s']), restval='')
             if new:
                 w.writeheader()
             w.writerow(r)
