@@ -33,6 +33,7 @@ LOSS_HOLD_S = 3.
 AMCL_TF_STALL_S = 3.      # AMCL republishes map -> odom on every scan (nav2_amcl laserReceived); silent for this long = AMCL gone
 SUPERVISE_GAP_S = 2.      # the supervision tick (20 Hz) itself went unserved this long: the node could not vouch meanwhile
 ODOM_KEEP = 1200          # odometry samples kept after acceptance (2 min at 10 Hz): only stamps near "now" are ever propagated
+INPUT_JUMP_S = 1.        # a sensor header stamp may not advance this much more than the wall time between two messages
 PERMIT_PERIOD_S = .1      # navigation permit heartbeat
 PERMIT_TTL_S = .5         # the gate closes when the newest permit is older than this (5 missed heartbeats)
 PERMIT_NEED = 3           # consecutive fresh `true` heartbeats before the gate opens
@@ -343,6 +344,36 @@ class HandoffMonitor:
         if len(self.run) >= self.need and self.run[-1] - self.run[0] >= self.hold_s:
             self.confirmed = True
         return self.confirmed
+
+
+class InputIntegrity:
+    """Header stamps of one sensor stream while FAST-LIO2 consumes it. Latches on the first stamp that does not increase, or that
+    advances more than INPUT_JUMP_S beyond the wall time since the previous message (a gap is not a jump: wall time advances too).
+
+    FAST-LIO2 does not refuse such input: with 20 % of the LiDAR frames swapped it kept publishing odometry and the accepted pose
+    went out 14 deg wrong (case h15, note 21). Events are counted always; they only latch while `armed`."""
+
+    def __init__(self, name, jump_s=None):
+        self.name = name
+        self.jump_s = INPUT_JUMP_S if jump_s is None else jump_s
+        self.last = None
+        self.backward = 0
+        self.jumps = 0
+        self.fault = None
+
+    def add(self, stamp, mono, armed):
+        if self.last is not None:
+            why = None
+            if stamp <= self.last[0]:
+                self.backward += 1; why = 'backward'
+            elif (stamp - self.last[0]) - (mono - self.last[1]) > self.jump_s:
+                self.jumps += 1; why = 'jump'
+            if why and armed and self.fault is None:
+                self.fault = f'input_stamp_{why}_{self.name}'
+        self.last = (stamp, mono)
+
+    def report(self):
+        return {'backward': self.backward, 'jumps': self.jumps, 'fault': self.fault}
 
 
 class OdomPlausibility:

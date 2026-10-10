@@ -51,6 +51,7 @@ BEST = QoSProfile(depth=500, reliability=ReliabilityPolicy.BEST_EFFORT)
 
 LIO_STALL_S = 3.
 LIO_STATES = rc.ACCUMULATE_STATES | rc.SEARCH_STATES | {'LIO_STARTING', 'ACCEPTED', 'HANDOFF', 'LOCALIZED'}
+INPUT_GUARDED = LIO_STATES - {'ACCEPTED'}      # FAST-LIO2 is consuming the sensors: their stamps must be sane (rc.InputIntegrity)
 HANDOFF_ODOM_MAX_AGE_S = 1.   # the accepted pose is propagated with FAST-LIO odometry: never publish it from odometry older than this
 PROFILE = {}
 
@@ -125,6 +126,7 @@ class RelocNode(Node):
         self.permit_stats = {'true': 0, 'false': 0, 'first_true_mono': None, 'last_true_mono': None}
         self.supervision = None
         self.odom_ok = rc.OdomPlausibility()
+        self.inputs = {k: rc.InputIntegrity(k) for k in ('imu', 'lidar')}
         self.footprint_xyyaw = None
         # Steady clock: with use_sim_time the default timer follows /clock, so a stopped or jumping /clock would stop every watchdog.
         steady = Clock(clock_type=ClockType.STEADY_TIME)
@@ -182,9 +184,13 @@ class RelocNode(Node):
 
     @profiled
     def on_imu(self, m):
-        if self.att.state in rc.TERMINAL:
+        st = self.att.state
+        if st in rc.TERMINAL and st != 'LOCALIZED':
             return
-        t = msg_stamp(m); self.streams['imu'].add(t, self.mono())
+        t = msg_stamp(m); self.inputs['imu'].add(t, self.mono(), st in INPUT_GUARDED)
+        if st == 'LOCALIZED':
+            return
+        self.streams['imu'].add(t, self.mono())
         if self.att.t_input is None:
             self.att.input_started(); self.att.mark_once('first_imu')
         a = m.linear_acceleration
@@ -199,11 +205,15 @@ class RelocNode(Node):
 
     @profiled
     def on_lidar(self, m):
-        if self.att.state in rc.TERMINAL:
+        st = self.att.state
+        if st in rc.TERMINAL and st != 'LOCALIZED':
+            return
+        sec, nsec = struct.unpack_from('<iI' if m[1] == 1 else '>iI', m, 4)   # CDR: 4-byte encapsulation header, then Header.stamp
+        self.inputs['lidar'].add(sec + nsec * 1e-9, self.mono(), st in INPUT_GUARDED)
+        if st == 'LOCALIZED':
             return
         if self.att.t_input is None:
             self.att.input_started()
-        sec, nsec = struct.unpack_from('<iI' if m[1] == 1 else '>iI', m, 4)   # CDR: 4-byte encapsulation header, then Header.stamp
         self.att.mark_once('first_lidar'); self.streams['lidar'].add(sec + nsec * 1e-9, self.mono())
 
     @profiled
@@ -289,11 +299,16 @@ class RelocNode(Node):
             return self.go('LOCALIZATION_LOST', reason='odometry_stalled')
         if self.odom_ok.diverged:
             return self.go('LOCALIZATION_LOST', reason='odometry_implausible')
+        if self.input_fault():
+            return self.go('LOCALIZATION_LOST', reason=self.input_fault())
         why = self.supervision.lost(self.mono())
         if why:
             return self.go('LOCALIZATION_LOST', reason=why)
         if self.mono() - self.supervision_written > 10.:      # so that a killed node still leaves a recent record
             self.write_supervision()
+
+    def input_fault(self):
+        return next((i.fault for i in self.inputs.values() if i.fault), None)
 
     def write_supervision(self):
         a = self.att
@@ -303,7 +318,7 @@ class RelocNode(Node):
                'localized_mono': a.marks.get('state:LOCALIZED'), 'lost_mono': a.marks.get('state:LOCALIZATION_LOST'), 'written_mono': self.mono(),
                'held_s': (a.marks.get('state:LOCALIZATION_LOST', self.mono()) - a.marks['state:LOCALIZED']) if 'state:LOCALIZED' in a.marks else None,
                'first_input_mono': a.t_input, 'permit': self.permit_stats, 'odom_max_speed_mps': self.odom_ok.max_seen,
-               'odom_rows_kept': len(self.acq.odom), 'monitor': self.supervision.report() if self.supervision else None, 'truth_used': False}
+               'odom_rows_kept': len(self.acq.odom), 'inputs': {k: i.report() for k, i in self.inputs.items()}, 'monitor': self.supervision.report() if self.supervision else None, 'truth_used': False}
         self.supervision_written = self.mono()
         rc.dump(d / 'supervision.tmp', out)
         os.replace(d / 'supervision.tmp', d / 'supervision.json')
@@ -417,6 +432,9 @@ class RelocNode(Node):
         if st in rc.TERMINAL:
             return
         try:
+            if st in INPUT_GUARDED and self.input_fault():     # never search on, hand over or propagate through corrupted input
+                self.kill_search()
+                return self.go('HANDOFF_FAILED' if st == 'HANDOFF' else 'ERROR', reason=self.input_fault())
             if st in ('HANDOFF',):
                 if self.odom_ok.diverged:      # never hand over, or keep vouching for, a pose propagated through diverged odometry
                     return self.go('HANDOFF_FAILED', reason='odometry_implausible')
@@ -694,6 +712,7 @@ class RelocNode(Node):
             },
             'marks_rel_first_input_s': {k: v - ti for k, v in marks.items()},
             'streams': {k: s.report() for k, s in self.streams.items()},
+            'inputs': {k: i.report() for k, i in self.inputs.items()},
             'acquisition': {'clouds': len(self.acq.clouds), 'refused_stale': self.acq.refused, 'stop_reason': self.acq.stop_reason,
                             'imu_samples': len(self.acq.imu), 'span_s': self.acq.span_s(), 's2_clouds': self.acq.s2_n,
                             's2_odom_radius_m': getattr(self.acq, 's2_radius', None),   # own-odometry motion during the S2 exposure

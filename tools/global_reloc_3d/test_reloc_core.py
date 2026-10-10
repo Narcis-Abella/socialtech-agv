@@ -292,5 +292,21 @@ class Phase2Test(unittest.TestCase):
         self.assertEqual(g.state(2.7, publishers=0), (False, 'publishers_0'))
 
 
+    def test_input_stamps_backward_or_jumping_latch_only_while_armed(self):
+        i = rc.InputIntegrity('lidar')
+        for k in range(5):
+            i.add(100. + .1 * k, 10. + .1 * k, True)
+        i.add(102.4, 12.4, True)                      # a 2 s gap in both clocks is a gap, not a jump
+        i.add(102.5, 12.41, True)                     # catching up after a stall: stamps advance faster than the wall, by < 1 s
+        self.assertIsNone(i.fault)
+        i.add(102.4, 12.5, False)                     # backward while not armed (IMU conditioning has its own rule): counted only
+        self.assertEqual((i.backward, i.fault), (1, None))
+        i.add(102.6, 12.6, True); i.add(102.6, 12.7, True)      # a repeated stamp
+        self.assertEqual(i.fault, 'input_stamp_backward_lidar')
+        j = rc.InputIntegrity('imu')
+        j.add(5., 1., True); j.add(1005.005, 1.005, True); j.add(1005.01, 1.01, True)
+        self.assertEqual((j.jumps, j.fault), (1, 'input_stamp_jump_imu'))      # latched: later sane stamps do not clear it
+
+
 if __name__ == '__main__':
     unittest.main()
