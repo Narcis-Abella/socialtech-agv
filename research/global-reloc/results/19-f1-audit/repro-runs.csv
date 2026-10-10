@@ -1,0 +1,5 @@
+run,role,dataset,window,map,class,state,reason,accepted_stage,s2_decision,accept_at_s,localized_at_s,attempt_end_at_s,xy_err_m,yaw_err_deg,amcl_xy_median_m,amcl_xy_max_m,pose_published,orphans,valid,original_run,original_accept_at_s,original_xy_err_m
+eco01-z03-s2s3x3-own-f1,S2 positive,eco01,z03,own,correct_accept,LOCALIZED,,s2,accepted,18.919,24.077,24.08,0.0137,0.003,0.050,0.057,True,0,yes,eco01-z03-s2s3x3-own-sa,18.868,0.0082
+hospital-z00-s2s3x3-own-f1,S3 positive,hospital,z00,own,unscorable_reference_gap,LOCALIZED,,s3,ambiguous_no_alternative_margin,41.875,47.131,47.13,,,0.033,0.044,True,0,no: pose stamp falls on a reference sample preceded by a 0.2014 s gap (evaluator limit 0.20 s); rerun as f1b,hospital-z00-s2s3x3-own-sa,42.025,0.0640
+hospital-z00-s2s3x3-own-f1b,S3 positive (rerun),hospital,z00,own,correct_accept,LOCALIZED,,s3,ambiguous_no_alternative_margin,41.775,47.132,47.13,0.0669,0.272,0.033,0.039,True,0,yes,hospital-z00-s2s3x3-own-fin,41.775,0.0669
+eco01-z03-s2s3x3-cross-f1,negative (wrong map),eco01,z03,cross (hospital prior),correct_reject,REJECTED,reject_geometry,,reject_geometry,,,42.28,,,,,False,0,yes,eco01-z03-s2s3x3-cross-sn,,

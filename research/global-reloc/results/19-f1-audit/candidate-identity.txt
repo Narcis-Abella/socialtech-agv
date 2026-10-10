@@ -1,0 +1,53 @@
+# Frozen candidate GR-S2S3-F1 (2026-10-10). sha256 unless noted. Paths under /home/jetson are on the Orin NX.
+commit c026a7bd45fc34384c741a1d526ac228a4cf66d3 (branch feat/global-reloc, local, not pushed); parent ab28151 produced the note-16 evidence
+
+## method code (tools/)
+68d41413784e79b5a771f4679abf90fc8936c0e262cf4164245d09237f1bf606  global_reloc_3d/reloc_node.py
+a1652b2837f1042ddd956ae2e94359a2e60b1e61e4e6697aeb451dd53c5e62d0  global_reloc_3d/reloc_core.py   (ab28151: 07b5d256...; IMU gate stamp-jump fix)
+befad8238bd56744bb48c074a0d9a421ba91a2ae2026b82078a9470861693f26  global_reloc_3d/verify.py
+97d325ae05d9ae8ea02fc56cb75cbafcb850136d59104b1ba1ecdc01544d44f9  global_reloc_3d/search_v2.py
+8744868dc132124fe8636c0901ab6e0c98d00bf7e89a5e30e24e0e3006070341  global_reloc_3d/correlative_search.py
+ac17d83e19fbf3d30aececb01a65bf89bb8138023972a8a262cbfa0da60fe470  global_reloc_3d/search_tiles.py
+b3cd2f27abf59356cc67ad392218db284905fb12a4ea3afde0f16753af8fc098  global_reloc_3d/lio_submap.py
+293f9517fbb13160ece2c444ebc2bd68469dc610cd7fbf1f0ffd271e109f9899  global_reloc_3d/imu_ready.py
+6872eeed0c389401c55c73dcd7e011e1647b1d4ac3744ff14c7d95055d8f7dd0  global_reloc_3d/offline_s2.py
+7522f7d33ca1e3e8733d47d758f2c99e56f0e8ed4e373d0f7643afce63f7f6c7  global_reloc_3d/register_v2.cpp
+a916580df475d2b6c998b0eb6cb49d40caecaff98a49add718553819d5be07c7  global_reloc_3d/launch/reloc_online.launch.py
+b1b06eaf65f7942e471ba6eb62910228401a4d65ba2d0a72c0dd1b94a31cfa89  nav_bench/planar_odom.py
+df25cf2c74ed0e0306365651d7d9525ffb3bbf68263550cc900d7ceb349424ac  nav_bench/config/amcl.yaml
+f6d3a4bcc00a89cfaab06801394cacd4cbfa5bb07e7ae069ab775220278f7c7b  nav_bench/config/scan.yaml
+31e3db4fa4df016c4fae73c1a10d676bf91db5f72b7731e242b9a41de1f202cf  nav_bench/overlay.py
+
+## harness and evaluator (tools/global_reloc_3d/)
+5957010182cf921810b3c2a89132614a4d84394ec0ea434ee2276012e6cb584c  run_online.sh        (ab28151: 14c57702...; map mounts narrowed)
+d5e754ec30d1846105e3730333debbf8701d96473baf05dec3b532a434e73d1b  online_inner.sh      (ab28151: 2abef5e6...; reference-visibility guard)
+fe99725d4a1dd5641fbf5ca31181f4530fbe50e4bc113316228796e669649b39  batch_s2s3.sh
+1b3d9bf384c5b42572426cc0d6b48530c9b04258d0f5eb95f5aae13f63821fcd  evaluate_online.py
+fa68cc834821af1121320a336c787cbce87f94a9c6204874a7b4f6aaa74d463a  evaluate.py
+14387fe06802060e3757ee58a7512298f3b439d849ee67d403ff723c12d83815  docker/Dockerfile.online
+
+## binaries outside git (NX)
+adeb0ee95bd70190df9cf61a0bd09139c7c376da684ac99a197beaafcc226330  register_v2  (aarch64; /home/jetson/work/reloc-s2s3-20261010/tools/global_reloc_3d/ and reloc-f1-audit-20261010/tools/global_reloc_3d/). Build command NOT recorded in the repo.
+875f89d0a88d3ef0fb9d1ad1b43a79d05e239d77f65414b29b1150a27a971d78  libsmall_gicp.so  (/home/jetson/work/global-reloc-3d-20261009/small_gicp-build/; small_gicp commit fa0cfc983417c044b6036f71dfa448038bb9c820; build command in note 11)
+c96eaa7dc91d9c33aa0ac3002ac9e54f213a8d6f69cec2bc9ca6a7cb44632a23  fastlio_mapping  (in image, /opt/socialtech/lib/fast_lio/; /ws/src/FAST_LIO at a4743b095409588842a5b30ddfa27e29d2f99164 plus the repo's build patches)
+0fba8e5d317235b964b84813c9f6019dabd4267f29bedfa03595f29c0cf80aa1  mid360.yaml  (in image, /opt/socialtech/share/fast_lio/config/)
+
+## Docker images (local image IDs on the NX; not pushed to a registry, no digest)
+socialtech:reloc-online   sha256:a15d214c9f5cc406c13bda10063f729b6b1cc6e5de6a4ffd2a2e035f43635845  (method: robot-verify + python3-scipy)
+socialtech:robot-verify   sha256:bc1b638ded4cacccf28d3a7607f9ad3b6586ccb317c7851b909195b14e8f48d5  (base of reloc-online)
+socialtech:mapper-verify  sha256:88380b4b1b720a2e5f3b65fd0091ba7d9229fb409d87ce96f04184b981ed330c  (evaluator only)
+In reloc-online: Python 3.12.3, numpy 1.26.4, scipy 1.11.4, ros-jazzy-nav2-amcl 1.3.13-1noble.20260902.211420, nav2-map-server 1.3.13-1noble.20260902.211425,
+pointcloud-to-laserscan 2.0.2-3noble.20260903.003602, rmw-cyclonedds-cpp 2.2.4-1noble.20260902.140937 (RMW_IMPLEMENTATION=rmw_cyclonedds_cpp).
+
+## data (NX, /home/jetson)
+e936f48e398096a97e16205bf8fc8f9244c8274fbe3e4c556e913f86f38e551f  rosbags/custom/mapping_eco_-1_01_custom/mapping_eco_-1_01_custom.mcap  (2081619412 B)
+028c60856023885efffb4e57506a13db29f096301231e213e1227f8fe7b3aad2  rosbags/custom/hospital_02_custom/hospital_02_custom.mcap  (2519955422 B)
+c1114899d0c12ab911533c4cd95118d9206f59735250cb4cbd96bb7d80d67226  map_out/eco01_1x/map.yaml
+864459602b54688caa50daa6751e69771315bba40407f9f4800ea3e3f627950a  map_out/eco01_1x/map.pgm
+518db17b5bdfa2f22d072accb3f991ca38df178ff8e96ee506cb07b9cf11d717  map_out/hospital_02_r05b/map.yaml
+9097cd2d5b67d4bcc2844113ba6056282ebb9a17010f9cc9a54f569c015ac424  map_out/hospital_02_r05b/map.pgm
+16c0838c9ec69b0a96540475e717c5a79a67fca5319347ef5812714eb2266f9d  work/global-reloc-3d-20261009/isolated-v16/map/map.xyz  (eco01 3D prior, 55071 points)
+3a23d8162e4392744bd5e4cfb89e4a1849e348406ea8db519fe8c562b9336aa9  work/global-reloc-3d-20261009/point7-v1/hospital-lio-s2-w01/map.xyz  (hospital 3D prior, 66509 points)
+00d84f850d749e71d50d4a5a0fcfa9deea78dbc67a0b6baab7074259c6fb55be  map_out/eco01_1x/vs/run/alidarState.txt  (reference, evaluator only)
+fd3aa6a1f1e925e78e4bc3ae486661c5a0c0f533b00890cf2b1d9301eb2085fe  map_out/hospital_02_r05b/vs/run/alidarState.txt  (reference, evaluator only)
+Not hashed in this audit: eco03 bag and its linked reference, hole maps (not used in the three reproductions).
