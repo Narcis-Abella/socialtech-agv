@@ -30,7 +30,7 @@ fi
 sleep ${LEAD:-12}
 if [ -n "${RELAY_SPEC:-}" ]; then   # fault injection: the bag publishes <topic>_raw, the relay forwards (with the fault) to <topic>
   # shellcheck disable=SC2086
-  python3 -B $tools/global_reloc_3d/fault_relay.py $RELAY_SPEC > "$OUT/relay.log" 2>&1 & relay=$!
+  python3 -B $tools/global_reloc_3d/fault_relay.py $RELAY_SPEC --stats "$OUT/relay_stats.json" > "$OUT/relay.log" 2>&1 & relay=$!
 fi
 start=$(python3 -c "print(max(0.,$OFFSET-${PRE:-2.5}))")
 date +%s.%N > "$OUT/play_wall_start.txt"
@@ -46,7 +46,7 @@ if [ -n "${KILL_NODE_AT:-}" ]; then   # restart test: SIGKILL the relocalizer mi
     python3 -B $tools/global_reloc_3d/reloc_node.py --ros-args -p use_sim_time:=true -p map_xyz:="$MAPXYZ" -p work_dir:="$OUT/work2" -p mode:=${MODE:-s3} \
       -p register_binary:=$tools/global_reloc_3d/register_v2 ${NODE2_ARGS:-} > "$OUT/node2.log" 2>&1 ) &
 fi
-at() { ( sleep "$1"; shift; echo "$(python3 -c 'import time;print(time.monotonic())') $*" >> "$OUT/injected.txt"; eval "$*" ) & }
+at() { ( sleep "$1"; shift; echo "$(python3 -c 'import time;print(time.monotonic())') $*" >> "$OUT/injected.txt"; eval "$*"; echo "rc=$? $*" >> "$OUT/injected_rc.txt" ) & }
 # Phase 2 faults, seconds after the bag starts. Each one appends its monotonic time and command to injected.txt.
 [ -n "${KILL_PLAY_AT:-}" ] && at $KILL_PLAY_AT "kill -${KILL_PLAY_SIG:-KILL} $play"                 # sensors and /clock stop together
 [ -n "${CONT_PLAY_AT:-}" ] && at $CONT_PLAY_AT "kill -CONT $play"                                   # ... and come back
