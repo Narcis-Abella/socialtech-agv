@@ -51,6 +51,35 @@ class MapCheckTest(unittest.TestCase):
         v = mc.judge(self.map, self.scan, bad, self.res(bad))
         self.assertEqual((v['ok'], v['reason']), (False, 'geometry'))
 
+    def test_newest_scans_misplaced_fail_only_under_the_tail_rule(self):
+        moved = (self.scan - np.array([.4, 0., 0.])) @ pose(0., 0., np.radians(10.))[:3, :3]   # where a drifting odometry puts the newest scans
+        v = mc.judge(self.map, self.scan, self.T, self.res(self.T), tail=moved)                 # recorded, not enforced
+        self.assertTrue(v['ok']); self.assertLess(v['tail']['support_015'], .7)
+        v = mc.judge(self.map, self.scan, self.T, self.res(self.T), tail=moved, tail_rule=True)
+        self.assertEqual((v['ok'], v['reason']), (False, 'tail_geometry'))
+        v = mc.judge(self.map, self.scan, self.T, self.res(self.T), tail=self.scan, tail_rule=True)
+        self.assertTrue(v['ok'])
+        v = mc.judge(self.map, self.scan, self.T, self.res(self.T), tail=None, tail_rule=True)   # too few newest scans to tell
+        self.assertEqual((v['ok'], v['reason']), (False, 'tail_missing'))
+
+    def test_tail_is_the_newest_half_second(self):
+        odom = [(t, pose(.1 * t, 0., 0.)) for t in np.arange(0., 4., .1)]
+        clouds = [(float(t), self.scan[::20]) for t in np.arange(.5, 3.5, .1)]
+        first = mc.batches(odom, clouds)[2]
+        tail = mc.tail_batch(odom, clouds, first)
+        self.assertIsNotNone(tail)
+        self.assertIsNone(mc.tail_batch(odom, clouds[:10] + clouds[-2:], first))               # 2 scans in the last 0.5 s: not enough
+        # placed through the relative odometry: a point of the newest scan sits ~0.29 m ahead of where the first scan saw it
+        self.assertAlmostEqual(float(np.median(tail[:, 0]) - np.median(mc.voxel(self.scan[::20], mc.VOXEL_M)[:, 0])), .29 - .025, delta=.06)
+
+    def test_fast_voxel_is_bit_identical_to_the_frozen_one(self):
+        import offline_s2
+        r = np.random.default_rng(3)
+        for pts in (r.normal(0., 15., (50000, 3)), (r.random((20000, 3)) * [40., 3., 2.] - [20., 1., .3]).astype(np.float32), self.scan):
+            a, b = offline_s2.voxel(pts, mc.VOXEL_M), mc.voxel(pts, mc.VOXEL_M)
+            self.assertEqual(a.shape, b.shape); self.assertTrue(np.array_equal(a, b))
+        self.assertEqual(mc.voxel(np.zeros((0, 3)), .2).shape, (0, 3))
+
     def test_no_or_unconverged_refinement_fails(self):
         self.assertEqual(mc.judge(self.map, self.scan, self.T, None)['reason'], 'solver')
         self.assertEqual(mc.judge(self.map, self.scan, self.T, self.res(self.T, ok=False))['reason'], 'solver')
@@ -63,6 +92,23 @@ class MapCheckTest(unittest.TestCase):
         self.assertGreater(len(fit), len(check) * .5)
         with self.assertRaises(ValueError):
             mc.batches(odom, clouds[:3])
+
+
+class ServeTest(unittest.TestCase):
+    def test_serve_answers_one_line_per_request_and_survives_a_bad_one(self):
+        import json, subprocess, sys, tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            np.savetxt(d / 'map.xyz', room())
+            np.savez(d / 'few.npz', T_map_ci=np.eye(4), odom_t=np.array([0., 1.]), odom_T=np.array([np.eye(4)] * 2),
+                     cloud_t=np.array([.1, .2]), cloud_n=np.array([3, 3]), cloud_xyz=np.zeros((6, 3), np.float32))
+            reqs = [{'input': str(d / 'missing.npz'), 'out': str(d / 'o1')}, {'input': str(d / 'few.npz'), 'out': str(d / 'o2')}]
+            p = subprocess.run([sys.executable, '-B', str(Path(mc.__file__)), '--serve', '--map', str(d / 'map.xyz'), '--binary', '/nonexistent'],
+                               input=''.join(json.dumps(r) + '\n' for r in reqs), capture_output=True, text=True, timeout=60)
+            out = [json.loads(l) for l in p.stdout.splitlines()]
+        self.assertEqual(p.returncode, 0)
+        self.assertEqual([(o['ok'], o['reason']) for o in out], [(False, 'worker_FileNotFoundError'), (False, 'too_few_clouds')])
 
 
 if __name__ == '__main__':

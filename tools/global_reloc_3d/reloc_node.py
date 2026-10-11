@@ -134,9 +134,10 @@ class RelocNode(Node):
         # The consumer is nav_gate.py; a dead, hung or duplicated publisher closes the gate there.
         self.permit_pub = self.create_publisher(Bool, '/global_reloc/nav_permit', 10)
         self.create_subscription(TFMessage, '/tf', self.on_tf, 100)
-        self.permit_stats = {'true': 0, 'false': 0, 'withheld_in_doubt': 0, 'first_true_mono': None, 'last_true_mono': None}
+        self.permit_stats = {'true': 0, 'false': 0, 'withheld_in_doubt': 0, 'withheld_stale': 0, 'first_true_mono': None, 'last_true_mono': None}
         self.supervision = None
-        self.map_fails = 0
+        self.map_sup = None                    # rc.MapSupervisor while LOCALIZED
+        self.server = None                     # persistent map_check.py --serve: the checks after LOCALIZED
         self.kill_map_check()
         self.recent = collections.deque()      # newest body clouds (t, xyz, arrival), MAP_CHECK_WINDOW_S of them: input of map_check.py
         self.check = None                      # running map-check worker
@@ -194,6 +195,7 @@ class RelocNode(Node):
         self.att.go(state, reason=reason, **info)
         self.announce()
         if state == 'LOCALIZATION_LOST':
+            self.kill_map_check(); self.stop_server()
             return self.write_supervision()
         if state in rc.TERMINAL:
             self.finish()
@@ -317,18 +319,93 @@ class RelocNode(Node):
         np.savez(d / 'snapshot.npz', T_map_ci=T_map_ci, odom_t=np.array([r[0] for r in odom]), odom_T=np.array([r[1] for r in odom]),
                  cloud_t=np.array([c[0] for c in clouds]), cloud_n=np.array([len(c[1]) for c in clouds]),
                  cloud_xyz=np.concatenate([c[1] for c in clouds]).astype(np.float32))
-        env = {**os.environ, 'LD_LIBRARY_PATH': f"{self.lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
-        cmd = [sys.executable, '-B', str(HERE / 'map_check.py'), '--input', str(d / 'snapshot.npz'), '--map', self.map_xyz,
-               '--binary', self.binary, '--out', str(d / 'out'), '--timeout-s', str(rc.MAP_CHECK_TIMEOUT_S)]
-        proc = subprocess.Popen(cmd, stdout=open(d / 'stdout', 'w'), stderr=subprocess.STDOUT, env=env, start_new_session=True,
-                                preexec_fn=_die_with_parent)
+        if tag != 'h':                 # after /initialpose: the persistent worker (same run_check(), no interpreter start per check)
+            proc = None
+            self.start_server()
+            try:
+                self.server['proc'].stdin.write((json.dumps({'input': str(d / 'snapshot.npz'), 'out': str(d / 'out'), 'tail_rule': tag == 's'}) + '\n').encode())
+                self.server['proc'].stdin.flush()
+            except OSError:
+                self.stop_server()     # poll_map_check() reports it as a failed check
+        else:
+            proc = subprocess.Popen(self.map_check_cmd('--input', str(d / 'snapshot.npz'), '--out', str(d / 'out')), stdout=open(d / 'stdout', 'w'),
+                                    stderr=subprocess.STDOUT, env=self.map_check_env(), start_new_session=True, preexec_fn=_die_with_parent)
         self.check = {'proc': proc, 'dir': d, 'tag': tag, 'mono': self.mono(), 'newest_stamp': clouds[-1][0], 'newest_mono': clouds[-1][2],
                       'T_ci_newest': interpolate(odom, clouds[-1][0])}
         return True
 
+    def map_check_env(self):
+        return {**os.environ, 'LD_LIBRARY_PATH': f"{self.lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
+
+    def map_check_cmd(self, *args):
+        return [sys.executable, '-B', str(HERE / 'map_check.py'), '--map', self.map_xyz, '--binary', self.binary,
+                '--timeout-s', str(rc.MAP_CHECK_TIMEOUT_S), *args]
+
+    def start_server(self):
+        if self.server is not None and self.server['proc'].poll() is None:
+            return
+        self.stop_server()
+        proc = subprocess.Popen(self.map_check_cmd('--serve'), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=open(self.scratch / 'server.log', 'a'), env=self.map_check_env(), start_new_session=True,
+                                preexec_fn=_die_with_parent)
+        os.set_blocking(proc.stdout.fileno(), False)
+        self.server = {'proc': proc, 'buf': b''}
+
+    def server_cpu_s(self):
+        """CPU seconds of the persistent worker and of the register_v2 children it has reaped (/proc/<pid>/stat fields 14-17)."""
+        try:
+            f = (Path('/proc') / str(self.server['proc'].pid) / 'stat').read_text().rsplit(')', 1)[1].split()
+            return sum(int(v) for v in f[11:15]) / os.sysconf('SC_CLK_TCK')
+        except (OSError, TypeError, IndexError, ValueError):
+            return None
+
+    def stop_server(self):
+        sv = getattr(self, 'server', None)
+        if sv:
+            if sv['proc'].poll() is None:
+                os.killpg(sv['proc'].pid, signal.SIGKILL)
+            sv['proc'].wait()
+            for f in (sv['proc'].stdin, sv['proc'].stdout):
+                try:
+                    f.close()
+                except OSError:
+                    pass
+        self.server = None
+
+    def server_verdict(self):
+        """The next verdict line of the persistent worker, or None. Never blocks."""
+        sv = self.server
+        try:
+            while True:
+                chunk = os.read(sv['proc'].stdout.fileno(), 65536)
+                if not chunk:
+                    break
+                sv['buf'] += chunk
+        except BlockingIOError:
+            pass
+        if b'\n' not in sv['buf']:
+            return None
+        line, sv['buf'] = sv['buf'].split(b'\n', 1)
+        return json.loads(line)
+
+    def poll_served_check(self, c):
+        r = self.server_verdict() if self.server is not None else None
+        if r is not None:
+            return r
+        dead = self.server is None or self.server['proc'].poll() is not None
+        if not dead and self.mono() - c['mono'] <= rc.MAP_CHECK_TIMEOUT_S + 1.:
+            return None
+        self.stop_server()             # a hung worker is killed; the next check starts a new one
+        return {'ok': False, 'reason': 'worker_dead' if dead else 'timeout'}
+
     def poll_map_check(self):
         """None while the worker runs; else its verdict (a worker that crashed or overran is a failed check)."""
         c = self.check
+        if c['proc'] is None:
+            r = self.poll_served_check(c)
+            if r is None:
+                return None
+            return self.close_map_check(c, r)
         rcode = c['proc'].poll()
         if rcode is None:
             if self.mono() - c['mono'] <= rc.MAP_CHECK_TIMEOUT_S + 1.:
@@ -338,9 +415,12 @@ class RelocNode(Node):
         else:
             path = c['dir'] / 'out' / 'check.json'
             r = json.loads(path.read_text()) if rcode == 0 and path.exists() else {'ok': False, 'reason': f'worker_exit_{rcode}'}
+        return self.close_map_check(c, r)
+
+    def close_map_check(self, c, r):
         shutil.rmtree(c['dir'], ignore_errors=True)       # the verdict below is what is kept (metrics.json / supervision.json)
         self.check = None
-        r = {k: r.get(k) for k in ('ok', 'reason', 'geometry', 'at_propagated', 'shift', 'clouds', 'window_s', 'gicp_s', 'elapsed_s', 'fit_points', 'check_points')}
+        r = {k: r.get(k) for k in ('ok', 'reason', 'geometry', 'tail', 'at_propagated', 'shift', 'clouds', 'window_s', 'gicp_s', 'elapsed_s', 'fit_points', 'check_points')}
         r.update(tag=c['tag'], wall_s=self.mono() - c['mono'], newest_stamp=c['newest_stamp'], newest_mono=c['newest_mono'],
                  rel_first_input_s=c['mono'] - (self.att.t_input or c['mono']))
         self.checked_pose = (c['newest_stamp'], c['T_ci_newest'])       # the stamp and odometry pose this verdict is about
@@ -348,7 +428,9 @@ class RelocNode(Node):
 
     def kill_map_check(self):
         c = getattr(self, 'check', None)
-        if c and c['proc'].poll() is None:
+        if c and c['proc'] is None:
+            self.stop_server()             # the only way to cancel a served check
+        elif c and c['proc'].poll() is None:
             os.killpg(c['proc'].pid, signal.SIGKILL); c['proc'].wait()
         if c:
             shutil.rmtree(c['dir'], ignore_errors=True)
@@ -400,16 +482,24 @@ class RelocNode(Node):
         r = self.poll_map_check()
         if r is None:
             return None
-        self.map_fails = 0 if r['ok'] else self.map_fails + 1
+        ms = self.map_sup
+        ms.add(bool(r['ok']), r['newest_mono'], self.mono())
         if not r['ok']:
             self.map_last = -math.inf          # a failed check is repeated at once, not a period later
-        self.map_stats['n'] += 1; self.map_stats['failed'] += not r['ok']
-        self.map_stats['max_consecutive_failed'] = max(self.map_stats['max_consecutive_failed'], self.map_fails)
-        g = r.get('geometry') or {}
+        g, tl = r.get('geometry') or {}, r.get('tail')
+        st = self.map_stats
+        st['worker_cpu_s'] = self.server_cpu_s() or st['worker_cpu_s']       # since the worker started (it also served the confirm check)
+        st['sum_wall_s'] += r['wall_s']; st['sum_worker_elapsed_s'] += r.get('elapsed_s') or 0.; st['sum_gicp_s'] += r.get('gicp_s') or 0.
+        if r['ok'] and tl:
+            st.update(min_tail_support=min(st['min_tail_support'], tl['support_015']), max_tail_rmse_m=max(st['max_tail_rmse_m'], tl['matched_rmse_m'] or 0.))
+        st.update(n=ms.n, failed=ms.failed, max_consecutive_failed=ms.max_fails, max_pass_age_s=ms.max_age,
+                  max_wall_s=max(st['max_wall_s'], r['wall_s']), max_rmse_m=max(st['max_rmse_m'], g.get('matched_rmse_m') or 0.),
+                  min_support=min(st['min_support'], g.get('support_015') or 0.) if r['ok'] else st['min_support'])
         self.map_trace.append([round(r['newest_mono'] - self.att.marks['state:LOCALIZED'], 1), int(r['ok']), r['reason'],
                                g.get('support_015') and round(g['support_015'], 3), g.get('matched_rmse_m') and round(g['matched_rmse_m'], 3),
-                               r.get('shift') and round(r['shift']['xy_m'], 3), r.get('shift') and round(r['shift']['yaw_deg'], 2), round(r['wall_s'], 2)])
-        if self.map_fails >= rc.MAP_CHECK_FAILS and self.map_supervision == 'enforce':
+                               r.get('shift') and round(r['shift']['xy_m'], 3), r.get('shift') and round(r['shift']['yaw_deg'], 2), round(r['wall_s'], 2),
+                               *((round(tl['support_015'], 3), tl['matched_rmse_m'] and round(tl['matched_rmse_m'], 3)) if tl else (None, None))])
+        if ms.lost and self.map_supervision == 'enforce':
             return 'map_incoherent'
         return None
 
@@ -427,15 +517,19 @@ class RelocNode(Node):
                 self.amcl_delta = rc.planar_delta(amcl, own)      # what AMCL has moved the robot by, relative to the node's own pose
 
     def tick_permit(self):
-        # Withheld while in doubt: AMCL outside the coherence limits, or the last map check failed and its repeat has not passed
-        # yet. The state stays LOCALIZED until the loss rules decide; the gate closes meanwhile and reopens if the doubt clears.
+        # Withheld while in doubt: AMCL outside the coherence limits, the last map check failed and its repeat has not passed yet,
+        # or no check has passed on scans of the last MAP_FRESH_S (late worker, missing clouds). The state stays LOCALIZED until the
+        # loss rules decide; the gate closes meanwhile and reopens if the doubt clears.
+        enforce = self.att.state == 'LOCALIZED' and self.map_supervision == 'enforce' and self.map_sup is not None
+        stale = enforce and self.map_sup.stale(self.mono())
         doubt = self.att.state == 'LOCALIZED' and (
-            (self.supervision is not None and self.supervision.doubt) or (self.map_supervision == 'enforce' and self.map_fails > 0))
+            (self.supervision is not None and self.supervision.doubt) or (enforce and self.map_sup.doubt(self.mono())))
         ok = self.att.state == 'LOCALIZED' and not doubt
         m = Bool(); m.data = ok
         self.permit_pub.publish(m)
         self.permit_stats['true' if ok else 'false'] += 1
         self.permit_stats['withheld_in_doubt'] += doubt
+        self.permit_stats['withheld_stale'] += stale
         if ok:
             self.permit_stats['first_true_mono'] = self.permit_stats['first_true_mono'] or self.mono()
             self.permit_stats['last_true_mono'] = self.mono()
@@ -598,6 +692,8 @@ class RelocNode(Node):
                 if self.pose_pub_info is not None and (self.lio is None or self.lio.poll() is not None or self.odom_age() > LIO_STALL_S):
                     # pose already handed over, but the odometry AMCL needs is gone: say so now instead of waiting for the timeout
                     return self.go('HANDOFF_FAILED', reason='odometry_lost_after_pose')
+                if self.pose_pub_info is not None:
+                    self.start_server()        # pose handed over: have the worker of the next checks ready (AMCL needs seconds to settle)
                 if self.pose_pub_info is not None and self.monitor.confirmed:
                     return self.tick_confirm()
                 return self.tick_handoff()
@@ -822,11 +918,14 @@ class RelocNode(Node):
         # O4: the clouds and IMU samples of a finished attempt are never read again (metrics are on disk). Odometry is trimmed in on_odom.
         self.acq.clouds, self.acq.imu, self.build = [], [], None
         if a.state != 'LOCALIZED':
-            self.kill_map_check(); self.recent.clear()
+            self.kill_map_check(); self.stop_server(); self.recent.clear()
         if a.state == 'LOCALIZED':
             self.supervision = rc.LocalizationMonitor(self.mono())
-            self.map_last, self.map_fails = self.mono(), 0
-            self.map_stats = {'mode': self.map_supervision, 'n': 0, 'failed': 0, 'max_consecutive_failed': 0}
+            self.map_last = -math.inf          # the first supervision check starts at once
+            self.map_sup = rc.MapSupervisor(self.checks[-1]['newest_mono'])     # the check that allowed LOCALIZED is the first pass
+            self.map_stats = {'mode': self.map_supervision, 'period_s': rc.MAP_CHECK_PERIOD_S, 'fresh_s': rc.MAP_FRESH_S, 'n': 0, 'failed': 0,
+                              'max_consecutive_failed': 0, 'max_pass_age_s': 0., 'max_wall_s': 0., 'max_rmse_m': 0., 'min_support': 1., 'min_tail_support': 1., 'max_tail_rmse_m': 0., 'worker_cpu_s': 0., 'sum_wall_s': 0., 'sum_worker_elapsed_s': 0., 'sum_gicp_s': 0.,
+                              'trace_columns_9_10': 'tail_support, tail_rmse'}
             self.map_trace = collections.deque(maxlen=400)
             self.supervise_mono = self.mono()
             self.write_supervision()
@@ -912,7 +1011,7 @@ class RelocNode(Node):
             except Exception:
                 import traceback; traceback.print_exc()
         self.kill_search()
-        self.kill_map_check()
+        self.kill_map_check(); self.stop_server()
         shutil.rmtree(self.scratch, ignore_errors=True)
         if self.att.state not in ('LOCALIZED',):
             self.stop_lio()

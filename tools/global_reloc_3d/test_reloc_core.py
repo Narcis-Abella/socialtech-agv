@@ -259,6 +259,26 @@ class Phase2Test(unittest.TestCase):
         self.assertEqual(m.lost(t + 3.4), 'amcl_incoherent')
         self.assertLessEqual(len(m.report()['trace_t_xy_yaw']), 720)
 
+    def test_map_supervisor_withholds_on_failure_or_stale_and_loses_on_two(self):
+        m = rc.MapSupervisor(t_pass=100., fails=2, fresh_s=2.)
+        self.assertFalse(m.doubt(101.9)); self.assertTrue(m.doubt(102.1))        # no verdict at all: stale after fresh_s
+        m.add(True, 101., 101.4)
+        self.assertFalse(m.doubt(102.9)); self.assertFalse(m.lost)
+        m.add(False, 102., 102.4)                                               # one failed check: doubt, not lost
+        self.assertTrue(m.doubt(102.4)); self.assertFalse(m.lost)
+        m.add(True, 102.5, 102.8)                                               # its repeat passed: the doubt clears
+        self.assertFalse(m.doubt(102.9)); self.assertEqual(m.fails, 0)
+        m.add(False, 103.5, 103.8); m.add(False, 103.9, 104.2)
+        self.assertTrue(m.lost); self.assertEqual((m.n, m.failed, m.max_fails), (5, 3, 2))
+        self.assertAlmostEqual(m.max_age, 102.8 - 101.)
+
+    def test_map_supervisor_a_late_pass_on_old_scans_does_not_refresh(self):
+        m = rc.MapSupervisor(t_pass=100., fails=2, fresh_s=2.)
+        m.add(True, 100.5, 103.)                 # the worker answered 2.5 s late: its scans are already too old
+        self.assertTrue(m.doubt(103.)); self.assertFalse(m.lost)
+        m.add(True, 99., 103.1)                  # never backwards
+        self.assertEqual(m.t_pass, 100.5)
+
     def test_localization_monitor_doubt_precedes_loss(self):
         m = rc.LocalizationMonitor(0.)
         m.add(0., .05, 1.)

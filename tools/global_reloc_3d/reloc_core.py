@@ -38,7 +38,9 @@ INPUT_JUMP_S = 1.        # a sensor header stamp may not advance this much more 
 MAP_CHECK_WINDOW_S = S2_EXPOSURE_S   # the exposure the acceptance rule was validated on
 MAP_CHECK_TIMEOUT_S = 8.  # worker limit; a check that does not answer is a failed check
 MAP_CHECK_MAX_AGE_S = 3.  # /initialpose carries the pose AT the newest scan of a passed check and goes out at most this long after it
-MAP_CHECK_PERIOD_S = 3.   # after LOCALIZED: one check every this long (LOSS_HOLD_S); a failed one is repeated at once
+MAP_CHECK_PERIOD_S = .5   # after LOCALIZED: start a check this long after the last one started, at the earliest when it has answered
+                          # (a check takes ~0.6 s, so they run back to back; 3 s until note 22). A failed one is repeated at once
+MAP_FRESH_S = 2.          # the permit needs a passed check on scans at most this old: one check may be late or missing, not two
 MAP_CHECK_FAILS = 2       # consecutive failed checks before LOCALIZED is revoked (one scan window can be blocked by a person or a door)
 PERMIT_PERIOD_S = .1      # navigation permit heartbeat
 PERMIT_TTL_S = .5         # the gate closes when the newest permit is older than this (5 missed heartbeats)
@@ -469,6 +471,41 @@ class LocalizationMonitor:
         return {'tf_received': self.n, 'max_xy_m': self.max_xy, 'max_yaw_deg': self.max_yaw, 'max_tf_gap_s': self.max_tf_gap,
                 'limits': {'xy_m': self.xy_m, 'yaw_deg': self.yaw_deg, 'hold_s': self.hold_s, 'tf_stall_s': self.tf_stall_s},
                 'trace_t_xy_yaw': list(self.trace)}
+
+
+class MapSupervisor:
+    """After LOCALIZED: bookkeeping of the periodic map checks of AMCL's pose. Monotonic time.
+
+    doubt (permit withheld, state kept): the last check failed, or no check has passed on scans newer than fresh_s. So the
+    permit is never true unless AMCL's pose fitted the map at some instant of the last fresh_s seconds, whatever delays the
+    checks (slow worker, starved board, missing clouds). lost (revocation): `fails` consecutive failed checks."""
+
+    def __init__(self, t_pass, fails=None, fresh_s=None):
+        self.need = MAP_CHECK_FAILS if fails is None else fails
+        self.fresh_s = MAP_FRESH_S if fresh_s is None else fresh_s
+        self.t_pass = t_pass          # arrival time of the newest scan of the last passed check
+        self.fails = 0
+        self.n = self.failed = self.max_fails = 0
+        self.max_age = 0.             # largest age of the last passed check, seen when a verdict arrives
+
+    def add(self, ok, newest_mono, now):
+        self.n += 1
+        self.max_age = max(self.max_age, now - self.t_pass)
+        if ok:
+            self.fails, self.t_pass = 0, max(self.t_pass, newest_mono)
+        else:
+            self.fails += 1; self.failed += 1
+            self.max_fails = max(self.max_fails, self.fails)
+
+    def stale(self, now):
+        return now - self.t_pass > self.fresh_s
+
+    def doubt(self, now):
+        return self.fails > 0 or self.stale(now)
+
+    @property
+    def lost(self):
+        return self.fails >= self.need
 
 
 class PermitGate:
