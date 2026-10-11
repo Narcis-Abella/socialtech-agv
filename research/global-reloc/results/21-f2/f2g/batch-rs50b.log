@@ -1,0 +1,6 @@
+r006-eco03-z00-rs50b PASS  | TIMEOUT(imu_not_stationary)  | class=false_reject_timeout gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r014-hospital-c06-rs50b PASS  | HANDOFF_FAILED(amcl_not_confirmed)  | class=correct_accept gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r036-hospital-z06-rs50b PASS  | HANDOFF_FAILED(amcl_not_confirmed)  | class=correct_accept gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE

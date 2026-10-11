@@ -1,0 +1,2 @@
+h25_lio_killed_after_localized-f2l2 PASS  | LOCALIZED(None)/LOCALIZATION_LOST(fastlio_exited_-9)  | class=correct_accept localized_s=25.96 lost_s=34.46 gate_open_s=8.2 gate_last_nonzero_after_revoke_s=-0.029 orphans=fastlio=0 search=0 register=0
+BATCH_DONE

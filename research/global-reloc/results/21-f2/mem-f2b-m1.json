@@ -1,0 +1,74 @@
+{
+ "amcl": {
+  "samples": 923,
+  "span_s": 469.0,
+  "pss_first_mb": 15.8,
+  "pss_last_mb": 16.2,
+  "pss_max_mb": 16.5,
+  "slope_mb_per_min": 0.015,
+  "cpu_mean_pct": 14.3
+ },
+ "bag_play": {
+  "samples": 918,
+  "span_s": 466.5,
+  "pss_first_mb": 64.9,
+  "pss_last_mb": 67.6,
+  "pss_max_mb": 67.8,
+  "slope_mb_per_min": 0.176,
+  "cpu_mean_pct": 2.9
+ },
+ "fastlio_mapping": {
+  "samples": 923,
+  "span_s": 469.0,
+  "pss_first_mb": 40.8,
+  "pss_last_mb": 47.0,
+  "pss_max_mb": 47.2,
+  "slope_mb_per_min": 0.885,
+  "cpu_mean_pct": 15.5
+ },
+ "lifecycle": {
+  "samples": 923,
+  "span_s": 469.0,
+  "pss_first_mb": 8.5,
+  "pss_last_mb": 8.7,
+  "pss_max_mb": 8.9,
+  "slope_mb_per_min": -0.012,
+  "cpu_mean_pct": 1.4
+ },
+ "map_server": {
+  "samples": 923,
+  "span_s": 469.0,
+  "pss_first_mb": 12.9,
+  "pss_last_mb": 13.2,
+  "pss_max_mb": 13.5,
+  "slope_mb_per_min": -0.006,
+  "cpu_mean_pct": 1.1
+ },
+ "register_v2": {
+  "samples": 923,
+  "span_s": 469.0,
+  "pss_first_mb": 25.9,
+  "pss_last_mb": 26.2,
+  "pss_max_mb": 26.3,
+  "slope_mb_per_min": 0.029,
+  "cpu_mean_pct": 0.0
+ },
+ "reloc_node": {
+  "samples": 923,
+  "span_s": 469.0,
+  "pss_first_mb": 80.0,
+  "pss_last_mb": 80.9,
+  "pss_max_mb": 81.2,
+  "slope_mb_per_min": 0.094,
+  "cpu_mean_pct": 31.0
+ },
+ "scan_conv": {
+  "samples": 923,
+  "span_s": 469.0,
+  "pss_first_mb": 14.9,
+  "pss_last_mb": 15.5,
+  "pss_max_mb": 15.8,
+  "slope_mb_per_min": 0.048,
+  "cpu_mean_pct": 2.2
+ }
+}

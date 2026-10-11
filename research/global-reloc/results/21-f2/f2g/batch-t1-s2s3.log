@@ -1,0 +1,4 @@
+eco01-z03-s2s3x3-own-t1 correct_accept LOCALIZED None stage= s2 s2= None t_acc= 18.887700685008895 t_end= 25.0
+hospital-z00-s2s3x3-own-t1 correct_accept LOCALIZED None stage= s3 s2= ambiguous_no_alternative_margin t_acc= 41.99890995799797 t_end= 48.2
+eco01-z03-s2s3x3-cross-t1 correct_reject REJECTED reject_geometry stage= None s2= reject_geometry t_acc= None t_end= 42.3
+BATCH_DONE

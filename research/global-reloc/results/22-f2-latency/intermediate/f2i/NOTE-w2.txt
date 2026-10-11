@@ -1,0 +1,1 @@
+w2 (24 runs): valid, INTERMEDIATE tree = persistent worker for the confirm and supervision checks, period 1.0 s, freshness 2.0 s, tail rule. Hashes in tools-sha256-w2.txt. The final tree (period 0.5 s) runs in reloc-f2j-20261011.

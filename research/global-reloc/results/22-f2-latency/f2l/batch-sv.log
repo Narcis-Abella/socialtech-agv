@@ -1,0 +1,22 @@
+r003-hospital-c05-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=23.49 gate_open_s=60.1 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r010-hospital-c00-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=42.4 gate_open_s=42.4 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r022-hospital-c01-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=22.7 gate_open_s=61.3 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r049-hospital-z04-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=20.86 gate_open_s=63.7 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r014-hospital-c06-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=30.15 gate_open_s=53.4 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r036-hospital-z06-sv PASS  | HANDOFF_FAILED(amcl_not_confirmed)  | class=correct_accept gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r007-eco03-c00-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=28.24 gate_open_s=55.3 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r031-eco03-s2b1-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=29.42 gate_open_s=54.0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r004-eco01-c01-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=29.53 gate_open_s=54.0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r012-eco01-z00-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=25.01 gate_open_s=59.6 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r044-eco01-c03-sv PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=22.16 gate_open_s=61.4 orphans=fastlio=0 search=0 register=0
+BATCH_DONE

@@ -1,0 +1,1 @@
+{"run": "k00_nominal-f3q2", "state": "LOCALIZED", "open_s": 48.799, "scored_s": 47.279, "outside_s": 0.0, "max_xy_m": 0.152, "max_yaw_deg": 4.085, "close_at_s": 49.121, "out_at_s": null, "latency_s": 0.0, "lead_s": null, "checks": 89, "checks_failed": 0, "first_failed_check_s": null, "check_wall_s_median": 0.35}

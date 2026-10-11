@@ -1,0 +1,13 @@
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="lo" />
+      </Interfaces>
+      <FragmentSize>8192 B</FragmentSize>
+    </General>
+    <Internal>
+      <DefragUnreliableMaxSamples>32</DefragUnreliableMaxSamples>
+    </Internal>
+  </Domain>
+</CycloneDDS>

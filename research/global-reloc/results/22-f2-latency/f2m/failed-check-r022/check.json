@@ -1,0 +1,27 @@
+{
+  "ok": false,
+  "reason": "solver",
+  "at_propagated": {
+    "valid": true,
+    "support_015": 0.9970484061393152,
+    "matched_rmse_m": 0.08382553417502688,
+    "median_nearest_m": 0.08067216925296461,
+    "p95_nearest_m": 0.12171817726910143,
+    "n_check": 3388,
+    "n_supported": 3378
+  },
+  "truth_used": false,
+  "run": {
+    "exit_code": 0,
+    "stdout": "KISS valid=1 cross=0 pruned=0 inliers=0 GICP=0\n",
+    "stderr": ""
+  },
+  "fit_points": 3549,
+  "check_points": 3388,
+  "gicp_s": 0.16056921100243926,
+  "score_s": 0.02781664300709963,
+  "clouds": 29,
+  "window_s": 2.9999563694000244,
+  "newest_cloud_stamp": 1781693561.839051,
+  "elapsed_s": 0.2456631730310619
+}

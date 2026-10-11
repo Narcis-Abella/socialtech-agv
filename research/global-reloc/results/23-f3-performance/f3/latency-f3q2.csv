@@ -1,0 +1,2 @@
+run,observed,verdict,gate_open_s,out_at_s,close_at_s,latency_s,exposure_max_xy_m,exposure_max_yaw_deg,first_failed_check_s,checks,checks_failed,check_wall_s_median,max_pass_age_s,withheld_in_doubt,withheld_stale,worker_cpu_pct_of_core,min_support_passed,min_tail_support_passed
+k00_nominal-f3q2,LOCALIZED(None)/LOCALIZED(None),PASS,48.799,,49.121,0.0,,,,89,0,0.35,1.09,0,0,57.7,0.992,0.994

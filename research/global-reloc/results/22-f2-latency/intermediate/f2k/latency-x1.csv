@@ -1,0 +1,16 @@
+run,observed,verdict,gate_open_s,out_at_s,close_at_s,latency_s,exposure_max_xy_m,exposure_max_yaw_deg,first_failed_check_s,checks,checks_failed,check_wall_s_median,max_pass_age_s,withheld_in_doubt,withheld_stale,worker_cpu_pct_of_core,min_support_passed,min_tail_support_passed
+k00_nominal-x1,LOCALIZED(None)/LOCALIZED(None),PASS,53.199,,53.408,0.0,,,,97,0,0.35,1.13,0,0,57.6,0.992,0.994
+k40_relay_passthrough-x1,LOCALIZED(None)/LOCALIZED(None),PASS,53.498,,54.423,0.0,,,"[24.5, 24.8]",99,1,0.35,1.26,4,0,56.9,0.992,0.995
+k10_gyro_0p5_from_31-x1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,12.199,11.836,12.481,0.645,0.61,12.558,"[12.1, 12.5]",24,2,0.35,1.56,5,0,65.5,0.824,0.808
+k11_gyro_0p5_from_35-x1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,13.4,13.176,13.614,0.438,0.368,14.771,"[13.3, 13.65]",26,2,0.35,1.4,5,0,62.8,0.927,0.935
+k12_gyro_0p5_from_38p5-x1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,14.4,13.906,14.667,0.761,0.645,13.963,"[14.3, 14.65]",28,2,0.35,1.39,4,0,60.7,0.936,0.92
+k13_gyro_0p5_from_42-x1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,16.698,16.953,16.985,0.032,0.325,1.592,"[16.6, 17.0]",32,2,0.35,1.52,4,0,59.9,0.892,0.839
+k14_gyro_0p5_from_47-x1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,32.1,,32.344,0.0,,,"[31.9, 32.3]",60,2,0.35,1.6,4,0,60.8,0.853,0.869
+k20_gyro_0p3_from_35-x1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,14.398,,14.668,0.0,,,"[14.3, 14.65]",28,2,0.35,1.57,4,0,61.9,0.976,0.982
+k21_gyro_0p4_from_35-x1,LOCALIZED(None)/LOCALIZATION_LOST(amcl_incoherent),PASS,39.5,,39.72,0.0,,,,77,0,0.35,1.25,30,0,61.6,0.73,0.72
+k22_gyro_0p7_from_35-x1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,10.699,10.326,10.953,0.626,1.225,26.564,"[10.4, 10.8]",20,1,0.35,1.0,4,0,60.6,0.804,0.742
+k23_gyro_1p0_from_35-x1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,10.298,9.966,10.53,0.564,0.681,19.108,,19,0,0.35,0.99,4,0,60.1,0.772,0.741
+k24_gyro_2p0_from_35-x1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,10.099,9.794,10.313,0.519,0.894,71.291,,18,0,0.35,1.01,1,0,58.7,0.993,0.994
+k25_gyro_1p0_from_42-x1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,16.699,16.283,16.914,0.632,1.023,59.24,"[16.5, 16.9]",31,1,0.35,1.12,0,0,59.9,0.899,0.882
+k30_gyro_1p0_35_to_37_transient-x1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,8.2,7.782,8.422,0.64,1.318,32.713,,15,0,0.35,0.99,0,0,62.4,0.839,0.812
+k31_acc_x2_from_35-x1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,19.999,,20.221,0.0,,,"[19.9, 20.25]",38,2,0.35,1.32,4,0,60.3,0.91,0.889

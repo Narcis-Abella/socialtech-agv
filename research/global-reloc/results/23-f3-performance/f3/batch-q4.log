@@ -1,0 +1,3 @@
+hospital-z00-s2s3x3-own-q4 correct_accept LOCALIZED None stage= s3 s2= ambiguous_no_alternative_margin t_acc= 41.85308236407582 t_end= 48.4
+eco01-z03-s2s3x3-own-q4 correct_accept LOCALIZED None stage= s2 s2= None t_acc= 18.831054546986707 t_end= 25.1
+BATCH_DONE

@@ -1,0 +1,9 @@
+run,start,duration_s,kernel_timeouts_at_s,sampler_max_gap_s,state
+eco01-c02-s2s3x3-cross-r2l,2026-10-11T12:25:00+02:00,67.7,98.1,0.5,REJECTED(reject_geometry)
+eco01-z03-s2s3x3-own-r2l,2026-10-11T12:20:28+02:00,47.5,78.2,0.5,LOCALIZED(None)
+h25_lio_killed_after_localized-f2l,2026-10-11T13:08:35+02:00,88.4,74.3,26.9,LOCALIZED(None)
+h27_lio_diverges_in_s2-y4,2026-10-11T13:59:58+02:00,67.4,97.6,0.5,HANDOFF_FAILED(map_check_solver)
+h27_lio_diverges_in_s2-y5,2026-10-11T14:01:38+02:00,47.5,78.0,0.5,HANDOFF_FAILED(map_check_solver)
+h43_imu_reversed_after_localized-f2l,2026-10-11T12:51:22+02:00,91.5,30.8,0.5,LOCALIZED(None)
+hospital-z00-s2s3x3-own-r2l,2026-10-11T12:21:46+02:00,70.3,0.2,0.5,LOCALIZED(None)
+k00_nominal-y1,2026-10-11T11:50:40+02:00,97.7,128.0,0.5,LOCALIZED(None)

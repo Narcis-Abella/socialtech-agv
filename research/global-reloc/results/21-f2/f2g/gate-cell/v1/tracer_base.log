@@ -1,0 +1,12 @@
+Loading parameters: 
+- port name: vcan0
+- odom frame name: odom
+- base frame name: base_link
+- odom topic name: odom
+- is tracer mini: false
+- simulated robot: false
+- sim control rate: 50
+----------------------------
+Robot initialized, start running ...
+Start listening to port: vcan0
+Using CAN bus to talk with the robot
