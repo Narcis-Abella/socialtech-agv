@@ -1,0 +1,5 @@
+{"run": "d08_gyro_0p5_from_21_after_pose-u2", "state": "HANDOFF_FAILED", "open_s": 0.0, "scored_s": 0.0, "outside_s": 0.0, "max_xy_m": null, "max_yaw_deg": null}
+{"run": "h00_nominal_supervised-u2", "state": "LOCALIZED", "open_s": 40.39879846572876, "scored_s": 38.94004225730896, "outside_s": 0.0, "max_xy_m": 0.1804483194556497, "max_yaw_deg": 4.7772851948701325}
+{"run": "h28_lio_diverges_after_localized-u2", "state": "LOCALIZED", "open_s": 12.498632669448853, "scored_s": 12.296368837356567, "outside_s": 1.6336936950683594, "max_xy_m": 0.600698738668903, "max_yaw_deg": 12.698468133504363}
+{"run": "h32_amcl_moved_by_foreign_initialpose-u2", "state": "LOCALIZED", "open_s": 7.298668622970581, "scored_s": 7.096404790878296, "outside_s": 0.0, "max_xy_m": 0.05637314311560971, "max_yaw_deg": 1.1934980402810043}
+{"run": "h36_node_frozen_5s_then_resumes-u2", "state": "LOCALIZED", "open_s": 6.49909520149231, "scored_s": 5.7459022998809814, "outside_s": 0.0, "max_xy_m": 0.05139913524037995, "max_yaw_deg": 1.0796300919547686}

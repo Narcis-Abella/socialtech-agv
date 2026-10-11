@@ -1,0 +1,15 @@
+[INFO] [1791672582.736889368] [nav_gate]: gate CLOSED (publishers_0) mono=479292.591
+[INFO] [1791672595.051999166] [nav_gate]: gate CLOSED (no_permit) mono=479304.942
+[INFO] [1791672596.051701459] [nav_gate]: gate CLOSED (permit_false) mono=479305.941
+[INFO] [1791672599.051692050] [nav_gate]: gate CLOSED (permit_warming) mono=479308.941
+[INFO] [1791672599.251696512] [nav_gate]: gate OPEN (open) mono=479309.141
+[INFO] [1791672604.051674142] [nav_gate]: gate CLOSED (permit_false) mono=479313.941
+[INFO] [1791672607.051638087] [nav_gate]: gate CLOSED (permit_warming) mono=479316.941
+[INFO] [1791672607.251631244] [nav_gate]: gate OPEN (open) mono=479317.141
+[INFO] [1791672612.451740257] [nav_gate]: gate CLOSED (permit_stale) mono=479322.341
+[INFO] [1791672615.051632985] [nav_gate]: gate CLOSED (permit_warming) mono=479324.941
+[INFO] [1791672615.251640564] [nav_gate]: gate OPEN (open) mono=479325.141
+[INFO] [1791672620.085530657] [nav_gate]: gate CLOSED (publishers_0) mono=479329.975
+[INFO] [1791672630.451938003] [nav_gate]: gate CLOSED (permit_stale) mono=479340.342
+[INFO] [1791672631.451659283] [nav_gate]: gate CLOSED (permit_warming) mono=479341.341
+[INFO] [1791672631.651660572] [nav_gate]: gate OPEN (open) mono=479341.541

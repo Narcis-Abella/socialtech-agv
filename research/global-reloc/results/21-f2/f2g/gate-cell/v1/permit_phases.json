@@ -1,0 +1,37 @@
+[
+ {
+  "value": "false",
+  "start_epoch": 1791672596.0082347,
+  "seconds": 3.0
+ },
+ {
+  "value": "true",
+  "start_epoch": 1791672599.014164,
+  "seconds": 5.0
+ },
+ {
+  "value": "false",
+  "start_epoch": 1791672604.0238118,
+  "seconds": 3.0
+ },
+ {
+  "value": "true",
+  "start_epoch": 1791672607.0295389,
+  "seconds": 5.0
+ },
+ {
+  "value": "silent",
+  "start_epoch": 1791672612.0394,
+  "seconds": 3.0
+ },
+ {
+  "value": "true",
+  "start_epoch": 1791672615.0415163,
+  "seconds": 5.0
+ },
+ {
+  "value": "exit",
+  "start_epoch": 1791672620.0518336,
+  "seconds": 0.0
+ }
+]
