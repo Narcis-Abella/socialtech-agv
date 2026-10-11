@@ -60,14 +60,14 @@ Why 2.0 s: one check may be late or lost without the gate flapping (worst age of
 |---|---|---|---|
 | `w0`, `f2i` | - | 3 | **INVALID**, infrastructure: my new root lacked `tools/nav_bench`; nothing ran |
 | `w1`, `f2i` | worker, period 1 s, freshness | 3 x `k11` | latency 0.94, 0.92, **2.19 s**: in `r3` a check passed at support 0.700 with AMCL 0.46 m / 12 deg off. The rule looks at the last second of a 3 s window as a whole -> option C |
-| `w2`, `f2i` | + tail rule, confirm check served | 24 | controls clean; revoked N = 19: median 0.56 s, p95 1.58 s, **max 1.81 s**. The tail decided 1 of 308 checks (`k11-w2`, doubt 0.6 s earlier). Age of the last pass up to 1.84 s: 0.16 s from the freshness limit, too thin |
+| `w2`, `f2i` | + tail rule, confirm check served | 23 | controls clean; revoked N = 19: median 0.56 s, p95 1.58 s, **max 1.81 s**. The tail decided 1 of 308 checks (`k11-w2`, doubt 0.6 s earlier). Age of the last pass up to 1.84 s: 0.16 s from the freshness limit, too thin |
 | `w3`, `f2j` | period 0.5 s | 5, stopped by me | worker CPU measured for the first time: **0.57 CPU-s per check, 88 % of one core** back to back, of which GICP 0.15 s -> faster voxelization |
 | `x0`, `x1`, `f2k` | + fast voxel (`4211c6b`) | 1 + 16, stopped by me | revoked N = 13: median 0.52 s, **max 0.76 s**. **No-fault control `k40-x1`: one failed check, `tail_missing` (2 scans in the newest 0.5 s), gate closed for 0.7 s.** My rule failed for lack of data -> `6cb779a` |
 | `y1`-`y6`, `f2l` | **final** (`6cb779a`) | section 5 | |
 
 Own mistakes in this round: the incomplete root (`w0`); a wait loop that matched its own command line (no effect on data); `tail_missing` treated as a failure (found by the control, fixed); the first estimate "0.3 s per check" was a guess, the measurement said 0.57 s.
 
-## 5. Targeted runs on the final tree (`f2l`, eco01 c04, `batch_latency.sh y1`, 24 runs, all valid, all PASS)
+## 5. Targeted runs on the final tree (`f2l`, eco01 c04, `batch_latency.sh y1`, 23 runs, all valid, all PASS)
 
 Faults enter FAST-LIO2 through the relay after `LOCALIZED` (25-29 s after the first input); evidence that the relay altered the stream and that FAST-LIO2 was fed is in `table-y1.csv`. Expectations written in the script before the runs: latency <= 1.5 s expected, never above 2.5 s; controls with no failed check and no withheld permit.
 

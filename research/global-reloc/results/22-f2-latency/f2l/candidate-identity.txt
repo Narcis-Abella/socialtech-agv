@@ -5,6 +5,7 @@ harness / evaluator commits: d48c8ac (permit_exposure timeline, batch_latency.sh
 after the runs: 22f9a80 adds KEEP_FAILED_CHECKS (diagnosis, off by default) to reloc_node.py and run_online.sh; used only in tree f2m
 branch feat/global-reloc, local, not pushed. F1 GR-S2S3-F1 = c026a7b untouched.
 50 software restarts: NOT repeated for this candidate (note 22, section 8); those of note 21 are evidence of GR-S2S3-F2b.
+documentation erratum after 412077d (docs only, no method, test or evidence file changed): note 22 said 24 runs for the targeted batches y1 and w2; both have 23 (table-y1.csv, intermediate/f2i/table-w2.csv). Revoked counts (19) and latencies were right. Candidate tree and hashes below unchanged.
 
 ## tree that produced every result of note 22 sections 5, 7, 8 (NX root /home/jetson/work/reloc-f2l-20261011, all hashes in tools-sha256-f2l.txt)
 751d1fa1c509eefe17734957f8bcd581aa6710bde960e0177f30a30faa801b2a  can_deadman.py
