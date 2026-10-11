@@ -68,7 +68,8 @@ class MapCheckTest(unittest.TestCase):
         first = mc.batches(odom, clouds)[2]
         tail = mc.tail_batch(odom, clouds, first)
         self.assertIsNotNone(tail)
-        self.assertIsNone(mc.tail_batch(odom, clouds[:10] + clouds[-2:], first))               # 2 scans in the last 0.5 s: not enough
+        gap = mc.tail_batch(odom, clouds[:10] + clouds[-2:], first)                               # 2 scans in the last 0.5 s: the 3 newest are used
+        self.assertTrue(np.array_equal(gap, mc.voxel(np.concatenate([mc.rebase(p, first, mc.interpolate(odom, t)) for t, p in [clouds[9]] + clouds[-2:]]), mc.VOXEL_M)))
         # placed through the relative odometry: a point of the newest scan sits ~0.29 m ahead of where the first scan saw it
         self.assertAlmostEqual(float(np.median(tail[:, 0]) - np.median(mc.voxel(self.scan[::20], mc.VOXEL_M)[:, 0])), .29 - .025, delta=.06)
 

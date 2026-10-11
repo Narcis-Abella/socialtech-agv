@@ -59,11 +59,12 @@ def batches(odom, clouds):
 
 
 def tail_batch(odom, clouds, first, tail_s=TAIL_S):
-    """The scans of the last tail_s in the body frame of the first scan of the window, or None if there are too few."""
+    """The scans of the last tail_s, and never fewer than the TAIL_MIN_CLOUDS newest ones, in the body frame of the first scan of
+    the window. (A short gap in the cloud stream left 2 scans in 0.5 s in a no-fault control, k40-x1, note 22: the rule then
+    failed for lack of data and the gate closed for 0.7 s. Missing data is the business of the freshness rule, not of this one.)"""
     clouds = sorted(clouds, key=lambda c: c[0])
     new = [(t, p) for t, p in clouds if t >= clouds[-1][0] - tail_s]
-    if len(new) < TAIL_MIN_CLOUDS:
-        return None
+    new = new if len(new) >= TAIL_MIN_CLOUDS else clouds[-TAIL_MIN_CLOUDS:]
     return voxel(np.concatenate([rebase(p, first, interpolate(odom, t)) for t, p in new]), VOXEL_M)
 
 
