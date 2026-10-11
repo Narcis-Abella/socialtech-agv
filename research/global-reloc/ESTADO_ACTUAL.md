@@ -1,32 +1,31 @@
 # SOCIALTECH — ESTADO ACTUAL
 
-Fecha: 2026-10-11 · Rama: `feat/global-reloc` (commits locales, sin push) · F1 congelado `GR-S2S3-F1` = `c026a7b`, intacto · Candidato F2 `GR-S2S3-F2c` = `F2b` + `4211c6b` + `6cb779a`; gate `8a88d16` sin cambios.
+Fecha: 2026-10-11 · Rama: `feat/global-reloc` (commits locales, sin push) · F1 congelado `GR-S2S3-F1` = `c026a7b`, intacto · Candidato `GR-S2S3-F2c` congelado (F2b + `4211c6b` + `6cb779a`; gate `8a88d16`).
 
 ## Fase actual
-Fase 1 **VERIFIED**. Fase 2 **VERIFIED — VALIDATED_IN_REPLAY** (notas 21 y 22). Fase 3 no iniciada. Sin validación física; seguridad completa del AGV no demostrada; F4-F6 pendientes. `can0` sin uso.
+F1 y F2 **VERIFIED**. Fase 3 **VERIFIED — VALIDATED_IN_REPLAY** en la Orin NX (nota 23), con exclusiones explícitas: Nano no medida, arranque en frío (reloj A) BLOCKED_PHYSICAL, sin Nav2 en paralelo. Sin validación física; seguridad completa del AGV no demostrada. F4 no iniciada. `can0` sin uso.
 
-## Último resultado (nota 22: latencia de revocación)
-- **Causa:** una comprobación contra el mapa cada 3 s y cada una tardaba 1 s (proceso nuevo). Tras divergir FAST-LIO2 el permiso sobrevivía 1,6-2,5 s.
-- **Corrección:** trabajador persistente, comprobación cada ~0,55 s, permiso solo con una comprobación pasada sobre escaneos de ≤2 s, y regla adicional sobre los 0,5 s más recientes. Ningún umbral de aceptación cambiado.
-- **Medido (árbol final, 23 revocaciones):** 13 con 0 s; resto 0,35-1,46 s. Controles sin fallo: 0 retiradas.
-- Regresiones: S2 y S3 correctos, 14/14 negativos rechazados, 41 casos de la matriz como en la nota 21, h27 6/7 sin publicar (1 pose correcta publicada, sin permiso), celda del gate en vcan correcta.
-- Coste: +17,5 puntos de un núcleo (pila ~95 % de un núcleo de 8); memoria igual.
-- Los 50 reinicios no se repitieron: son evidencia de `F2b` (justificación en nota 22, §8).
+## Último resultado (nota 23)
+- Recursos (99 ejecuciones del árbol F2c + 14 nuevas): RAM del sistema máx. 2,2 GB, swap constante, GPU 0 %, Tj máx. 67,2 °C, pico 14,05 W, ≤3,1 núcleos de 8 (p95).
+- Tiempos: S2 acepta a 18,8–18,95 s, S3 a 41,8–41,96 s (reloj de 60 s: márgenes 41 s y 18 s). Ruido de repeticiones idénticas: 0,15–0,29 s.
+- Cuota de CPU: 4 núcleos sin cambio; 2 núcleos +2,1–2,4 s (S3 44,25 s), mismo resultado. Revocación a 2 núcleos 0,01–0,65 s; control sin fallo sin retiradas.
+- NVMe: 145 timeouts de kernel desde el 5/10 (51 hoy); 8 de 113 ejecuciones coincidieron, solo una con hueco real (h25, ya repetida); ninguna de las 14 nuevas.
+- Sin cambios funcionales; solo harness (`DOCKER_CPUS`, `f3_summary.py`).
 
 ## Problemas principales
-- Latencia residual hasta 1,46 s: un error a lo largo de un pasillo pasa la regla congelada ~1 s. Menos exige odometría de ruedas.
-- Paradas espurias de ~0,6 s: 3 en 9,4 min en hospital/eco03 (GICP en su límite de iteraciones; regla congelada, no tocada).
-- NVMe: 12 timeouts hoy; una ejecución inválida por un bloqueo de 26,9 s (repetida).
-- Sin verificar: timeout del firmware, CAN físico, entrega en movimiento (nota 21).
+- NVMe: causa desconocida; falta `sudo nvme smart-log /dev/nvme0`.
+- Latencia de revocación hasta 1,46 s; R-REV = 2,5 s sigue provisional.
+- Paradas espurias ~0,6 s (solver); sin verificar timeout del firmware, CAN físico, entrega en movimiento.
 
 ## Decisiones pendientes de Narcís
-1. Aprobar o cambiar el requisito propuesto **R-REV = 2,5 s** (pose fuera de 0,30 m / 8° → salida cero).
-2. Periodo de comprobación: 0,5 s (actual) o 1 s (~la mitad de CPU, hasta +0,5 s).
-3. Despliegue de la celda CAN, NVMe (`sudo nvme smart-log /dev/nvme0`) y las cuatro de la nota 20.
+1. Aprobar R-REV = 2,5 s y 0,5–0,85 m de recorrido a ciegas.
+2. Periodo de comprobación 0,5 s o 1 s.
+3. Ejecutar `sudo nvme smart-log /dev/nvme0`; decidir si la Nano es opción de despliegue (habría que medirla).
+4. Celda CAN y decisiones de las notas 20 y 21.
 
 ## Siguientes acciones
-1. Revisión de Narcís de la nota 22 (§5, §6, §8).
-2. Fase 3 solo tras su visto bueno.
+1. Revisión de Narcís de las notas 22 y 23.
+2. F4 solo tras su visto bueno (requiere hardware).
 
 ## Referencias
-Notas `22-fase2-latencia-revocacion.md`, `21-fase2-robustez.md`; plan `19-plan-cierre-y-entrega.md`; identidad `results/22-f2-latency/f2l/candidate-identity.txt`. NX: `/home/jetson/work/reloc-f2l-20261011/` (final), `reloc-f2i`, `f2j`, `f2k`, `f2m`, `reloc-f2h-20261011/` (F2b).
+Notas `23-fase3-rendimiento.md`, `22-fase2-latencia-revocacion.md`; plan `19-plan-cierre-y-entrega.md`; NX `/home/jetson/work/reloc-f3-20261011/`.

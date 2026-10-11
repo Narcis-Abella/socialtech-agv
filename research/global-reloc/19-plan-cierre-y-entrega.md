@@ -21,7 +21,7 @@ Evidence levels, never mixed:
 |---|---|---|
 | F1 Audit and freeze | **VERIFIED** (2026-10-10) | `VALIDATED_IN_REPLAY` |
 | F2 Robustness | **VERIFIED** (2026-10-11), candidate `GR-S2S3-F2c` = `GR-S2S3-F2b` + `4211c6b` + `6cb779a` (revocation latency, note 22); gate `8a88d16`; restart protocol revised 200 -> 50 and run on `F2b` (note 21, Part B); revocation-time requirement R-REV = 2.5 s proposed, not approved | `VALIDATED_IN_REPLAY` |
-| F3 Performance and timeout | PENDING | `VALIDATED_IN_REPLAY`; cold boot part BLOCKED_PHYSICAL |
+| F3 Performance and timeout | **VERIFIED** (2026-10-11) in replay on the NX, note 23; Nano excluded, cold boot clock A BLOCKED_PHYSICAL | `VALIDATED_IN_REPLAY` |
 | F4 Physical calibration | BLOCKED_PHYSICAL | precondition of H1 |
 | F5 Independent benchmark | BLOCKED_PHYSICAL (data to record) | `FORMALLY_BENCHMARKED` |
 | F6 H1 / H2 validation | BLOCKED_PHYSICAL | `VALIDATED_ON_HARDWARE_STATIONARY`, `VALIDATED_WITH_SUPERVISED_MOTION` |
@@ -44,7 +44,7 @@ Evidence levels, never mixed:
 - Stated inside the verdict: the residual latency (proposed R-REV = 2.5 s, to be approved); 2 of 50 false rejects when the platform moves at hand-over; spurious failed checks that stop the output ~0.6 s (3 in 9.4 min on hospital / eco03 windows).
 - Not closed here, moved to physical phases: base firmware command timeout, physical CAN inside the cell, cold boot, live driver, memory beyond 8 min, NVMe stalls of the NX. See note 21, B14.
 
-## F3 — Performance and timeout — PENDING (cold boot BLOCKED_PHYSICAL)
+## F3 — Performance and timeout — VERIFIED in replay (note 23; cold boot BLOCKED_PHYSICAL, Nano not measured)
 
 - Objective: a budget for the single 60 s clock (first sensor message -> `ACCEPTED`) with distributions, and the separate clocks next to it.
 - Pending:

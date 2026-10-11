@@ -1,0 +1,157 @@
+{
+ "processes": {
+  "register_v2": {
+   "runs": 14,
+   "cpu_mean": {
+    "n": 14,
+    "median": 2.035,
+    "p95": 6.188,
+    "max": 10.025,
+    "min": 0.89
+   },
+   "pss_peak_mb": {
+    "n": 14,
+    "median": 49.9,
+    "p95": 51.77,
+    "max": 51.9,
+    "min": 46.5
+   }
+  },
+  "reloc_node": {
+   "runs": 14,
+   "cpu_mean": {
+    "n": 14,
+    "median": 29.659,
+    "p95": 36.759,
+    "max": 36.786,
+    "min": 27.904
+   },
+   "pss_peak_mb": {
+    "n": 14,
+    "median": 101.8,
+    "p95": 273.37,
+    "max": 273.5,
+    "min": 90.2
+   }
+  },
+  "scan_conv": {
+   "runs": 14,
+   "cpu_mean": {
+    "n": 14,
+    "median": 1.85,
+    "p95": 2.026,
+    "max": 2.09,
+    "min": 1.646
+   },
+   "pss_peak_mb": {
+    "n": 14,
+    "median": 15.05,
+    "p95": 15.535,
+    "max": 15.6,
+    "min": 14.4
+   }
+  },
+  "map_server": {
+   "runs": 14,
+   "cpu_mean": {
+    "n": 14,
+    "median": 1.246,
+    "p95": 1.318,
+    "max": 1.32,
+    "min": 1.131
+   },
+   "pss_peak_mb": {
+    "n": 14,
+    "median": 13.0,
+    "p95": 13.8,
+    "max": 13.8,
+    "min": 13.0
+   }
+  },
+  "amcl": {
+   "runs": 14,
+   "cpu_mean": {
+    "n": 14,
+    "median": 6.882,
+    "p95": 9.996,
+    "max": 10.852,
+    "min": 4.549
+   },
+   "pss_peak_mb": {
+    "n": 14,
+    "median": 15.85,
+    "p95": 16.935,
+    "max": 17.0,
+    "min": 15.5
+   }
+  },
+  "lifecycle": {
+   "runs": 14,
+   "cpu_mean": {
+    "n": 14,
+    "median": 1.467,
+    "p95": 1.531,
+    "max": 1.548,
+    "min": 1.363
+   },
+   "pss_peak_mb": {
+    "n": 14,
+    "median": 8.5,
+    "p95": 8.705,
+    "max": 8.9,
+    "min": 8.4
+   }
+  },
+  "bag_play": {
+   "runs": 14,
+   "cpu_mean": {
+    "n": 14,
+    "median": 3.755,
+    "p95": 4.184,
+    "max": 4.395,
+    "min": 3.634
+   },
+   "pss_peak_mb": {
+    "n": 14,
+    "median": 64.1,
+    "p95": 65.625,
+    "max": 66.6,
+    "min": 62.0
+   }
+  },
+  "fastlio_mapping": {
+   "runs": 14,
+   "cpu_mean": {
+    "n": 14,
+    "median": 14.647,
+    "p95": 16.894,
+    "max": 17.174,
+    "min": 12.168
+   },
+   "pss_peak_mb": {
+    "n": 14,
+    "median": 37.25,
+    "p95": 42.72,
+    "max": 46.1,
+    "min": 32.7
+   }
+  },
+  "search_v2": {
+   "runs": 14,
+   "cpu_mean": {
+    "n": 14,
+    "median": 98.71,
+    "p95": 100.715,
+    "max": 100.783,
+    "min": 70.857
+   },
+   "pss_peak_mb": {
+    "n": 14,
+    "median": 59.2,
+    "p95": 62.85,
+    "max": 63.5,
+    "min": 58.3
+   }
+  }
+ }
+}
