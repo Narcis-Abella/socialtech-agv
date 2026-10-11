@@ -25,7 +25,7 @@ Evidence levels, never mixed:
 | F4 Physical calibration | BLOCKED_PHYSICAL | precondition of H1 |
 | F5 Independent benchmark | BLOCKED_PHYSICAL (data to record) | `FORMALLY_BENCHMARKED` |
 | F6 H1 / H2 validation | BLOCKED_PHYSICAL | `VALIDATED_ON_HARDWARE_STATIONARY`, `VALIDATED_WITH_SUPERVISED_MOTION` |
-| F7 Documentation and handover to Narcís | PENDING | - |
+| F7 Documentation and handover to Narcís | **VERIFIED as SOFTWARE HANDOVER** (2026-10-11), entry point [24-entrega-final.md](24-entrega-final.md). Plan criterion "clean checkout reproduces S2 / S3 / negative on another Jetson" **not met** and Narcís has not reviewed the figures; O8 (build line of `register_v2`) only partly closed | - (documentation; adds no evidence level) |
 
 ## F1 — Audit and freeze — VERIFIED
 
@@ -87,9 +87,11 @@ Evidence levels, never mixed:
 - Closing criterion: every H1 row executed with its outcome recorded -> `VALIDATED_ON_HARDWARE_STATIONARY`; every H2 row -> `VALIDATED_WITH_SUPERVISED_MOTION`. A failed row stays failed in the table.
 - Links: note 18 section 7.
 
-## F7 — Documentation and handover to Narcís — PENDING
+## F7 — Documentation and handover to Narcís — VERIFIED as software handover (2026-10-11)
 
 - Objective: someone else can rebuild, run and judge the candidate.
 - Pending: build recipe of `register_v2` and of `socialtech:reloc-online` in the repo, images exported or rebuilt from a stated commit (O8); one results document with every number pointing to its data and command; list of invalid runs and of our own mistakes; decisions taken by Narcís recorded with date; overlay figures for visual judgement; PR to `feat/nav-bench-a` (push only when the human says so).
 - Closing criterion: a clean checkout plus the documented steps reproduces S2 / S3 / negative on another Jetson or after a reflash; Narcís has reviewed the figures.
 - Links: AGENTS.md "The standard", notes 15-20.
+- Done (2026-10-11): one handover note, [24-entrega-final.md](24-entrega-final.md): problem, research and selection, architecture, candidate identity (evidence commit `6cb779a`, head differs by two harness/diagnostic commits), consolidated results with sources, reproducibility (documented vs executed), limits and NVMe incident, resumption of F4-F6, summary for Narcís. Static checks only (12 test files on the laptop, markdown links, secrets/host scan of the diff). No code, benchmark or evidence changed; F4, F5, F6 stay `BLOCKED_PHYSICAL`. PR to `feat/nav-bench-a`, left open for review.
+- Not done, carried: reproduction on a clean checkout / another Jetson, exported images, recorded compiler line of `register_v2` (O8), review of the figures by Narcís, his decisions (note 20 section 7, note 22 section 6).
