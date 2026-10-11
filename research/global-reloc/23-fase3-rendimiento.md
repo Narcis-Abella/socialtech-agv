@@ -1,5 +1,7 @@
 # Note 23 - Phase 3: performance and resources on the Orin NX (candidate GR-S2S3-F2c, frozen)
 
+Status: closed, see section 10 (R-REV-SW = 2.5 s adopted as an internal software requirement).
+
 Raw data on the NX: `/home/jetson/work/reloc-f3-20261011/` (14 new runs, `ev/` = evidence copy) and the 99 runs of `/home/jetson/work/reloc-f2l-20261011/runs/` (final tree of note 22, re-analysed, nothing re-run). Evidence in `results/23-f3-performance/`. Labels: **M** measured, **I** inferred.
 
 ## 1. Scope and what was NOT run
@@ -74,3 +76,9 @@ Verdict: **FASE 3: VERIFIED - VALIDATED_IN_REPLAY on the Orin NX**, restricted t
 
 ## 9. Reproduce
 `f3_summary.py stages|teg|cost RUNS_DIR [REGEX]` (aggregates), `io_stall_audit.py RUNS_DIR...`; runs: `chain9.sh` (`batch_s2s3.sh cases-f3.csv TAG`, `DOCKER_CPUS=N`, `batch_latency.sh f3q2 k00`, `... f3q2r k11_gyro_0p5_from_35`) in a new NX root copied from `reloc-f2l-20261011` (`tools`, `windows`). Outputs: `results/23-f3-performance/` (`f3/` new runs, `f2c-runs/` re-analysis of the 99 runs).
+
+## 10. Closure (2026-10-11, documentation only)
+- Decision of the team after reviewing this note: **F3 = VERIFIED - VALIDATED_IN_REPLAY_ON_JETSON_NX**. The evidence is sufficient for the scope evaluated; no more benchmarks or optimisation in this phase. F2c stays frozen; no code or evidence changed by this closure.
+- **R-REV-SW = 2.5 s** (from note 22) is adopted as an **internal software requirement** for revocation of the authorization (fault after `LOCALIZED` -> zero gate output), applicable to the replay scenarios and conditions of notes 22 and 23 (measured max 1.46 s at quota 8, 0.65 s at `--cpus 2`). It is **not** a physical safety limit and not a universal guarantee. Real stop, base firmware command timeout, physical CAN and motion remain pending for Narcis; the 0.5-0.85 m of blind travel in note 22 still needs his judgement.
+- Figures re-checked against `results/23-f3-performance/` (`f2c-runs/teg-all.json`: 99 runs, RAM max 2200 MB, swap rise 0, GR3D 0 %, Tj max 67.218 C; `f3/teg-f3.json`: 14 runs, RAM max 2158 MB, Tj max 66.812 C). The tables above were not changed.
+- Phase status: F1 VERIFIED; F2 VERIFIED (`VALIDATED_IN_REPLAY`); F3 VERIFIED (`VALIDATED_IN_REPLAY_ON_JETSON_NX`); F4, F5, F6 BLOCKED_PHYSICAL; F7 PENDING.

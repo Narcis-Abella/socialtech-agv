@@ -3,7 +3,7 @@
 Fecha: 2026-10-11 · Rama: `feat/global-reloc` (commits locales, sin push) · F1 congelado `GR-S2S3-F1` = `c026a7b`, intacto · Candidato `GR-S2S3-F2c` congelado (F2b + `4211c6b` + `6cb779a`; gate `8a88d16`).
 
 ## Fase actual
-F1 y F2 **VERIFIED**. Fase 3 **VERIFIED — VALIDATED_IN_REPLAY** en la Orin NX (nota 23), con exclusiones explícitas: Nano no medida, arranque en frío (reloj A) BLOCKED_PHYSICAL, sin Nav2 en paralelo. Sin validación física; seguridad completa del AGV no demostrada. F4 no iniciada. `can0` sin uso.
+F1 y F2 **VERIFIED**. Fase 3 **VERIFIED — VALIDATED_IN_REPLAY_ON_JETSON_NX** (cerrada 2026-10-11, nota 23 sección 10), con exclusiones explícitas: Nano no medida, arranque en frío (reloj A) BLOCKED_PHYSICAL, sin Nav2 en paralelo. Sin validación física; seguridad completa del AGV no demostrada. F4/F5/F6 BLOCKED_PHYSICAL; F7 PENDING. F4 no iniciada. **R-REV-SW = 2,5 s adoptado** como requisito interno de software (replay), no límite de seguridad física. `can0` sin uso.
 
 ## Último resultado (nota 23)
 - Recursos (99 ejecuciones del árbol F2c + 14 nuevas): RAM del sistema máx. 2,2 GB, swap constante, GPU 0 %, Tj máx. 67,2 °C, pico 14,05 W, ≤3,1 núcleos de 8 (p95).
@@ -14,11 +14,11 @@ F1 y F2 **VERIFIED**. Fase 3 **VERIFIED — VALIDATED_IN_REPLAY** en la Orin NX 
 
 ## Problemas principales
 - NVMe: causa desconocida; falta `sudo nvme smart-log /dev/nvme0`.
-- Latencia de revocación hasta 1,46 s; R-REV = 2,5 s sigue provisional.
+- Latencia de revocación hasta 1,46 s; R-REV-SW = 2,5 s adoptado (software), parada real/firmware/CAN/movimiento pendientes de Narcís.
 - Paradas espurias ~0,6 s (solver); sin verificar timeout del firmware, CAN físico, entrega en movimiento.
 
 ## Decisiones pendientes de Narcís
-1. Aprobar R-REV = 2,5 s y 0,5–0,85 m de recorrido a ciegas.
+1. Valorar 0,5–0,85 m de recorrido a ciegas y la parada física (R-REV-SW ya adoptado como requisito de software).
 2. Periodo de comprobación 0,5 s o 1 s.
 3. Ejecutar `sudo nvme smart-log /dev/nvme0`; decidir si la Nano es opción de despliegue (habría que medirla).
 4. Celda CAN y decisiones de las notas 20 y 21.

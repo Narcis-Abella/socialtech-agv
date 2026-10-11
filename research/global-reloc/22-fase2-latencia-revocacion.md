@@ -218,3 +218,5 @@ R=<root> bash tools/global_reloc_3d/batch_s2s3.sh cases-f1.csv <tag>            
 bash tools/global_reloc_3d/gate_cell_test.sh <out>                                # virtual CAN only
 cd tools/global_reloc_3d && for t in test_*.py; do python3 -B $t || break; done   # 12 files
 ```
+
+> Addendum 2026-10-11: R-REV = 2.5 s was later adopted by the team as **R-REV-SW = 2.5 s**, an internal software requirement (replay), not a physical safety limit; see note 23 section 10. The text above is the historical record and was not changed.

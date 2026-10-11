@@ -1,6 +1,6 @@
 # 19 — Closing and delivery plan for the global relocalization candidate
 
-Date: 2026-10-11. Branch `feat/global-reloc`. Candidate: `GR-S2S3-F1`, commit `c026a7b` (FAST-LIO2 -> FFT correlative search -> small_gicp -> frozen gate -> `/initialpose` -> AMCL).
+Date: 2026-10-11. Branch `feat/global-reloc`. Candidate at creation: `GR-S2S3-F1`, commit `c026a7b` (current frozen candidate: `GR-S2S3-F2c`) (FAST-LIO2 -> FFT correlative search -> small_gicp -> frozen gate -> `/initialpose` -> AMCL).
 This file is the index of the remaining work. Each phase is closed only by its own criterion. Update the status column here, nowhere else.
 
 Phase status: `PENDING`, `IN_PROGRESS`, `VERIFIED`, `BLOCKED_PHYSICAL` (needs a person, the robot or a measurement).
@@ -20,8 +20,8 @@ Evidence levels, never mixed:
 | Phase | Status | Level it can deliver |
 |---|---|---|
 | F1 Audit and freeze | **VERIFIED** (2026-10-10) | `VALIDATED_IN_REPLAY` |
-| F2 Robustness | **VERIFIED** (2026-10-11), candidate `GR-S2S3-F2c` = `GR-S2S3-F2b` + `4211c6b` + `6cb779a` (revocation latency, note 22); gate `8a88d16`; restart protocol revised 200 -> 50 and run on `F2b` (note 21, Part B); revocation-time requirement R-REV = 2.5 s proposed, not approved | `VALIDATED_IN_REPLAY` |
-| F3 Performance and timeout | **VERIFIED** (2026-10-11) in replay on the NX, note 23; Nano excluded, cold boot clock A BLOCKED_PHYSICAL | `VALIDATED_IN_REPLAY` |
+| F2 Robustness | **VERIFIED** (2026-10-11), candidate `GR-S2S3-F2c` = `GR-S2S3-F2b` + `4211c6b` + `6cb779a` (revocation latency, note 22); gate `8a88d16`; restart protocol revised 200 -> 50 and run on `F2b` (note 21, Part B); **R-REV-SW = 2.5 s adopted 2026-10-11 as an internal software requirement** (replay, not a physical safety limit; see note 23 section 10) | `VALIDATED_IN_REPLAY` |
+| F3 Performance and timeout | **VERIFIED — `VALIDATED_IN_REPLAY_ON_JETSON_NX`** (closed 2026-10-11), note 23; Nano excluded, cold boot clock A BLOCKED_PHYSICAL, no Nav2/AI concurrency measured | `VALIDATED_IN_REPLAY` (on the NX) |
 | F4 Physical calibration | BLOCKED_PHYSICAL | precondition of H1 |
 | F5 Independent benchmark | BLOCKED_PHYSICAL (data to record) | `FORMALLY_BENCHMARKED` |
 | F6 H1 / H2 validation | BLOCKED_PHYSICAL | `VALIDATED_ON_HARDWARE_STATIONARY`, `VALIDATED_WITH_SUPERVISED_MOTION` |
@@ -44,7 +44,12 @@ Evidence levels, never mixed:
 - Stated inside the verdict: the residual latency (proposed R-REV = 2.5 s, to be approved); 2 of 50 false rejects when the platform moves at hand-over; spurious failed checks that stop the output ~0.6 s (3 in 9.4 min on hospital / eco03 windows).
 - Not closed here, moved to physical phases: base firmware command timeout, physical CAN inside the cell, cold boot, live driver, memory beyond 8 min, NVMe stalls of the NX. See note 21, B14.
 
-## F3 — Performance and timeout — VERIFIED in replay (note 23; cold boot BLOCKED_PHYSICAL, Nano not measured)
+## F3 — Performance and timeout — VERIFIED, `VALIDATED_IN_REPLAY_ON_JETSON_NX` (note 23; cold boot BLOCKED_PHYSICAL, Nano not measured)
+
+- Closed 2026-10-11 by decision of the team: the evidence is sufficient for the scope evaluated; no further benchmarks or optimisation in this phase. Candidate `GR-S2S3-F2c` stays frozen.
+- Result (note 23): 99 earlier runs of the F2c tree re-analysed + 14 new runs (6 nominal, 4 with `--cpus 4`/`--cpus 2`, 4 with supervision at `--cpus 2`). Max system RAM 2.2 GB, swap constant, GPU 0 %, Tj max 67.2 C, peak 14.05 W, <= 3.1 of 8 cores (p95). S2 accepts at 18.8-18.95 s, S3 at 41.8-41.96 s (margins 41 s / 18 s); `--cpus 2` adds 2.1-2.4 s with the same outcome; revocation 0-0.65 s at `--cpus 2`, 0-1.46 s at quota 8. No regression observed. Two S3 runs unscorable (reference gap). NVMe: recurring kernel I/O timeouts, cause unresolved, no interference with the algorithm observed, SMART pending (needs root).
+- Limits stated: Nano not measured; cold boot BLOCKED_PHYSICAL; no concurrency with Nav2 or the AI layer; no physical validation.
+- The original pending list below is kept as written; items 3 (10 identical repeats: 3 per window + 32 identical-input F2 runs were used instead, note 23 section 4), 4 (Nano) and 6 (cold boot) were not done as written, see note 23 section 1.
 
 - Objective: a budget for the single 60 s clock (first sensor message -> `ACCEPTED`) with distributions, and the separate clocks next to it.
 - Pending:
