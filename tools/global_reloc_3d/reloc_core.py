@@ -452,6 +452,11 @@ class LocalizationMonitor:
         else:
             self.bad_since, self.bad_n = None, 0
 
+    @property
+    def doubt(self):
+        """AMCL is outside the limits right now. Not yet a loss (that needs hold_s), but no reason to keep the permit meanwhile."""
+        return self.bad_since is not None
+
     def lost(self, mono):
         """Reason for revoking, or None."""
         if mono - self.last_tf > self.tf_stall_s:

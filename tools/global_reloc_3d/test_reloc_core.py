@@ -259,6 +259,16 @@ class Phase2Test(unittest.TestCase):
         self.assertEqual(m.lost(t + 3.4), 'amcl_incoherent')
         self.assertLessEqual(len(m.report()['trace_t_xy_yaw']), 720)
 
+    def test_localization_monitor_doubt_precedes_loss(self):
+        m = rc.LocalizationMonitor(0.)
+        m.add(0., .05, 1.)
+        self.assertFalse(m.doubt)
+        m.add(.1, .6, 1.)                                      # first sample outside the limits: doubt at once, no loss yet
+        self.assertTrue(m.doubt)
+        self.assertIsNone(m.lost(.1))
+        m.add(.2, .05, 1.)                                     # back inside: the doubt clears
+        self.assertFalse(m.doubt)
+
     def test_monitor_and_buffers_are_bounded(self):
         m = rc.LocalizationMonitor(0.)
         rows = []

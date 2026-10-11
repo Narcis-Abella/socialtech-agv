@@ -134,8 +134,9 @@ class RelocNode(Node):
         # The consumer is nav_gate.py; a dead, hung or duplicated publisher closes the gate there.
         self.permit_pub = self.create_publisher(Bool, '/global_reloc/nav_permit', 10)
         self.create_subscription(TFMessage, '/tf', self.on_tf, 100)
-        self.permit_stats = {'true': 0, 'false': 0, 'first_true_mono': None, 'last_true_mono': None}
+        self.permit_stats = {'true': 0, 'false': 0, 'withheld_in_doubt': 0, 'first_true_mono': None, 'last_true_mono': None}
         self.supervision = None
+        self.map_fails = 0
         self.kill_map_check()
         self.recent = collections.deque()      # newest body clouds (t, xyz, arrival), MAP_CHECK_WINDOW_S of them: input of map_check.py
         self.check = None                      # running map-check worker
@@ -426,10 +427,15 @@ class RelocNode(Node):
                 self.amcl_delta = rc.planar_delta(amcl, own)      # what AMCL has moved the robot by, relative to the node's own pose
 
     def tick_permit(self):
-        ok = self.att.state == 'LOCALIZED'
+        # Withheld while in doubt: AMCL outside the coherence limits, or the last map check failed and its repeat has not passed
+        # yet. The state stays LOCALIZED until the loss rules decide; the gate closes meanwhile and reopens if the doubt clears.
+        doubt = self.att.state == 'LOCALIZED' and (
+            (self.supervision is not None and self.supervision.doubt) or (self.map_supervision == 'enforce' and self.map_fails > 0))
+        ok = self.att.state == 'LOCALIZED' and not doubt
         m = Bool(); m.data = ok
         self.permit_pub.publish(m)
         self.permit_stats['true' if ok else 'false'] += 1
+        self.permit_stats['withheld_in_doubt'] += doubt
         if ok:
             self.permit_stats['first_true_mono'] = self.permit_stats['first_true_mono'] or self.mono()
             self.permit_stats['last_true_mono'] = self.mono()
