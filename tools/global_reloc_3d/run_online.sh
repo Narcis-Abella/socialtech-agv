@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Host side (NX): one containerised end-to-end run. Env: NAME BAG MAPYAML MAPXYZ OFFSET TAG [PLAY_S MODE H MAX_ATTEMPTS KEEP_PLAYING LEAD PRE]
 # Output: $R/runs/$NAME-$TAG (new each time: docker writes as root). Also samples GPU/power with host tegrastats.
+# DOCKER_CPUS (default 8): CPU quota of the container, for the contention runs of phase 3 (note 23).
 set -u
 R=${R:-/home/jetson/work/reloc-online-20261009}
 B=/home/jetson/work/global-reloc-3d-20261009
@@ -17,7 +18,7 @@ tegrastats --interval 500 > "$out/tegrastats.log" 2>/dev/null & teg=$!
 dom=${DOMAIN:-$((100+RANDOM%100))}; echo "ros_domain_id: $dom" >> "$out/host.txt"
 F2ENV=""; for v in WITH_GATE STOP_AT NO_PLAY KILL_PLAY_AT KILL_PLAY_SIG CONT_PLAY_AT KILL_AMCL_AT KILL_AMCL_SIG SIG_NODE_AT SIG_NODE_SIG CONT_NODE_AT KILL_GATE_AT CLOCK_JUMP_AT CLOCK_JUMP_SEC ROGUE_POSE_AT ROGUE_X ROGUE_Y ROGUE_PERMIT_AT AFTER_LOST_S AUTH_TIMES KEEP_FAILED_CHECKS; do
   [ -n "${!v:-}" ] && F2ENV="$F2ENV -e $v=${!v}"; done
-docker run --rm --network host --cpus 8 -e ROS_DOMAIN_ID=$dom $F2ENV \
+docker run --rm --network host --cpus ${DOCKER_CPUS:-8} -e ROS_DOMAIN_ID=$dom $F2ENV \
   -e BAG=/bag -e MAPYAML=/map/$(basename "$MAPYAML") -e MAPXYZ=/prior/map.xyz -e OUT=/out -e OFFSET=$OFFSET \
   -e PLAY_S=${PLAY_S:-100} -e MODE=${MODE:-s3} -e H=${H:-0.53} -e MAX_ATTEMPTS=${MAX_ATTEMPTS:-1} -e KEEP_PLAYING=${KEEP_PLAYING:-0} -e LEAD=${LEAD:-12} -e PRE=${PRE:-2.5} -e REGISTER_BIN=${REGISTER_BIN:-} -e LAUNCH_EXTRA="${LAUNCH_EXTRA:-}" -e RELAY_SPEC="${RELAY_SPEC:-}" -e PLAY_ARGS_EXTRA="${PLAY_ARGS_EXTRA:-}" -e KILL_NODE_AT=${KILL_NODE_AT:-} -e KILL_LIO_AT=${KILL_LIO_AT:-} -e KILL_LIO_SIG=${KILL_LIO_SIG:-} -e AUTH_AT=${AUTH_AT:-} -e NODE2_ARGS="${NODE2_ARGS:-}" \
   -v "$BAG":/bag:ro -v "$MAPYAML":/map/$(basename "$MAPYAML"):ro -v "$img":/map/$(basename "$img"):ro -v "$MAPXYZ":/prior/map.xyz:ro -v $R/tools:/tools:ro \
