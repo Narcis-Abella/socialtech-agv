@@ -1,0 +1,1 @@
+w1 (3 runs, k11 x3): valid runs of an INTERMEDIATE tree (persistent worker, period 1 s, freshness 2 s; no tail rule, confirm check not served). Kept as evidence of why the tail rule was added: k11_r3-w1 latency 2.19 s.

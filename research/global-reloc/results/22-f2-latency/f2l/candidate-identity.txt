@@ -1,0 +1,45 @@
+# Candidate GR-S2S3-F2c (2026-10-11). sha256. Paths under /home/jetson are on the Orin NX.
+status: FASE 2 VERIFIED - VALIDATED_IN_REPLAY (note 22). Not validated on hardware. Revocation-time requirement R-REV = 2.5 s proposed, not approved.
+= GR-S2S3-F2b (note 21, ../../21-f2/f2h/candidate-identity.txt) + method commits 4211c6b, 6cb779a; gate commit 8a88d16 unchanged
+harness / evaluator commits: d48c8ac (permit_exposure timeline, batch_latency.sh, batch_restarts RUN_ENV), 6cb779a (latency_summary.py)
+after the runs: 22f9a80 adds KEEP_FAILED_CHECKS (diagnosis, off by default) to reloc_node.py and run_online.sh; used only in tree f2m
+branch feat/global-reloc, local, not pushed. F1 GR-S2S3-F1 = c026a7b untouched.
+50 software restarts: NOT repeated for this candidate (note 22, section 8); those of note 21 are evidence of GR-S2S3-F2b.
+
+## tree that produced every result of note 22 sections 5, 7, 8 (NX root /home/jetson/work/reloc-f2l-20261011, all hashes in tools-sha256-f2l.txt)
+751d1fa1c509eefe17734957f8bcd581aa6710bde960e0177f30a30faa801b2a  can_deadman.py
+8744868dc132124fe8636c0901ab6e0c98d00bf7e89a5e30e24e0e3006070341  correlative_search.py
+ff37d0f11e79a4ce6a6e489eb2848a63a48cd1eba674878d92aa26ea1ed69141  f2_check.py
+ef0428de612c51943659e94156b4ff234aa92bf2a795eff52a502208718f637b  fault_relay.py
+f5a295ea4093a655b39f35e84af83747406e09b60c135e820c1e5aca33df29da  gate_outlet.py
+293f9517fbb13160ece2c444ebc2bd68469dc610cd7fbf1f0ffd271e109f9899  imu_ready.py
+b3cd2f27abf59356cc67ad392218db284905fb12a4ea3afde0f16753af8fc098  lio_submap.py
+7fad4a2ff471343911f7b90b160cb0093613dda304dcc8db4894c2e820e20496  map_check.py
+3dc43a3be91fd1ddcc9bba8babdbcdcc55b17a3ca2b7b4ddbbce95bb9f16a86e  nav_gate.py
+6872eeed0c389401c55c73dcd7e011e1647b1d4ac3744ff14c7d95055d8f7dd0  offline_s2.py
+fc7a5ca00cdc8c8130680c41ec4d5468bf2707c48fddd8cec9788a0451354eb2  permit_exposure.py
+7ae6411b9afe5451e46bc78be2b25d0c0d19b185f8d9fa1a07cc1f59f3c25c8c  reloc_core.py
+b1577c3894bc1df5683640b323b24e28f15c873358ebbcafd154ea5a9d5f7a49  reloc_node.py
+ac17d83e19fbf3d30aececb01a65bf89bb8138023972a8a262cbfa0da60fe470  search_tiles.py
+97d325ae05d9ae8ea02fc56cb75cbafcb850136d59104b1ba1ecdc01544d44f9  search_v2.py
+befad8238bd56744bb48c074a0d9a421ba91a2ae2026b82078a9470861693f26  verify.py
+4ec789a759838cf1418902ca766e48d5a32dd5d171743b6da975f5091dedffdf  batch_faults_f2.sh
+d25705f9adbd8f80f57565748ab542d4f02b21645e1cec310a3819090cdda3d6  batch_latency.sh
+351b0024547482e540e40f1eaadfee62daf84a15b5177a3f0f80739ce4bbc560  batch_restarts.sh
+fe99725d4a1dd5641fbf5ca31181f4530fbe50e4bc113316228796e669649b39  batch_s2s3.sh
+aba8c0f55304ece3b95f56192e4966c6c8257852c4bd83466561c0e49c603466  online_inner.sh
+b374db0ef81f3b57764d54659762437197fac20ad2cadeb421d3bd4429c2d5ba  run_online.sh
+adeb0ee95bd70190df9cf61a0bd09139c7c376da684ac99a197beaafcc226330  register_v2
+7969621c7c6007b537899a97475b2f626f46bd203bb9b01ff0ad0e7cdc788c3d  launch/reloc_online.launch.py
+
+## same as GR-S2S3-F2b (compare with ../../21-f2/f2h/candidate-identity.txt): nav_gate.py, gate_outlet.py, can_deadman.py, verify.py, search_v2.py,
+## correlative_search.py, search_tiles.py, lio_submap.py, imu_ready.py, launch/reloc_online.launch.py, register_v2 binary
+## changed: reloc_node.py, reloc_core.py, map_check.py (method); permit_exposure.py, batch_restarts.sh, batch_latency.sh (new), latency_summary.py (new, not on the NX tree)
+
+## HEAD after the diagnostic commit
+63dbc76377a200b63fc498086abff35e8052d4d93983b04e66adc80722ca1472  reloc_node.py
+a78b109322442e8aa186913c33325b13716925137f6e128cf0c1884c32fdb864  run_online.sh
+3c26e6919b467a51a040af73cfd44400b90d00bb19d3930d24535e3843b8a635  latency_summary.py
+
+## images (unchanged): socialtech:reloc-online sha256:a15d214c..., socialtech:mapper-verify sha256:88380b4b..., socialtech:gate-can sha256:54430fca...
+## NX roots: reloc-f2l-20261011 (final), reloc-f2m-20261011 (diagnosis), reloc-f2i / f2j / f2k-20261011 (intermediate trees, see ../intermediate/)

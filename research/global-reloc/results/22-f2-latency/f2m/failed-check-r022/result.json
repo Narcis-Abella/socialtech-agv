@@ -1,0 +1,23 @@
+{
+  "kiss_valid": true,
+  "config": {"voxel": 0.300000012, "quatro": false, "ratio_test": true, "max_corr": 5000, "normal_gain": 3, "fpfh_gain": 5, "linearity": 1, "gicp_dist": 1, "mode": "gicp_from_init"},
+  "source_keypoints": 0,
+  "target_keypoints": 0,
+  "cross_checked": 0,
+  "initial_matches": 0,
+  "final_correspondences": 0,
+  "rotation_inliers": 0,
+  "translation_inliers": 0,
+  "kiss_seconds": 2.1985e-05,
+  "total_seconds": 0.085517211,
+  "gicp_ran": true,
+  "gicp_converged": false,
+  "gicp_iterations": 19,
+  "gicp_inliers": 1405,
+  "gicp_error": 84.8242172,
+  "source_points": 3549,
+  "target_points": 66509,
+  "check_points": 3388,
+  "T_map_lidar_kiss": [[0.825453018,-0.564347266,0.0118101213,12.156876],[0.564435218,0.825455275,-0.00603942917,-10.8269557],[-0.00634039158,0.0116513135,0.99991202,0.546460478],[0,0,0,1]],
+  "T_map_lidar_refined": [[0.832366433,-0.554051276,0.0139034226,12.1066429],[0.554153897,0.832400468,-0.00478735997,-10.8065312],[-0.00892077261,0.0116894736,0.999891882,0.536016574],[0,0,0,1]]
+}

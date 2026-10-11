@@ -1,0 +1,84 @@
+h00_nominal_supervised-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=27.41 gate_open_s=42.1 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h40_relay_passthrough_control-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=26.71 gate_open_s=41.9 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h05_input_gap_2s_in_s2-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=28.93 fault_s=4.42 gate_open_s=2.4 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h07_input_stops_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(odometry_stalled)  | class=correct_accept localized_s=25.89 fault_s=34.42 lost_s=37.29 fault_to_lost_s=2.87 gate_open_s=10.1 gate_last_nonzero_after_revoke_s=-1.066 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h08_input_gap_10s_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(odometry_stalled)  | class=correct_accept localized_s=26.32 fault_s=34.42 lost_s=37.27 fault_to_lost_s=2.86 gate_open_s=9.7 gate_last_nonzero_after_revoke_s=-1.044 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h09_lidar_blackout_2s_in_s2-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=27.04 gate_open_s=2.2 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h10_imu_lost_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(odometry_stalled)  | class=correct_accept localized_s=27.7 lost_s=38.0 gate_open_s=9.0 gate_last_nonzero_after_revoke_s=-1.087 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h11_lidar_lost_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(odometry_stalled)  | class=correct_accept localized_s=26.11 lost_s=38.06 gate_open_s=10.7 gate_last_nonzero_after_revoke_s=-1.038 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h19_both_epoch_jump_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(input_stamp_backward_imu)  | class=correct_accept localized_s=26.12 lost_s=35.02 gate_open_s=8.7 gate_last_nonzero_after_revoke_s=0.003 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h20_imu_stamp_plus_1000s_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(input_stamp_jump_imu)  | class=correct_accept localized_s=25.4 lost_s=35.05 gate_open_s=9.4 gate_last_nonzero_after_revoke_s=-0.03 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h42_lidar_reversed_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(input_stamp_backward_lidar)  | class=correct_accept localized_s=25.3 lost_s=35.3 gate_open_s=9.7 gate_last_nonzero_after_revoke_s=-0.077 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h43_imu_reversed_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(input_stamp_backward_imu)  | class=correct_accept localized_s=25.23 lost_s=35.08 gate_open_s=9.5 gate_last_nonzero_after_revoke_s=-0.053 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+d01_gyro_0p5_from_8_search-f2l PASS  | HANDOFF_FAILED(map_check_geometry)  | class=accepted_not_published gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+d02_gyro_0p5_from_15_late_search-f2l PASS  | HANDOFF_FAILED(map_check_solver)  | class=accepted_not_published gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+d03_gyro_0p3_from_4-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(odometry_stalled)  | class=correct_accept localized_s=27.05 lost_s=78.0 gate_open_s=48.9 gate_last_nonzero_after_revoke_s=-1.081 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+d05_gyro_0p5_6_to_12_transient-f2l PASS  | HANDOFF_FAILED(map_check_shift)  | class=accepted_not_published gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+d06_acc_x1p5_from_8-f2l PASS  | LOCALIZED(None)/LOCALIZED(None) (after teardown: LOCALIZATION_LOST(odometry_stalled)) | class=correct_accept localized_s=25.4 gate_open_s=51.3 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+d07_gyro_0p5_from_18_at_handover-f2l PASS  | HANDOFF_FAILED(map_check_geometry)  | class=accepted_not_published gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+d08_gyro_0p5_from_21_after_pose-f2l PASS  | HANDOFF_FAILED(amcl_not_confirmed)  | class=correct_accept gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+d09_gyro_0p3_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent)  | class=correct_accept localized_s=25.39 lost_s=43.99 gate_open_s=17.8 gate_last_nonzero_after_revoke_s=-0.467 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+d10_acc_x1p5_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZED(None) (after teardown: LOCALIZATION_LOST(odometry_stalled)) | class=correct_accept localized_s=25.21 gate_open_s=51.5 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h21_clock_back_in_s2_search-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=26.31 fault_s=7.42 gate_open_s=2.0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h22_clock_forward_in_s2_search-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=25.39 fault_s=7.42 gate_open_s=1.8 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h23_clock_back_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZED(None) (after teardown: LOCALIZATION_LOST(odometry_stalled)) | class=correct_accept localized_s=25.95 fault_s=34.42 gate_open_s=50.7 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h24_clock_forward_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZED(None) (after teardown: LOCALIZATION_LOST(odometry_stalled)) | class=correct_accept localized_s=25.42 fault_s=34.42 gate_open_s=51.3 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h25_lio_killed_after_localized-f2l INVALID EXPECT | LOCALIZED(None)/LOCALIZATION_LOST(odometry_stalled) (after teardown: platform_io_stall:26.9s) | class=correct_accept localized_s=25.92 lost_s=35.57 gate_open_s=8.4 gate_last_nonzero_after_revoke_s=-1.039 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h26_lio_frozen_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(odometry_stalled)  | class=correct_accept localized_s=25.4 lost_s=37.3 gate_open_s=10.6 gate_last_nonzero_after_revoke_s=-1.073 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h27_lio_diverges_in_s2-f2l PASS  | HANDOFF_FAILED(map_check_solver)  | class=accepted_not_published gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h44_lio_gyro_bias_0p1_in_s2-f2l FAIL EXPECT | LOCALIZED(None)/LOCALIZED(None) (after teardown: LOCALIZATION_LOST(odometry_stalled)) | class=correct_accept localized_s=25.26 gate_open_s=51.4 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h45_lio_gyro_bias_0p2_in_s2-f2l FAIL EXPECT | LOCALIZED(None)/LOCALIZED(None) (after teardown: LOCALIZATION_LOST(odometry_stalled)) | class=correct_accept localized_s=25.52 gate_open_s=51.2 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h28_lio_diverges_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent)  | class=correct_accept localized_s=27.33 lost_s=40.88 gate_open_s=12.8 gate_last_nonzero_after_revoke_s=-0.467 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h29_lio_acc_x3_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible)  | class=correct_accept localized_s=25.35 lost_s=35.7 gate_open_s=10.0 gate_last_nonzero_after_revoke_s=-0.082 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h30_amcl_killed_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(amcl_silent)  | class=correct_accept localized_s=26.32 fault_s=34.42 lost_s=37.32 fault_to_lost_s=2.9 gate_open_s=10.8 gate_last_nonzero_after_revoke_s=0.007 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h31_amcl_frozen_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(amcl_silent)  | class=correct_accept localized_s=25.41 fault_s=34.42 lost_s=37.31 fault_to_lost_s=2.89 gate_open_s=11.6 gate_last_nonzero_after_revoke_s=-0.079 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h32_amcl_moved_by_foreign_initialpose-f2l FAIL EXPECT | LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent)  | class=correct_accept localized_s=25.42 fault_s=34.43 lost_s=36.72 fault_to_lost_s=2.29 gate_open_s=9.9 gate_last_nonzero_after_revoke_s=-1.186 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h33_amcl_killed_in_handoff-f2l PASS  | HANDOFF_FAILED(amcl_not_confirmed)  | class=correct_accept fault_s=20.42 gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h34_node_killed_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=25.35 fault_s=34.42 gate_open_s=9.2 gate_last_nonzero_after_revoke_s=0.405 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h35_node_frozen_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZED(None) (after teardown: LOCALIZATION_LOST(supervisor_stalled)) | class=correct_accept localized_s=25.42 fault_s=34.43 gate_open_s=9.2 gate_last_nonzero_after_revoke_s=0.41 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h36_node_frozen_5s_then_resumes-f2l PASS  | LOCALIZED(None)/LOCALIZATION_LOST(supervisor_stalled)  | class=correct_accept localized_s=25.91 fault_s=34.42 lost_s=39.43 fault_to_lost_s=5.01 gate_open_s=8.7 gate_last_nonzero_after_revoke_s=0.406 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h37_gate_killed_after_localized-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=25.41 fault_s=34.42 gate_open_s=8.7 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h38_second_permit_publisher-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=25.93 fault_s=0.42 gate_open_s=0 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+h39_foreign_permit_after_node_death-f2l PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=25.34 fault_s=29.39 gate_open_s=4.9 gate_last_nonzero_after_revoke_s=-3.891 orphans=fastlio=0 search=0 register=0
+BATCH_DONE

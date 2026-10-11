@@ -1,0 +1,9 @@
+run,observed,verdict,gate_open_s,out_at_s,close_at_s,latency_s,exposure_max_xy_m,exposure_max_yaw_deg,first_failed_check_s,checks,checks_failed,check_wall_s_median,max_pass_age_s,withheld_in_doubt,withheld_stale,worker_cpu_pct_of_core,min_support_passed,min_tail_support_passed
+h28_lio_diverges_after_localized-f2l,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,12.8,11.949,13.083,1.134,0.54,9.78,"[12.7, 13.1]",25,2,0.35,1.42,4,0,62.8,0.726,0.707
+h29_lio_acc_x3_after_localized-f2l,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,9.999,,10.267,0.0,,,,19,0,0.35,0.99,0,0,63.6,0.928,0.918
+h32_amcl_moved_by_foreign_initialpose-f2l,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),FAIL,9.899,,10.115,0.0,,,"[10.5, 10.85]",21,2,0.35,1.36,11,0,64.1,0.993,0.995
+d09_gyro_0p3_after_localized-f2l,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,17.8,,18.134,0.0,,,"[17.7, 18.1]",34,2,0.35,1.4,5,0,59.4,0.819,0.759
+d10_acc_x1p5_after_localized-f2l,LOCALIZED(None)/LOCALIZED(None),PASS,51.498,,51.705,0.0,,,,96,0,0.35,2.93,10,10,58.0,0.97,0.968
+h00_nominal_supervised-f2l,LOCALIZED(None)/LOCALIZED(None),PASS,42.1,,42.377,0.0,,,,77,0,0.35,1.08,0,0,58.5,0.992,0.994
+h40_relay_passthrough_control-f2l,LOCALIZED(None)/LOCALIZED(None),PASS,41.899,,42.111,0.0,,,,76,0,0.35,1.2,0,0,57.4,0.992,0.994
+mem-eco01-c00-m5,,,490.898,,491.176,0.0,,,,895,0,0.35,2.9,10,10,53.4,0.989,0.992

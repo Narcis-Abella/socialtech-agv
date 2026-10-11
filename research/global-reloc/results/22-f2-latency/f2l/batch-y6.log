@@ -1,0 +1,1 @@
+h27_lio_diverges_in_s2-y6 PASS  | ERROR(lio_diverged)  | class=error_no_pose gate_open_s=0 orphans=fastlio=0 search=0 register=0

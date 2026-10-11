@@ -1,0 +1,4 @@
+run,observed,verdict,gate_open_s,out_at_s,close_at_s,latency_s,exposure_max_xy_m,exposure_max_yaw_deg,first_failed_check_s,checks,checks_failed,check_wall_s_median,max_pass_age_s,withheld_in_doubt,withheld_stale,worker_cpu_pct_of_core,min_support_passed,min_tail_support_passed
+k11_gyro_0p5_from_35-w1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,9.899,9.175,10.114,0.939,1.643,33.87,"[9.5, 10.1]",11,2,0.55,2.33,6,3,,0.756,
+k11_gyro_0p5_from_35_r2-w1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,14.0,13.349,14.264,0.915,0.447,11.383,"[13.7, 14.3]",15,2,0.55,2.35,7,3,,0.812,
+k11_gyro_0p5_from_35_r3-w1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,13.0,11.138,13.331,2.193,0.791,20.724,"[12.6, 13.2]",14,2,0.55,2.39,7,4,,0.7,

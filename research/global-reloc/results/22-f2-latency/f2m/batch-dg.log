@@ -1,0 +1,6 @@
+r031-eco03-s2b1-dg31 PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=28.43 gate_open_s=55.2 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r022-hospital-c01-dg22 PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=22.67 gate_open_s=61.3 orphans=fastlio=0 search=0 register=0
+BATCH_DONE
+r031-eco03-s2b1-dg31 PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=28.43 gate_open_s=55.2 orphans=fastlio=0 search=0 register=0
+BATCH_DONE

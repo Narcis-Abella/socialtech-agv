@@ -1,0 +1,4 @@
+k00_nominal-w3 PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=29.16 gate_open_s=50.4 orphans=fastlio=0 search=0 register=0
+k40_relay_passthrough-w3 PASS  | LOCALIZED(None)/LOCALIZED(None)  | class=correct_accept localized_s=28.29 gate_open_s=51.4 orphans=fastlio=0 search=0 register=0
+k10_gyro_0p5_from_31-w3 PASS  | LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent)  | class=correct_accept localized_s=27.69 lost_s=39.05 gate_open_s=9.3 gate_last_nonzero_after_revoke_s=-0.738 orphans=fastlio=0 search=0 register=0
+k11_gyro_0p5_from_35-w3 PASS  | LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent)  | class=correct_accept localized_s=29.83 lost_s=41.53 gate_open_s=10.6 gate_last_nonzero_after_revoke_s=-0.813 orphans=fastlio=0 search=0 register=0

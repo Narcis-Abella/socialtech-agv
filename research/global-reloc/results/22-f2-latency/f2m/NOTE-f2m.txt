@@ -1,0 +1,1 @@
+f2m: diagnosis only. Tree = final tree 6cb779a + KEEP_FAILED_CHECKS (off by default): the worker input/output of failed checks is kept, to find why 3 of 1036 no-fault checks failed with reason solver (table-sv.csv of f2l).
