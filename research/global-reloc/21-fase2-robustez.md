@@ -1,10 +1,263 @@
-# 21 — Phase 2: functional robustness (O1-O4, fault matrix, gate against the base driver, 200 restarts)
+# 21 — Phase 2: functional robustness (map check of the handed-over pose, driver cell, fault matrix, 50 restarts)
 
-Date: 2026-10-10. Branch `feat/global-reloc`, local commits only. Git at start `41f58c8` (F1 candidate `GR-S2S3-F1` = `c026a7b`, untouched).
-**Verdict: PARTIAL.** One critical defect is open (section 4b): when FAST-LIO2 diverges during the S2 search, a wrong `/initialpose` can go out (2 of 3 runs of case h27). No navigation permit was given in any of them.
-Candidate of this phase: **`GR-S2S3-F2`** = method commit `98926f7`, harness = branch head. Identity: `results/21-f2/candidate-identity.txt`.
+Date: 2026-10-11. Branch `feat/global-reloc`, local commits only. Git at the start of Phase 2 `41f58c8`; F1 candidate `GR-S2S3-F1` = `c026a7b`, untouched.
+**Verdict: FASE 2: VERIFIED — VALIDATED_IN_REPLAY.** No independent physical validation; full AGV safety not demonstrated; F4-F6 pending; restart protocol revised from 200 to 50 for the corrected candidate. One judgement inside the verdict is stated in B13 (criterion F, revocation latency 1.6-2.3 s after an injected fault) so that it can be overruled.**
+Candidate: **`GR-S2S3-F2b`** = method `5bb95ef` + `f524d04`, gate `8a88d16`, harness = branch head. Identity and hashes: `results/21-f2/f2h/candidate-identity.txt`. Two trees ran: `f2g` (`5bb95ef`) and the final `f2h` (`f524d04`, permit withheld in doubt, B7); the gate files are identical in both. The earlier candidate `GR-S2S3-F2` (`98926f7`, verdict PARTIAL, case h27 open) and all its evidence are kept as **Part A** below and in `results/21-f2/` (top level); nothing of it was overwritten.
 Labels: **V** measured or read in code, **I** inferred, **NV** not verified.
-Level of every result: `VALIDATED_IN_REPLAY`, development data, Orin NX at 1x, `jetson_clocks` on. **Nothing ran on hardware. No robot moved. A replay is not a sensor, a software restart is not a cold boot, a virtual CAN bus is not a base.** `LOCALIZED` is the node's own state, not an external accuracy statement; accuracy numbers come from the offline evaluator, which is the only code that reads the reference.
+Level of every result: `VALIDATED_IN_REPLAY`, development data, Orin NX at 1x, `jetson_clocks` on. **Nothing ran on hardware. No robot moved. Host `can0` was never used (down, counters 0 before and after). A replay is not a sensor, a software restart is not a cold boot, a virtual CAN bus is not a base.** `LOCALIZED` is the node's own state; accuracy numbers come from the offline evaluator, the only code that reads the reference.
+
+# Part B — final candidate `GR-S2S3-F2b`
+
+## B1. h27: root cause
+
+- Path (V, code): `ACCEPTED` stores `T_map_ci = T_map_src @ T_level_local @ inv(T_ci_first)` (map <- FAST-LIO2 odometry frame, from the registration of a submap built at 2.9-6.1 s). At hand-over the node published `T_map_ci @ T_ci_now`, about 13 s later (search 12.5 s). Everything between the submap and the publication rests on FAST-LIO2 odometry alone.
+- Fault of h27: gyro bias step 0.5 rad/s from 4 s. The registration is right (submap mostly from before the bias takes effect); the odometry then drifts at 0.4-1.8 m/s, under the 3 m/s plausibility bound, so `/initialpose` left ~3.5 m / 70 deg wrong (Part A, section 4b).
+- Signals that exist online without ground truth: the map, the newest deskewed scans, the odometry itself (not independent), AMCL (starts from our pose: not independent before it converges).
+- My evaluator hid it: reference bracket 0.2003 s > 0.20 s -> `unscorable_reference_gap`, counted as not wrong. Now an unscored published pose fails the check (`C?`), and a second score with a 0.5 s bracket is reported next to it, labelled, never replacing the rule.
+
+## B2. h27: solution
+
+**Map check** (`map_check.py`, killable worker like the search): the newest 3 s of deskewed body clouds (>= 6) are placed in the map with the pose under test; only the relative odometry inside those 3 s is used. GICP (same `register_v2`, voxel 0.3) starts from that pose on the first 2/3; the frozen geometric rule of `verify.decide` (support_015 >= 0.70, matched_rmse <= 0.10, unchanged constants) is applied on the last 1/3; the refined pose must not be a different pose (`search_tiles.distinct`, 0.30 m / 8 deg, the constants already used to tell hypotheses apart). No acceptance threshold was changed or added to make h27 pass.
+
+Used three times:
+1. **Before `/initialpose`** (`h`): fail -> `HANDOFF_FAILED(map_check_<solver|geometry|shift|timeout>)`, nothing published. The message carries the **refined pose and the stamp of the newest checked scan**; nothing is propagated past a check.
+2. **Before `LOCALIZED`** (`c`): after AMCL is coherent with our pose, a second check on fresh scans; fail -> `HANDOFF_FAILED(map_check_*_after_pose)`, no permit.
+3. **While `LOCALIZED`** (`s`), every 3 s, on **AMCL's pose** (not ours): a failed check is repeated at once; 2 consecutive failures -> `LOCALIZATION_LOST(map_incoherent)`.
+
+Why not circular: a diverged odometry puts the scans where the map is not, or bends the 3 s window so GICP does not converge; the check asks the map, not the odometry. Uniqueness comes from the global search; the check only asks "still there?", so the alternative-margin rule is not re-evaluated.
+
+| Alternative | Verdict |
+|---|---|
+| A. Re-verify against the map at publication | chosen, extended to (2) and (3) |
+| B. S2 only if still stationary at publication | rejected: stationarity would be read from the same odometry; invalidates most development windows |
+| C. Publish the submap-time pose and let AMCL integrate | rejected: AMCL integrates the same odometry |
+| Lower the 3 m/s speed bound | rejected: tuning on the test |
+| First version of A: check, then propagate to "now" | **failed in test** `d07-t1`: bias from 18 s, check passed at support 0.715, pose published 1 s later 0.55 m / 26 deg wrong. Kept in `table-t1.csv`. Hence "publish only what was checked" |
+| Supervise our own propagated pose | rejected: normal odometry drift would revoke; AMCL's pose is what navigation uses |
+| Revoke on 1 failed check | not adopted: rmse sits at 0.074-0.094 against the 0.10 limit on good data (B8); one noisy check would end the session |
+
+Cost of the stamp choice (V): nav2_amcl cannot look up the odometry at the message stamp in this stack (`Failed to transform initial pose in time`, also in F1) and applies the pose as if current. With a ~1 s old stamp AMCL starts v x 1 s behind when the platform moves; it converges, later. Stationary at boot (the intended use): no effect expected, **NV** on hardware.
+
+## B3. Targeted tests (41 runs, eco01 window c04, tags `t1`-`t7`; each row has a control and an evidence expression that the fault reached FAST-LIO2)
+
+| Case | Fault | Runs, final design | Result |
+|---|---|---|---|
+| `h00`, `h40` controls | none / relay pass-through | 3 | `LOCALIZED`, pose 0.03 m; checks support 0.995, rmse 0.081, shift 0.01 m |
+| `h27` | gyro 0.5 rad/s from 4 s | 3 (`t4`-`t6`) + matrix | no pose, `HANDOFF_FAILED(map_check_solver)` x3, `(map_check_geometry)` x1 |
+| `d01`, `d02` | 0.5 from 8 s / 15 s | 2 + matrix | no pose (`map_check_solver`, `map_check_geometry`, `odometry_implausible`) |
+| `d04`, `d05` | 1.0 from 8 s / 0.5 during 6-12 s | 1 + matrix | `ERROR(lio_diverged)`; `d05-t1` `LOCALIZED`, correct (0.016 m) |
+| `d07` | 0.5 from 18 s (just before publication) | 3 + matrix | no pose, `map_check_geometry` x4 (first design: wrong pose, see B2) |
+| `d08` | 0.5 from 21 s (after the pose, before `LOCALIZED`) | 3 + matrix | pose published correct (0.03 m) in all; then `HANDOFF_FAILED` x2, `LOCALIZED` -> `LOST` x2 (B7) |
+| `d03`, `d06`, `d10`, `h44`, `h45`, `d09` | 0.1-0.3 rad/s, accel x1.5 | 8 | `LOCALIZED`, pose correct (max 0.05 m, 0.98 deg): FAST-LIO2 absorbs them. `h44`, `h45`, `d09` were predicted to fail: **FAIL EXPECT kept**, wrong predictions of mine |
+| `h28` | 0.5 after `LOCALIZED` | 1 + matrix | `LOCALIZATION_LOST(map_incoherent)` |
+| S2 eco01 z03 / S3 hospital z00 / cross map | F1 cases | 2 each | correct / correct / rejected |
+
+Earlier runs of the first design (`t1`-`t3`) are in the tables with their tag; `d03-t4` shows `C?` (pose unscorable at 0.20 s, before the wide score existed; `d03-t7` and the matrix score it: 0.04-0.05 m).
+
+## B4. Gate bypass and gate death (risks A and B)
+
+Read in the pinned sources (V): `tracer_base` (tracer_ros2 `2c4938db`) sends one CAN frame per Twist (`TwistCmdCallback -> SetMotionCommand`), ugv_sdk `f2704eac` has no command timeout; whoever can publish on the driver's topic moves the base, and the last frame stays the last frame.
+
+Design (commit `8a88d16`, no third-party patch):
+- **Driver cell**: `tracer_base`, `gate_outlet.py` and `can_deadman.py` in a container with a private network namespace (`--network none`) that owns the CAN interface. No ROS participant outside the cell can discover the driver.
+- `nav_gate.py` sends each allowed command as a datagram (sequence, sender clock, magic) over a unix socket whose directory is mounted only into the gate and the cell. `gate_outlet.py` publishes it to the driver, drops malformed / out-of-order / stale datagrams, and publishes **zero at 10 Hz when the gate is silent for 0.3 s**.
+- `can_deadman.py` watches `0x111` on the bus: last frame non-zero and bus silent 0.3 s -> it writes zero frames until the driver speaks again. It **refuses any interface whose name does not start with `vcan`**: running it on a real bus is a decision for Narcís (it transmits on the base's command ID).
+
+Test `gate_cell_test.sh`, real `tracer_base`, `vcan0` inside the cell, twice (`results/21-f2/f2g/gate-cell/v1`, `v2`; `all_pass: true`):
+
+| Check | Result (v1 / v2) |
+|---|---|
+| Cell links; main graph sees `/tracer` nodes or the socket dir | `lo`, `vcan0` only; no; no |
+| permit false / revoked / publisher gone | 0 non-zero frames (v2: 1 frame 5 ms after the edge) |
+| permit true | first non-zero 0.26-0.29 s / 0.22-0.30 s after `true` |
+| publisher alive but silent | last non-zero 0.36 / 0.39 s |
+| bypass: publish on `/cmd_vel_gated`, on `/cmd_vel` with the gate closed, write to the socket from the main graph | 0 non-zero of 65 frames; socket `No such file or directory` |
+| velocity source frozen 3 s while open | zeros (outlet zero-fill) |
+| outlet killed while open, then restarted | dead-man zeros after 0.30 s; flow resumes |
+| gate killed while open (v1) | 1 non-zero frame 8 ms after the kill, then zeros |
+| driver killed while open (v2) | dead-man zeros after 0.30 s |
+| host `can0` | unchanged, down, counters 0 |
+
+What this does and does not close:
+- Closed in the validated configuration (V on vcan): a ROS publisher outside the cell cannot command the driver; gate, outlet, source or driver death ends in zero frames on the bus within 0.3-0.4 s.
+- **Not closed**: a process with root on the host, or one started inside the cell; death of the dead-man, of the cell or of the whole computer. Then stopping depends on the base firmware's command timeout, **NV** (no base on a virtual bus) -> F4-F6. No statement about a physical safe stop is made.
+- Deployment needs the physical CAN interface moved into the cell's namespace (host networking): not done, not tested, decision for Narcís.
+
+## B5. AMCL (risk C)
+
+| Item | State |
+|---|---|
+| AMCL lost / silent / killed / frozen | `amcl_silent` 2.9 s after the fault (`h30`, `h31`), `amcl_not_confirmed` in hand-over (`h33`) |
+| AMCL moved by a foreign `/initialpose` | `LOST` 3.7-4.2 s after (`h32`: `map_incoherent` in the final matrix, `amcl_incoherent` in `f2g`, whichever fires first; FAIL EXPECT by reason, kept); permit withdrawn 2.6 s earlier (B7) |
+| Slow drift, late revocation | supervision now asks the map about AMCL's pose every 3 s, independent of the odometry (B7 for the measured latency) |
+| AMCL keeps the pose after `HANDOFF_FAILED` | unchanged by design. Since B2 a pose only goes out after a passed check, so the kept pose was map-coherent when published. The contract for consumers is the permit, enforced by the gate; `/amcl_pose` alone is not an authorization |
+| `LOCALIZED` as only signal | permit = heartbeat with TTL; `LOCALIZED` now needs acceptance + map check + AMCL coherence + second map check |
+
+## B6. O1-O4 after the change (matrix B8)
+
+| | Status | Evidence |
+|---|---|---|
+| O1 no sensors | works | `h01`, `h02` `TIMEOUT(no_sensor_input)`; `g01`, `g02` |
+| O2 permit + gate | works | every matrix row: gated output non-zero only while permitted; closing 0.41 s worst after a frozen / killed node (`h34`-`h36`) |
+| O3 revocable `LOCALIZED` | works | 18 revocations in the matrix, reasons as predicted except `h32` (B8) |
+| O4 bounded buffers | works | odometry 1412 rows after 485 s; the new 3 s scan buffer adds ~13 MB to the node (B10) |
+| monotonic watchdogs, bad stamps, FAST-LIO2 hangs | work | `h03`-`h08`, `h12`-`h24`, `h41`-`h43`, `g06`-`g11` |
+| scratch files of the check | in `/dev/shm`, removed after each check and at start; no leftover after 158 checks (V) |
+
+## B7. Revocation latency after `LOCALIZED`, measured with the reference
+
+New evaluator tool `permit_exposure.py`: seconds of non-zero gated output while AMCL's pose is outside 0.30 m / 8 deg of the reference. Not predefined as a pass / fail criterion; no requirement exists yet (decision for Narcís).
+
+| Run | Fault after `LOCALIZED` | Tree | Gate open | of which AMCL outside | Worst AMCL error while open |
+|---|---|---|---|---|---|
+| `h00`, `d09`, `h45`, memory run (485 s) | none / absorbed | `f2h` | 40-485 s | **0 s** | 0.13-0.16 m, 3.1-4.3 deg |
+| `h32` foreign `/initialpose` (15 m) | | `f2g` | 10.2 s | 2.9 s | 15.7 m |
+| | | `f2h` (+`u2`) | 8.2 / 7.3 s | **0 / 0 s** | 0.06 m |
+| `h28` gyro 0.5 rad/s | | `f2g` (+`t4`) | 14.0 / 17.2 s | 2.3 / 3.5 s | 1.36 m, 45 deg |
+| | | `f2h` (+`u2`) | 12.9 / 12.5 s | **2.3 / 1.6 s** | 1.23 m, 39 deg |
+| `d08` gyro 0.5 rad/s from 21 s | | `f2g` (+`t6`) | 10.6 / 14.0 s | 2.9 / 3.1 s | 2.30 m, 27 deg |
+| | | `f2h` | 0.7 s | **0.14 s** | 0.53 m, 8 deg (`u2`: `HANDOFF_FAILED`, never open) |
+
+- Tree `f2g` (method `5bb95ef`) kept the permit until the loss rules fired (3 s hold, two failed checks). Commit `f524d04` withholds the permit **as soon as there is doubt**: AMCL outside the coherence limits, or a failed map check whose repeat has not passed. State and loss rules unchanged; the gate reopens if the doubt clears (never needed in a no-fault run: `withheld_in_doubt` = 0 in all of them, 485 s included).
+- Effect: foreign pose 2.9 s -> 0 s; divergence starting before `LOCALIZED` 3 s -> 0.14 s; **divergence starting after `LOCALIZED`: still 1.6-2.3 s (N = 2)** with AMCL up to 1.2 m / 39 deg wrong. Cause: AMCL takes its motion prior from the same odometry and goes wrong between two map checks (period 3 s, check 0.9 s); the doubt needs one failed check or 15 deg / 0.5 m of AMCL-vs-own discrepancy.
+- This is a detection latency, not zero and not hidden. Bound by construction: check period + check time (~4 s) after the scans stop fitting the map. Shorter needs a shorter period (CPU: one check = 0.9 s of one core) or an odometry-independent motion sensor (wheel encoders). At the nominal 0.34 m/s, 2.3 s is 0.8 m of travel.
+
+## B8. Final fault matrix (tree `f2h` = `f524d04`): 56 cases, all valid
+
+`results/21-f2/f2h/table-f2h.csv`. eco01 window c04, mode `s2s3`. 46 cases of the first matrix + `d01`-`d10`. Invariants per row: P1 pose only after `ACCEPTED`; **P2 pose only after a passed fresh map check; P3 `LOCALIZED` only after a passed second check** (new); G1 gated output non-zero only while permitted; G2 gate closed within 0.7 s of revocation; T1 terminal state; O1 no orphan process; C1 not `wrong_accept`; `C?` no unscored published pose.
+
+| Verdict | Rows | |
+|---|---|---|
+| `PASS` | 51 | |
+| `FAIL EXPECT`, behaviour correct, prediction wrong, **not edited** | 3 | `h44`, `h45`, `d09`: FAST-LIO2 absorbs 0.1-0.3 rad/s; pose correct (<= 0.05 m), AMCL never outside limits while open (B7) |
+| `FAIL EXPECT` by reason | 1 | `h32`: predicted `amcl_incoherent`, got `map_incoherent` 3.7 s after the fault (both rules run; in `f2g` the other fired first). Gate closed 2.6 s before the state change |
+| **`FAIL O1`** | 1 | `h35` (node frozen): one process matching `register_v2` alive when the harness counted, and the launch log lacks the node's exit line. Permit and gate correct (closed 0.41 s after the freeze). **Not reproduced in 3 repeats (`u3`-`u5`), not seen in `f2g`; cause not identified.** Hypothesis (I): the freeze caught a map check in flight and the node was still in `shutdown()` when the launcher was stopped. Open, non-critical: no pose, no permit, container teardown removes it |
+| `INVALID` | 0 | (`u1`: 5 targeted rows invalid, my deployment mistake, binary missing; rerun as `u2`) |
+
+- Pose published in 38 rows: XY error median 0.033 m, max 0.047 m; yaw max 1.0 deg; all scored with the 0.20 s rule. Wrong `/initialpose`: **0**. Pose without acceptance / without map check: 0.
+- `h27`, `d01`, `d02`, `d07`: accepted, **nothing published**. `d04`: `ERROR(lio_diverged)`.
+- 18 revocations; closing after the permit drop 0.41 s worst (`h34`-`h36`), otherwise the gate was already closed when the state changed.
+- Map check on good data (38 rows): support 0.86-1.00, **rmse 0.079-0.090 against the 0.10 limit**. The margin on rmse is thin; it is the frozen F1 constant and was not touched. False `HANDOFF_FAILED(map_check_*)` on a no-fault run: 0 of 38 here, 0 of 43 in the restarts; in the 485 s run 0 of 158 supervision checks failed (max rmse 0.094). A noisier environment could fail it: availability risk, not a safety one.
+- 25 cases of note 16 (`batch-g2h.log`): same terminal states as on the previous candidate (`batch-g2c.log`); `LOCALIZED` up to 5.9 s later.
+- Storage stalls: 7 matrix / note-16 rows overlap a kernel NVMe timeout (`stalls-f2h.csv`); none shows a sampler hole (max 0.6 s), all conform. Kept as valid.
+
+## B9. F1 regressions and negatives (`batch-r2h.log`)
+
+| Case | Expected (F1) | `f2h` |
+|---|---|---|
+| eco01 z03, S2 | correct accept | correct, accepted 18.8 s |
+| hospital z00, S3 | correct accept through S3 | correct, accepted 41.8 s (x2) |
+| 14 negatives (7 cross-map, 3 map hole, 4 S3 cross-map) | rejected | **14 of 14 rejected** (`reject_geometry`), no pose |
+
+The search, the acceptance gate, the submap builder and the 60 s clock are byte-identical to F1 (`git diff c026a7b HEAD -- search_v2.py verify.py correlative_search.py lio_submap.py search_tiles.py` is empty).
+
+## B10. 50 software restarts (protocol changed from 200)
+
+**Change of protocol, stated as such:** the original criterion was 200 restarts. 200 were run on candidate `98926f7` (Part A, section 7) and stay as evidence **of that version only**. The corrected candidate got 50. Reason: every method change invalidates the previous campaign, 200 runs cost 3.3 h of board time, and the campaign was in fact run twice here (`f2g`, then `f2h` after the permit change). 50 is not equivalent to 200: 0 of 50 leaves a Wilson 95 % upper bound of 7.1 %, against 1.9 % for 0 of 200. Neither says anything about hardware.
+
+Design (`cases-restarts50.csv`, seed 20261011): the 36 stationary windows once, plus 14 extras on the hard ones (hospital c00, z00 (S3), c02, z02 x2 each; eco03 z02 x2; eco01 c01, c02, z01; eco03 c00). Start jitter +-0.5 s, pre-roll 2.5-4 s, lead 10/12/14 s, own DDS domain, fresh container, node and FAST-LIO2 per run.
+
+| Quantity (`f2h`, N = 50, 0 invalid) | Value |
+|---|---|
+| `LOCALIZED`, pose correct | 41 (82 %, Wilson 69-90 %), S3 included (hospital z00 x3) |
+| wrong acceptance / pose without acceptance / permit without correct pose | 0 / 0 / 0 (Wilson upper 7.1 %) |
+| AMCL error ~2 s after `LOCALIZED` (41) | median 0.036 m, max 0.10 m, 0.4 deg |
+| not localized, all without permit | 9: `s3_budget_insufficient` 6 (hospital c02 3/3, z02 3/3, known), `imu_not_stationary` 1 (eco03 z00), **`HANDOFF_FAILED(amcl_not_confirmed)` 2 (hospital c06, z06)** |
+| FAST-LIO2 start failures, orphans, invariant failures | 0, 0, 0 |
+| first input -> accepted | median 18.0 s, p95 41.9 s, max 42.7 s |
+| first input -> `LOCALIZED` | median 27.8 s, p95 49.7 s, max 49.9 s (previous candidate 23.3 / 39.8 / 48.5 on its own mix) |
+| `/initialpose` error (43 published) | XY median 0.03 m, max 0.075 m; yaw max 0.39 deg; 42 by the rule, 1 only with the 0.5 s bracket (0.075 m, class kept `unscorable_reference_gap`) |
+| PSS peak, stack without the player | median 256 MB, p95 339 MB, max 355 MB |
+| board `MemAvailable` | 14188 MB before, 14193 MB after |
+
+- The `f2g` campaign (`f2g/table-rs50.csv`) gave the same outcome on every one of the 50 cases; the three non-trivial rejections repeat when rerun alone (`table-rs50b.csv`): deterministic per case.
+- **New false rejects, caused by the h27 fix (2 of 50; these windows were 11 of 11 on the previous candidate):** in hospital c06 / z06 the platform moves at 0.65-1.0 m/s at hand-over. `/initialpose` is correct for its stamp (0.04 m) but 0.96 s old, AMCL applies it as current (B2) and starts 0.6 m behind along a corridor, never comes within the coherence limits, and the attempt ends `HANDOFF_FAILED` after 29 s with AMCL 0.5-0.7 m off. No permit. Not fixed: compensating the lag with odometry is the first design that failed `d07`. Expected with the old per-window rates on this mix: 43.4 `LOCALIZED`; observed 41.
+- `imu_not_stationary` (eco03 z00, r006): this case has the shortest stationary span of the set (pre-roll 2.65 s, jitter +0.4 s) against the 2 s rule; the IMU stream had no gap. Same mechanism as the two cases of Part A. It overlapped an NVMe timeout in `f2g` and not in the reruns: counted as valid.
+- 9 runs overlap a kernel NVMe timeout; no sampler hole, outcomes equal to the `f2g` run of the same case. Kept.
+
+## B11. Memory, CPU, time
+
+Same window as Part A (eco01 c00, 515 s of replay, `LOCALIZED` held 485 s over 177 m), one run per tree.
+
+| | F1 | `98926f7` | `f2g` | **`f2h`** |
+|---|---|---|---|---|
+| node PSS first -> last (MB) | 87.9 -> 90.1 | 83.1 -> 85.6 | 97.6 -> 98.5 | **97.0 -> 99.0** |
+| node slope (MB/min) | +0.28 | +0.28 | +0.11 | +0.14 |
+| FAST-LIO2 PSS (MB) | 37.8 -> 45.3 | 39.5 -> 45.9 | 41.0 -> 45.7 | 40.8 -> 45.6 |
+| stack PSS peak (MB) | 256.8 | 254.3 | 271 | **272.6** |
+| stack CPU mean (% of one core) | 64.8 | 67.5 | 77 | **77.6** |
+| map checks while `LOCALIZED` | - | - | 158, 0 failed | 158, 0 failed |
+
+- Cost of the fix (V, one run each): +13 MB in the node (3 s scan buffer), +16 MB stack peak, +10 points of one core (a 0.9 s check every 3 s), `LOCALIZED` ~4 s later (one check before the pose, one before `LOCALIZED`, and AMCL's later convergence when moving).
+- No growth beyond the earlier trees in 8 min; odometry buffer 1412 rows (cap 2400). FAST-LIO2 grows ~0.6-1 MB/min while travelling, as in F1. Beyond 8 min: **NV** (longest bag 634 s).
+- Supervision held 485 s with no doubt and no revocation (AMCL vs own pose max 0.15 m, 3.7 deg; limits 0.5 m, 15 deg).
+
+## B12. NVMe of the NX
+
+- Kernel log (V, no root): `nvme nvme0: I/O tag ... timeout, completion polled`, **131 since 2026-10-05** (per day: 1, 0, 4, 3, 27, 59, 37; `f2h/nvme-timeouts-per-day.txt`). All in hours with experiments, bursts under load, none in idle hours. The message means a completion interrupt was missed and the request was recovered by polling after the 30 s timeout: a stall, not a reported data error.
+- No `EXT4` error, no `I/O error`, no PCIe AER line in the journal (0 matches). Device "SSD NVME 256GB", firmware VC400622, link 8 GT/s x4, controller state live. 122 GB free. Single boot since 2026-10-05 (the journal starts there).
+- SMART / error log: **NV**, needs root. Command for the human: `sudo nvme smart-log /dev/nvme0` and `sudo nvme error-log /dev/nvme0` (read-only).
+- Effect on the tests: one run invalidated in Part A (`h36-f2b`). Final candidate: 16 runs overlap a timeout, none has a sampler hole > 0.6 s, none changed outcome against its twin. Evidence was always written; hashes in the identity file.
+- Mitigation in the method: map-check scratch moved to `/dev/shm`, so a storage stall cannot block the supervision worker. The node still writes `supervision.json` every 10 s to disk; a stall there is caught by `supervisor_stalled` (permit already dropped by the heartbeat TTL).
+- Nothing on the host was changed. Cause **NV**; candidates for Narcís: the SSD model / firmware with this carrier, APST / ASPM settings. A production robot should not ship with this unexplained.
+
+## B13. Verdict against the criteria
+
+| | Criterion | State | Evidence |
+|---|---|---|---|
+| A | h27 fixed, no known false accept | met | h27 x5 on the final design, `d01`, `d02` x3, `d07` x5: nothing published |
+| B | O1-O4 work | met | B6 |
+| C | F2 matrix complete and valid | met: 56 valid; 51 pass, 4 wrong predictions kept, **1 `O1` failure not reproduced (open, non-critical)** | B8 |
+| D | F1 regressions | met | B9 |
+| E | no known wrong `/initialpose` in scorable tests | met: 0 in 38 + 43 + 3 scored poses. Caveat: a correct but 1 s old pose makes AMCL start behind when moving (B10) |
+| F | no undue navigation authorization | met at grant: every permit was given on a pose within limits (matrix, 41 restarts). **After an injected odometry fault the permit outlived a correct AMCL pose by 1.6-2.3 s (B7).** Read as "zero exposure after any fault" this criterion is not met and cannot be by a periodic check |
+| G | gate revocable, bypass closed in the validated software configuration | met on vcan | B4 |
+| H | virtual CAN integration | met, real `tracer_base`, 2 runs | B4 |
+| I | 50 valid restarts of the final candidate | met (and 50 more on `f2g`) | B10 |
+| J | memory / resources | met for 8 min | B11 |
+| K | no open critical error in F2 scope | met; open non-critical: `h35` O1, hand-over lag when moving | B8, B10 |
+| L | reproducible evidence | met | B15, identity file |
+| M | physical limits identified | met | B14 |
+
+## B14. Residual risks and limits
+
+| Risk | State | Goes to |
+|---|---|---|
+| Permit outlives a correct pose by up to ~2.3 s (bound ~4 s) when the odometry diverges after `LOCALIZED` | measured, N = 2 | requirement from Narcís; wheel odometry; F5 |
+| False reject when the platform moves > ~0.5 m/s at hand-over; AMCL left 0.5-0.7 m off without permit | measured, 2 of 50, deterministic | procedure (stand still until `LOCALIZED`; stop at the end of S3); F6 |
+| rmse margin of the map check (0.08-0.094 vs 0.10) | measured on 3 maps, 0 false failures in 239 checks | F5 independent data |
+| GICP could lock a diverged pose onto a look-alike place within 0.30 m / 8 deg of the truth-free pose | not observed; **NV** | F5 |
+| `h35` shutdown left one process once in 5 | open, cause not found | F3 |
+| Dead-man, cell or computer dies; root on the host | stop depends on the firmware timeout, **NV** | F4-F6 |
+| Physical CAN inside the cell namespace; dead-man on a real bus | not done | Narcís |
+| NVMe stalls | measured, cause NV | Narcís |
+| Memory beyond 8 min, cold boot, live Livox driver, real CAN, E-stop | NV | F3-F6 |
+| One window for the fault matrix, 36 windows / 3 maps for restarts, sensor facing up, provisional mount, development data | unchanged | F4-F5 |
+
+Own mistakes of this round: (1) first map-check design propagated past the check (`d07-t1`, wrong pose published, kept); (2) supervision first anchored on the node's own pose; (3) predictions `h44`, `h45`, `d09`, and `h32`'s reason, wrong; (4) `u1` run without the registration binary; (5) the revocation latency was only measured with the reference after the first 50 restarts, which cost a second full campaign; (6) evaluator unit test for the wide bracket written wrong at first.
+
+## B15. Reproduce
+
+NX roots (raw data, not in git): `/home/jetson/work/reloc-f2h-20261011/` (final: `runs/`, tables, `chain5.sh`), `/home/jetson/work/reloc-f2g-20261011/` (method `5bb95ef`: targeted `t1`-`t7`, matrix, restarts, `gate-cell/v1`, `v2`), Part A roots unchanged.
+
+```
+R=<root> bash tools/global_reloc_3d/batch_faults_f2.sh <tag> [case-prefix]
+R=<root> bash tools/global_reloc_3d/batch_faults_s2s3.sh <tag>
+R=<root> bash tools/global_reloc_3d/batch_s2s3.sh cases-f1.csv <tag>            # also cases-f1b.csv, cases-sn.csv
+python3 tools/global_reloc_3d/gen_restart_cases.py --extra hospital:c00,... > cases-restarts50.csv
+R=<root> bash tools/global_reloc_3d/batch_restarts.sh cases-restarts50.csv <tag> 0 49
+python3 tools/global_reloc_3d/restart_summary.py table-<tag>.csv runs
+python3 tools/global_reloc_3d/io_stall_audit.py runs
+docker run ... socialtech:mapper-verify python3 -B /t/permit_exposure.py --run-dir /runs/<run> --reference ... --map-yaml ...
+bash tools/global_reloc_3d/gate_cell_test.sh <out> [FINAL=gate|driver]            # needs: sudo modprobe vcan (host), never can0
+cd tools/global_reloc_3d && for t in test_*.py; do python3 -B $t || break; done   # 12 files; test_reloc_core 29 tests
+```
+
+---
+
+# Part A — history: candidate `GR-S2S3-F2` = `98926f7` (2026-10-10, verdict PARTIAL, superseded)
+
+Kept unchanged below. Its open defect (section 4b) is closed by B1-B3; its gate risks (section 6) by B4; its 200 restarts (section 7) remain evidence of that version only. Evidence: `results/21-f2/` top level.
 
 ## 1. What changed in the method
 

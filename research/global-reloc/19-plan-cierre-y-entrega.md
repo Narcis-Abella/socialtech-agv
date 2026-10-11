@@ -1,6 +1,6 @@
 # 19 — Closing and delivery plan for the global relocalization candidate
 
-Date: 2026-10-10. Branch `feat/global-reloc`. Candidate: `GR-S2S3-F1`, commit `c026a7b` (FAST-LIO2 -> FFT correlative search -> small_gicp -> frozen gate -> `/initialpose` -> AMCL).
+Date: 2026-10-11. Branch `feat/global-reloc`. Candidate: `GR-S2S3-F1`, commit `c026a7b` (FAST-LIO2 -> FFT correlative search -> small_gicp -> frozen gate -> `/initialpose` -> AMCL).
 This file is the index of the remaining work. Each phase is closed only by its own criterion. Update the status column here, nowhere else.
 
 Phase status: `PENDING`, `IN_PROGRESS`, `VERIFIED`, `BLOCKED_PHYSICAL` (needs a person, the robot or a measurement).
@@ -20,7 +20,7 @@ Evidence levels, never mixed:
 | Phase | Status | Level it can deliver |
 |---|---|---|
 | F1 Audit and freeze | **VERIFIED** (2026-10-10) | `VALIDATED_IN_REPLAY` |
-| F2 Robustness | **PARTIAL** (2026-10-10), candidate `GR-S2S3-F2` = `98926f7`; one critical defect open (note 21, 4b) | `VALIDATED_IN_REPLAY` |
+| F2 Robustness | **VERIFIED** (2026-10-11), candidate `GR-S2S3-F2b` = `5bb95ef` + `f524d04`, gate `8a88d16`; restart protocol revised 200 -> 50 (note 21, Part B) | `VALIDATED_IN_REPLAY` |
 | F3 Performance and timeout | PENDING | `VALIDATED_IN_REPLAY`; cold boot part BLOCKED_PHYSICAL |
 | F4 Physical calibration | BLOCKED_PHYSICAL | precondition of H1 |
 | F5 Independent benchmark | BLOCKED_PHYSICAL (data to record) | `FORMALLY_BENCHMARKED` |
@@ -35,13 +35,13 @@ Evidence levels, never mixed:
 - Closing criterion (met): full audit, evidence checked, S2 / S3 / negative reproduced, tests run, candidate identified, decisions documented, no open bug that invalidates the candidate.
 - Carried forward, not blocking: findings O1-O9 of note 20; the four decisions are documented but not yet taken by Narcís.
 
-## F2 — Robustness — PARTIAL
+## F2 — Robustness — VERIFIED (`VALIDATED_IN_REPLAY`)
 
-- Done: O1 (start-up timeout), O2 (permit heartbeat + fail-closed gate, tested against the real `tracer_base` on a virtual CAN bus), O3 (revocable `LOCALIZED`), O4 (bounded buffers), plus an input-stamp integrity rule after a real wrong acceptance was found under reordered LiDAR input (case h15). Fault relay of F1 corrected (it never delivered to FAST-LIO2); F1 relay rows re-run on the frozen code.
-- Evidence: [21-fase2-robustez.md](21-fase2-robustez.md), `results/21-f2/`, NX `/home/jetson/work/reloc-f2c-20261010/`.
-- **Open, critical:** FAST-LIO2 diverging during the S2 search can carry a wrong pose to `/initialpose` (case h27, 2 of 3 runs; no navigation permit given). Needs a design decision (note 21, section 4b), then the matrix and the restarts again.
-- Result: 46 fault cases valid, 43 conform, 1 unsafe (h27), 2 wrong predictions with correct behaviour; 200 software restarts 188 `LOCALIZED`, 12 safe timeouts, 0 wrong acceptance, 0 FAST-LIO2 start failure; F1 regressions unchanged except the two relay artefacts.
-- Not closed here, moved to physical phases: base firmware command timeout, bypass of a topic-level gate, cold boot, live driver, memory beyond 8 min, slow odometry drift, NVMe stalls of the NX. See note 21 section 9.
+- Done: O1-O4 and the input-stamp rule (candidate `98926f7`, PARTIAL on 2026-10-10 because of case h27); then the map check of the handed-over pose (before `/initialpose`, before `LOCALIZED`, every 3 s after), the permit withheld in doubt, and the driver cell with private socket, zero-fill and CAN dead-man (virtual bus only).
+- Evidence: [21-fase2-robustez.md](21-fase2-robustez.md) Part B, `results/21-f2/f2h/` (final), `results/21-f2/f2g/` (intermediate tree, gate-cell tests), NX `/home/jetson/work/reloc-f2h-20261011/`.
+- Result: 56 fault cases valid, 51 conform, 4 wrong predictions with correct behaviour, 1 orphan-process failure not reproduced; 0 wrong `/initialpose`; 14 of 14 negatives rejected; 50 software restarts 41 `LOCALIZED`, 9 safe rejections, 0 wrong acceptance. The 200 restarts of `98926f7` are evidence of that version only.
+- Stated inside the verdict: after an odometry fault that starts after `LOCALIZED` the permit outlives a correct pose by 1.6-2.3 s (no requirement defined); 2 of 50 false rejects when the platform moves at hand-over.
+- Not closed here, moved to physical phases: base firmware command timeout, physical CAN inside the cell, cold boot, live driver, memory beyond 8 min, NVMe stalls of the NX. See note 21, B14.
 
 ## F3 — Performance and timeout — PENDING (cold boot BLOCKED_PHYSICAL)
 
