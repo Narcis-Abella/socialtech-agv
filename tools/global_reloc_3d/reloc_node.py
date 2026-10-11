@@ -146,6 +146,7 @@ class RelocNode(Node):
         self.amcl_delta = None
         self.verified_pose = self.checked_pose = None
         self.check_n = 0
+        self.kept_checks = 0
         self.odom_ok = rc.OdomPlausibility()
         self.inputs = {k: rc.InputIntegrity(k) for k in ('imu', 'lidar')}
         self.footprint_xyyaw = None
@@ -418,6 +419,10 @@ class RelocNode(Node):
         return self.close_map_check(c, r)
 
     def close_map_check(self, c, r):
+        if not r.get('ok') and os.environ.get('KEEP_FAILED_CHECKS') and self.kept_checks < 8:
+            # Diagnosis only (off unless the harness sets the variable): the worker's input and output of a failed check, on disk.
+            self.kept_checks += 1
+            shutil.copytree(c['dir'], self.work / f'attempt{self.att.id}' / 'failed_checks' / c['dir'].name, dirs_exist_ok=True)
         shutil.rmtree(c['dir'], ignore_errors=True)       # the verdict below is what is kept (metrics.json / supervision.json)
         self.check = None
         r = {k: r.get(k) for k in ('ok', 'reason', 'geometry', 'tail', 'at_propagated', 'shift', 'clouds', 'window_s', 'gicp_s', 'elapsed_s', 'fit_points', 'check_points')}

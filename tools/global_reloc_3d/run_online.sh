@@ -15,7 +15,7 @@ img=$(dirname "$MAPYAML")/$(sed -n 's/^image: *//p' "$MAPYAML" | tr -d "\"'")
 echo "jetson_clocks: $(systemctl is-active jetson-clocks)  load: $(cut -d' ' -f1-3 /proc/loadavg)  start: $(date -Is)" > "$out/host.txt"
 tegrastats --interval 500 > "$out/tegrastats.log" 2>/dev/null & teg=$!
 dom=${DOMAIN:-$((100+RANDOM%100))}; echo "ros_domain_id: $dom" >> "$out/host.txt"
-F2ENV=""; for v in WITH_GATE STOP_AT NO_PLAY KILL_PLAY_AT KILL_PLAY_SIG CONT_PLAY_AT KILL_AMCL_AT KILL_AMCL_SIG SIG_NODE_AT SIG_NODE_SIG CONT_NODE_AT KILL_GATE_AT CLOCK_JUMP_AT CLOCK_JUMP_SEC ROGUE_POSE_AT ROGUE_X ROGUE_Y ROGUE_PERMIT_AT AFTER_LOST_S AUTH_TIMES; do
+F2ENV=""; for v in WITH_GATE STOP_AT NO_PLAY KILL_PLAY_AT KILL_PLAY_SIG CONT_PLAY_AT KILL_AMCL_AT KILL_AMCL_SIG SIG_NODE_AT SIG_NODE_SIG CONT_NODE_AT KILL_GATE_AT CLOCK_JUMP_AT CLOCK_JUMP_SEC ROGUE_POSE_AT ROGUE_X ROGUE_Y ROGUE_PERMIT_AT AFTER_LOST_S AUTH_TIMES KEEP_FAILED_CHECKS; do
   [ -n "${!v:-}" ] && F2ENV="$F2ENV -e $v=${!v}"; done
 docker run --rm --network host --cpus 8 -e ROS_DOMAIN_ID=$dom $F2ENV \
   -e BAG=/bag -e MAPYAML=/map/$(basename "$MAPYAML") -e MAPXYZ=/prior/map.xyz -e OUT=/out -e OFFSET=$OFFSET \
