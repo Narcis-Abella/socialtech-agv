@@ -40,4 +40,15 @@ echo 67108864 >"$f"
 msg=$(RMEM_MAX_FILE=$f rmem_max_warning 2>&1) || fail "rmem_max 64 MB must pass: $msg"
 [[ -z $msg ]] || fail "no output expected when rmem_max is enough: $msg"
 RMEM_MAX_FILE=/nonexistent rmem_max_warning >/dev/null || fail "an unreadable rmem_max must not warn (non-Linux hosts, odd containers)"
+echo abc >"$f"
+RMEM_MAX_FILE=$f rmem_max_warning >/dev/null 2>&1 || fail "a non-numeric rmem_max must not warn"
+echo $(( (DDS_RCVBUF_MIN + 1) / 2 )) >"$f"   # the grant is 2x the limit: half the request is exactly enough
+RMEM_MAX_FILE=$f rmem_max_warning >/dev/null 2>&1 || fail "rmem_max at half the request must pass"
+echo $(( (DDS_RCVBUF_MIN + 1) / 2 - 1 )) >"$f"
+! RMEM_MAX_FILE=$f rmem_max_warning >/dev/null 2>&1 || fail "rmem_max one below half the request must warn"
+
+export CYCLONEDDS_URI='file:///etc/cyclone.xml,<CycloneDDS>mine</CycloneDDS>'
+set_cyclone_uri
+[[ $CYCLONEDDS_URI == *SocketReceiveBufferSize*,'file:///etc/cyclone.xml,<CycloneDDS>mine</CycloneDDS>' ]] || fail "a multi-fragment or file:// URI must be kept whole, after the buffer fragment: $CYCLONEDDS_URI"
+unset CYCLONEDDS_URI
 echo ok
