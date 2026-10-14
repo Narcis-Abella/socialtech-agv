@@ -18,6 +18,7 @@ CONF=${1:-$HERE/robot.conf}
 
 CAN_IFACE=can_tracer   # gs_usb adapter is renamed to this on every board
 CAN_BITRATE=500000     # Tracer base
+NVME_DEV=/dev/nvme0n1  # root disk on every board; the heartbeat reads its first 128 KiB (GPT area)
 KVER=$(uname -r)
 TARGET_USER=${SUDO_USER:-jetson}
 
@@ -31,7 +32,7 @@ die()  { printf '\e[1;31mxx\e[0m  %s\n' "$*" >&2; exit 1; }
 source "$CONF"
 # Defaults, so an older robot.conf missing newer keys still works (set -u would abort cryptically).
 : "${LIVOX_IFACE=}" "${LIVOX_HOST_IP=192.168.1.50}" "${HOTSPOT_SSID=}" "${JOYSTICK_SERIAL=}"
-: "${JETSON_CLOCKS=0}" "${TAILSCALE=0}"
+: "${JETSON_CLOCKS=0}" "${TAILSCALE=0}" "${NVME_HEARTBEAT=1}"
 [[ -n ${ROBOT_HOSTNAME:-} ]] || die "ROBOT_HOSTNAME missing in $CONF"
 
 # Validate config: values end up in hostnames, udev rules and nmcli calls.
@@ -78,6 +79,7 @@ first_iface() {
 
 step_packages() {
   local want=(can-utils systemd-zram-generator) missing=() p
+  if [[ $NVME_HEARTBEAT == 1 ]]; then want+=(gcc libc6-dev); fi   # the heartbeat is built here, like gs_usb
   if [[ $TAILSCALE == 1 ]]; then
     want+=(tailscale)
     if [[ ! -f /etc/apt/sources.list.d/tailscale.list ]]; then
@@ -185,6 +187,66 @@ WantedBy=sys-subsystem-net-devices-%i.device
 EOF
   then systemctl daemon-reload; fi
   systemctl enable --quiet "can-up@$CAN_IFACE.service"
+}
+
+# Orin NVMe loses completion MSIs (log: "nvme0: I/O tag N QID Q timeout, completion polled"): the issuer
+# blocks for the 30 s request timeout. One read per CPU every 50 ms makes the next IRQ of each queue
+# drain the forgotten completion, bounding the stall to ~50 ms. Why and how: host/nvme-heartbeat.c.
+step_nvme_heartbeat() {
+  local bin=/usr/local/sbin/nvme-heartbeat src=/usr/local/src/nvme-heartbeat.c out restart=0
+  if [[ $NVME_HEARTBEAT != 1 ]]; then
+    systemctl disable --now --quiet nvme-heartbeat.service 2>/dev/null || true
+    return 0
+  fi
+  if [[ ! -b $NVME_DEV ]]; then warn "no $NVME_DEV: nvme-heartbeat skipped"; return 0; fi
+  # The copy in /usr/local/src is the "built" stamp: written last, so a failed build or self-test is retried.
+  if ! cmp -s "$HERE/nvme-heartbeat.c" "$src" || [[ ! -x $bin ]]; then
+    log "building nvme-heartbeat"
+    gcc -O2 -Wall -Wextra -pthread -o "$bin.new" "$HERE/nvme-heartbeat.c"
+    # Raw-device read as root, 2 s: fails loudly on an unreadable disk, alignment or io_setup problem.
+    out=$(timeout 10 "$bin.new" "$NVME_DEV" 50 2 2>&1) || die "nvme-heartbeat self-test on $NVME_DEV failed: $out"
+    mv "$bin.new" "$bin"
+    install -D -m 644 "$HERE/nvme-heartbeat.c" "$src"
+    restart=1
+  fi
+  # StartLimitIntervalSec=0: never give up restarting (exit 3 = online CPU set changed, restart to cover it).
+  # FIFO 1: the daemon sleeps >99.8 % of the time; a CPU hog must not delay its 50 ms beat.
+  if put /etc/systemd/system/nvme-heartbeat.service <<EOF
+[Unit]
+Description=NVMe heartbeat: one read per CPU every 50 ms (lost-MSI workaround, see host/nvme-heartbeat.c)
+DefaultDependencies=no
+After=local-fs.target nvpmodel.service
+Before=containerd.service docker.service
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=$bin $NVME_DEV 50 0
+Restart=always
+RestartSec=1
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=1
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  then systemctl daemon-reload; restart=1; fi
+  systemctl enable --quiet nvme-heartbeat.service
+  if ((restart)) || ! systemctl is-active --quiet nvme-heartbeat.service; then systemctl restart nvme-heartbeat.service; fi
+}
+
+# Heartbeat = main thread + one worker per online CPU.
+nvme_hb_covers_cpus() {
+  local pid
+  pid=$(systemctl show -p MainPID --value nvme-heartbeat.service)
+  [[ $pid -gt 0 ]] && (( $(find "/proc/$pid/task" -mindepth 1 -maxdepth 1 | wc -l) == $(getconf _NPROCESSORS_ONLN) + 1 ))
+}
+
+# Healing works: the service runs and, in the last hour, no heartbeat read waited >= 1 s (event=slow_read ms=).
+nvme_hb_healing_ok() {
+  systemctl is-active --quiet nvme-heartbeat.service || return 1
+  ! journalctl -u nvme-heartbeat.service --since -1h -o cat --no-pager |
+    awk -F'ms=' '/event=slow_read/ && $2 + 0 >= 1000 { f = 1 } END { exit !f }'
 }
 
 step_udev() {
@@ -371,6 +433,12 @@ run_checks() {
   check "gs_usb built for current kernel ABI" test "$(cat "/lib/modules/$KVER/updates/gs_usb.ko.symvers" 2>/dev/null)" = "$(symvers_hash)"
   check "gs_usb -> $CAN_IFACE rename rule" test -f /etc/systemd/network/10-tracer-can.link
   check "can-up@$CAN_IFACE enabled" systemctl is-enabled "can-up@$CAN_IFACE.service"
+  if [[ $NVME_HEARTBEAT == 1 && -b $NVME_DEV ]]; then
+    check "nvme-heartbeat source = built copy" cmp -s "$HERE/nvme-heartbeat.c" /usr/local/src/nvme-heartbeat.c
+    check "nvme-heartbeat enabled and active" sh -c 'systemctl is-enabled nvme-heartbeat.service && systemctl is-active nvme-heartbeat.service'
+    check "nvme-heartbeat covers every online CPU" nvme_hb_covers_cpus
+    check "nvme-heartbeat running, no read >= 1 s in the last hour" nvme_hb_healing_ok
+  fi
   check "orbbec udev rules" cmp -s "$HERE/99-obsensor-libusb.rules" /etc/udev/rules.d/99-obsensor-libusb.rules
   if [[ -n $JOYSTICK_SERIAL ]]; then
     check "joystick udev rule" grep -q "$JOYSTICK_SERIAL" /etc/udev/rules.d/99-arduino-joystick.rules
@@ -397,6 +465,7 @@ if [[ $MODE == apply ]]; then
   step_docker
   step_zram
   step_can
+  step_nvme_heartbeat
   step_udev
   step_livox
   step_hotspot
