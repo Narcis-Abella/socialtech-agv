@@ -24,5 +24,6 @@ JETSON_CLOCKS=0
 TAILSCALE=1
 
 # 1 = run the NVMe heartbeat (host/nvme-heartbeat.c): bounds the ~30 s stalls caused by lost NVMe interrupts on
-# Orin to ~50 ms, at ~0.2-0.3 % of one core. 0 = remove it. Keep 1 unless the stalls are proven fixed in the kernel.
+# Orin to ~50 ms, at ~0.2-0.3 % of one core. 0 = stop and disable it (binary and unit stay). Keep 1 unless the stalls
+# are proven fixed in the kernel.
 NVME_HEARTBEAT=1

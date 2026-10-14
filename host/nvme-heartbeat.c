@@ -12,10 +12,10 @@
 //   PERIOD_MS 1..1000. SECONDS: 0 = run until SIGTERM/SIGINT. CPULIST: e.g. 1,3-5 (default: all online CPUs).
 // exit: 0 stopped by signal or SECONDS; 1 setup error (open, test read, io_setup, thread/pin); 2 usage;
 //       3 online CPU set changed (restart to cover the new set).
-// log (stderr, one key=value line each; event lines are limited to one per CPU per second, summary counts all):
+// log (stderr, one key=value line each; event lines are limited to one per CPU and event kind per second, summary counts all):
 //   event=start file=F period_ms=P cpus=L
-//   event=slow_read cpu=C ms=X        read not reaped by the next tick (> 1.5 periods): lost MSI healed, or slow disk.
-//                                     Latency is sampled at period ticks, so X has one-period resolution.
+//   event=slow_read cpu=C ms=X        read not reaped by the next tick (> 1.5 periods): lost MSI healed, or slow disk. X is the
+//                                     slowest read reaped at that tick. Latency is sampled at period ticks (one-period resolution).
 //   event=read_error cpu=C res=R | event=submit_error cpu=C errno=E | event=queue_full cpu=C (all 32 reads in flight)
 //   event=summary cpu=C reads= slow= errors= full= max_ms= max_gap_ms= inflight=   (hourly and at exit;
 //                                     max_gap_ms = longest interval between two reads issued on C = the heal bound)
@@ -50,6 +50,8 @@ static int64_t period;    // ns
 static atomic_int stop;
 
 static int64_t now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * SEC + t.tv_nsec; }
+// One limiter per event kind: a flood of one (queue_full, every tick while 32 reads are stuck) must not hide another (slow_read).
+enum { EV_GET, EV_READ, EV_SLOW, EV_FULL, EV_SUBMIT, EV_KINDS };
 static int may_log(int64_t now, int64_t *last) { if (now - *last < SEC) return 0; *last = now; return 1; }
 
 static void summary(int cpu, const struct stats *s, int inflight) {
@@ -60,24 +62,27 @@ static void summary(int cpu, const struct stats *s, int inflight) {
 static void *run(void *arg) {
     struct beat *b = arg;
     struct iocb cb[DEPTH], *cbp; struct io_event ev[DEPTH]; struct timespec zero = {0, 0};
-    int64_t t_sub[DEPTH], next = now_ns(), last_sub = 0, last_log = -SEC; int busy[DEPTH] = {0}, inflight = 0, grace = 0;
+    int64_t t_sub[DEPTH], next = now_ns(), last_sub = 0, last_log[EV_KINDS]; int busy[DEPTH] = {0}, inflight = 0, grace = 0;
     struct stats st = {0};
+    for (int k = 0; k < EV_KINDS; k++) last_log[k] = -SEC;
     for (long tick = 1;; tick++) {
         int64_t now = now_ns();
         int n = syscall(SYS_io_getevents, b->ctx, 0, DEPTH, ev, &zero);
-        if (n < 0 && may_log(now, &last_log)) fprintf(stderr, "event=getevents_error cpu=%d errno=%d\n", b->cpu, errno);
+        if (n < 0 && may_log(now, &last_log[EV_GET])) fprintf(stderr, "event=getevents_error cpu=%d errno=%d\n", b->cpu, errno);
+        int64_t worst = 0;   // slowest read reaped now
         for (int i = 0; i < n; i++) {
             int s = (int)ev[i].data; int64_t d = now - t_sub[s];
             busy[s] = 0; inflight--; st.reads++;
             if (d > st.max_lat) st.max_lat = d;
             if (ev[i].res != BLK) {
                 st.errors++;
-                if (may_log(now, &last_log)) fprintf(stderr, "event=read_error cpu=%d res=%lld\n", b->cpu, (long long)ev[i].res);
+                if (may_log(now, &last_log[EV_READ])) fprintf(stderr, "event=read_error cpu=%d res=%lld\n", b->cpu, (long long)ev[i].res);
             } else if (d > period * 3 / 2) {
                 st.slow++;
-                if (may_log(now, &last_log)) fprintf(stderr, "event=slow_read cpu=%d ms=%.1f\n", b->cpu, d / 1e6);
+                if (d > worst) worst = d;
             }
         }
+        if (worst && may_log(now, &last_log[EV_SLOW])) fprintf(stderr, "event=slow_read cpu=%d ms=%.1f\n", b->cpu, worst / 1e6);
         // On stop keep beating until our own reads are reaped: exit_aio() waits for them, and one stuck on a lost
         // MSI would otherwise hold process exit for the 30 s timeout. Give up after 1 s.
         if (atomic_load_explicit(&stop, memory_order_relaxed) && (inflight == 0 || ++grace * period > SEC)) break;
@@ -85,7 +90,7 @@ static void *run(void *arg) {
         while (s < DEPTH && busy[s]) s++;
         if (s == DEPTH) {
             st.full++;
-            if (may_log(now, &last_log)) fprintf(stderr, "event=queue_full cpu=%d inflight=%d\n", b->cpu, inflight);
+            if (may_log(now, &last_log[EV_FULL])) fprintf(stderr, "event=queue_full cpu=%d inflight=%d\n", b->cpu, inflight);
         } else {
             memset(&cb[s], 0, sizeof cb[s]);
             cb[s].aio_lio_opcode = IOCB_CMD_PREAD; cb[s].aio_fildes = fd; cb[s].aio_data = s;
@@ -97,7 +102,7 @@ static void *run(void *arg) {
                 last_sub = t_sub[s];
             } else {
                 st.errors++;
-                if (may_log(now, &last_log)) fprintf(stderr, "event=submit_error cpu=%d errno=%d\n", b->cpu, errno);
+                if (may_log(now, &last_log[EV_SUBMIT])) fprintf(stderr, "event=submit_error cpu=%d errno=%d\n", b->cpu, errno);
             }
         }
         if (tick % (3600000 / period_ms) == 0) summary(b->cpu, &st, inflight);
@@ -170,9 +175,11 @@ int main(int argc, char **argv) {
         if (e) { fprintf(stderr, "event=fatal start cpu=%d err=%d (%s)\n", c, e, strerror(e)); return 1; }
         k++;
     }
-    // Keep pages resident: a page fault in the heartbeat would itself need an NVMe read that may lose its MSI.
+    // Try to keep pages resident: a page fault in the heartbeat would itself need an NVMe read that may lose its MSI.
     // After thread start and without MCL_FUTURE: the loop maps nothing new, and a too small RLIMIT_MEMLOCK
     // (no CAP_IPC_LOCK) then only costs this warning instead of failing pthread_create for the stacks.
+    // MCL_ONFAULT because MCL_CURRENT alone would populate every 8 MiB thread stack. Measured on x86 (smaps): it locks little of
+    // the shared libc text (~6 of 1184 KiB), so this narrows the risk, it does not remove it. Open: small stacks + MCL_CURRENT.
     if (mlockall(MCL_CURRENT | MCL_ONFAULT)) fprintf(stderr, "event=warn mlockall errno=%d (%s)\n", errno, strerror(errno));
     fprintf(stderr, "event=start file=%s period_ms=%d cpus=%s\n", argv[1], period_ms, argc == 5 ? argv[4] : online);
     if (secs) alarm((unsigned)secs);

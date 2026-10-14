@@ -205,6 +205,7 @@ step_nvme_heartbeat() {
     gcc -O2 -Wall -Wextra -pthread -o "$bin.new" "$HERE/nvme-heartbeat.c"
     # Raw-device read as root, 2 s: fails loudly on an unreadable disk, alignment or io_setup problem.
     out=$(timeout 10 "$bin.new" "$NVME_DEV" 50 2 2>&1) || die "nvme-heartbeat self-test on $NVME_DEV failed: $out"
+    [[ -z $(nvme_hb_bad_lines <<<"$out") ]] || die "nvme-heartbeat self-test on $NVME_DEV logged errors: $out"
     mv "$bin.new" "$bin"
     install -D -m 644 "$HERE/nvme-heartbeat.c" "$src"
     restart=1
@@ -217,6 +218,8 @@ Description=NVMe heartbeat: one read per CPU every 50 ms (lost-MSI workaround, s
 DefaultDependencies=no
 After=local-fs.target nvpmodel.service
 Before=containerd.service docker.service
+Conflicts=shutdown.target
+Before=shutdown.target
 StartLimitIntervalSec=0
 
 [Service]
@@ -242,11 +245,18 @@ nvme_hb_covers_cpus() {
   [[ $pid -gt 0 ]] && (( $(find "/proc/$pid/task" -mindepth 1 -maxdepth 1 | wc -l) == $(getconf _NPROCESSORS_ONLN) + 1 ))
 }
 
-# Healing works: the service runs and, in the last hour, no heartbeat read waited >= 1 s (event=slow_read ms=).
+# Lines of the heartbeat log (stdin) that mean it is not protecting: a read failed, could not be submitted or reaped, or
+# waited >= 1 s (event=slow_read ms=; queue_full means 32 reads stuck for 1.6 s, and then slow_read may be missing).
+nvme_hb_bad_lines() {
+  awk -F'ms=' '/event=(read_error|submit_error|getevents_error|queue_full)/ || (/event=slow_read/ && $2 + 0 >= 1000)'
+}
+
+# Healing works: the service runs and its log of the last hour has no bad line. A journal that cannot be read fails.
 nvme_hb_healing_ok() {
+  local log
   systemctl is-active --quiet nvme-heartbeat.service || return 1
-  ! journalctl -u nvme-heartbeat.service --since -1h -o cat --no-pager |
-    awk -F'ms=' '/event=slow_read/ && $2 + 0 >= 1000 { f = 1 } END { exit !f }'
+  log=$(journalctl -u nvme-heartbeat.service --since -1h -o cat --no-pager) || return 1
+  [[ -z $(nvme_hb_bad_lines <<<"$log") ]]
 }
 
 step_udev() {
@@ -465,13 +475,13 @@ if [[ $MODE == apply ]]; then
   step_docker
   step_zram
   step_can
-  step_nvme_heartbeat
   step_udev
   step_livox
   step_hotspot
   step_clocks
   step_sudo
   step_tailscale
+  step_nvme_heartbeat   # last: a failed build or self-test dies, and must not skip the steps above (sudo hardening)
 fi
 run_checks
 if [[ $MODE == apply ]]; then step_power_mode; fi
