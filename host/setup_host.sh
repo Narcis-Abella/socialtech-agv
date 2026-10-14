@@ -143,7 +143,8 @@ step_net_buffers() {
   put /etc/sysctl.d/99-socialtech-dds.conf <<EOF || true
 net.core.rmem_max = $RMEM_MAX
 EOF
-  sysctl -q -p /etc/sysctl.d/99-socialtech-dds.conf
+  # The file is a floor: never lower a limit the host already has (sysctl -p would apply it at once).
+  if (( $(sysctl -n net.core.rmem_max) < RMEM_MAX )); then sysctl -q -p /etc/sysctl.d/99-socialtech-dds.conf; fi
 }
 
 symvers_hash() { sha256sum <"/lib/modules/$KVER/build/Module.symvers" | cut -d' ' -f1; }

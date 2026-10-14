@@ -7,4 +7,5 @@ source /ros_env.sh
 if [[ -z ${DDS_IFACE:-} && -z $user_uri ]]; then
   echo "warning: DDS_IFACE not set; CycloneDDS will pick a network interface arbitrarily" >&2
 fi
+rmem_max_warning || true
 exec "$@"
