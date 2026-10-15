@@ -26,6 +26,9 @@ sudo ./setup_host.sh --check       # verify; all checks should PASS
 Idempotent: re-run after changing `robot.conf` (emptying a feature removes/disables it) or after an
 L4T/kernel update (rebuilds the `gs_usb` CAN driver when the kernel ABI changed; `--check` flags a stale one).
 It also disables the passwordless sudo that SDK Manager leaves for the default user, after you confirm its password.
+It also builds and starts `nvme-heartbeat` (`host/nvme-heartbeat.c`, `NVME_HEARTBEAT=1`), a workaround for Orin NVMe interrupts that get lost and
+stall a process for 30 s; `--check` fails if it is not running on every online CPU or its log shows a read blocked >= 1 s in the last hour
+(`journalctl -u nvme-heartbeat`).
 
 ## Images
 
