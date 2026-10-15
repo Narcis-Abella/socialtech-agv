@@ -31,7 +31,7 @@ before=$CYCLONEDDS_URI; set_cyclone_uri
 [[ $CYCLONEDDS_URI == "$before" ]] || fail "a caller that sets its own buffer must be left alone: $CYCLONEDDS_URI"
 
 # rmem_max preflight: Cyclone needs the kernel to grant the request, and the grant is 2x min(request, rmem_max)
-unset CYCLONEDDS_URI
+unset CYCLONEDDS_URI; set_cyclone_uri   # the URI the entrypoint sees when it runs the check
 f=$(mktemp); trap 'rm -f "$f"' EXIT
 echo 212992 >"$f"
 msg=$(RMEM_MAX_FILE=$f rmem_max_warning 2>&1) && fail "rmem_max 212992 must warn"
@@ -46,6 +46,17 @@ echo $(( (DDS_RCVBUF_MIN + 1) / 2 )) >"$f"   # the grant is 2x the limit: half t
 RMEM_MAX_FILE=$f rmem_max_warning >/dev/null 2>&1 || fail "rmem_max at half the request must pass"
 echo $(( (DDS_RCVBUF_MIN + 1) / 2 - 1 )) >"$f"
 ! RMEM_MAX_FILE=$f rmem_max_warning >/dev/null 2>&1 || fail "rmem_max one below half the request must warn"
+# a caller that sets its own buffer is not bound to our request: Cyclone only aborts on the min it was given
+echo 212992 >"$f"
+export CYCLONEDDS_URI='<CycloneDDS><Domain><Internal><SocketReceiveBufferSize min="1MB"/></Internal></Domain></CycloneDDS>'
+set_cyclone_uri
+RMEM_MAX_FILE=$f rmem_max_warning >/dev/null 2>&1 || fail "a caller's own buffer min must not trigger our warning: $CYCLONEDDS_URI"
+export CYCLONEDDS_URI='<CycloneDDS><Domain><Internal><SocketReceiveBufferSize max="1MB"/></Internal></Domain></CycloneDDS>'
+set_cyclone_uri
+RMEM_MAX_FILE=$f rmem_max_warning >/dev/null 2>&1 || fail "a caller's buffer without min must not trigger our warning: $CYCLONEDDS_URI"
+export CYCLONEDDS_URI='<CycloneDDS>mine</CycloneDDS>'
+set_cyclone_uri
+! RMEM_MAX_FILE=$f rmem_max_warning >/dev/null 2>&1 || fail "an explicit URI without a buffer still gets our request, so it must warn: $CYCLONEDDS_URI"
 
 export CYCLONEDDS_URI='file:///etc/cyclone.xml,<CycloneDDS>mine</CycloneDDS>'
 set_cyclone_uri

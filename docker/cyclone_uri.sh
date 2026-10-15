@@ -33,9 +33,11 @@ set_cyclone_uri() {
 }
 
 # Prints a warning (and fails) when the host's rmem_max cannot grant the buffer: Cyclone would then abort every node
-# with an error that does not mention rmem_max. RMEM_MAX_FILE is overridable for the test.
+# with an error that does not mention rmem_max. Only for the request above: a caller that sets its own
+# SocketReceiveBufferSize chose its own min. RMEM_MAX_FILE is overridable for the test.
 rmem_max_warning() {
   local file=${RMEM_MAX_FILE:-/proc/sys/net/core/rmem_max} have
+  [[ ${CYCLONEDDS_URI:-} == *"SocketReceiveBufferSize min=\"${DDS_RCVBUF_MIN}B\""* ]] || return 0
   [[ -r $file ]] || return 0
   have=$(<"$file")
   [[ $have =~ ^[0-9]+$ ]] || return 0
