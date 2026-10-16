@@ -2,7 +2,7 @@
 # GLIM glim_ext modules, one at a time, on our own bags (floor is flat in all of them, so z range / roll / pitch are drift):
 #   ext_grav = libgravity_estimator.so, ext_flat = libflat_earther.so (min_travel_distance 20, max_neighbor_distance 1e4: "whole ground is flat").
 # A 1-run smoke test per module first (module must log its startup line, GLIM must exit 0); the queue stops if it does not.
-# Needs ~/glim_ext_build5 (tools/glim_eval/build_glim_ext.sh). DDS domain 11, 6 cores.
+# Needs ~/glim_ext_build5 (built with tools/glim_eval/build_glim_ext.sh, removed from the tree: last at commit bb8356c). DDS domain 11, 6 cores.
 cd ~
 log=~/glim_eval/queue.log
 O=/tools/glim_eval
