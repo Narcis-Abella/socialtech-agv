@@ -27,6 +27,9 @@ sudo ./setup_host.sh --check       # verify; all checks should PASS
 Idempotent: re-run after changing `robot.conf` (emptying a feature removes/disables it) or after an
 L4T/kernel update (rebuilds the `gs_usb` CAN driver when the kernel ABI changed; `--check` flags a stale one).
 It also disables the passwordless sudo that SDK Manager leaves for the default user, after you confirm its password.
+It also builds and starts `nvme-heartbeat` (`host/nvme-heartbeat.c`, `NVME_HEARTBEAT=1`), a workaround for Orin NVMe interrupts that get lost and
+stall a process for 30 s; `--check` fails if it is not running on every online CPU or its log shows a read blocked >= 1 s in the last hour
+(`journalctl -u nvme-heartbeat`).
 
 ## Images
 
@@ -46,10 +49,11 @@ On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=
 | Stage | Contents |
 |---|---|
 | `base` | ROS 2 Jazzy, CycloneDDS, CUDA 13.2 runtime (must match the host L4T driver) |
-| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP |
+| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, entrypoint and ROS environment |
 
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
 Without `DDS_IFACE`, CycloneDDS picks a network interface arbitrarily and other machines may not see the robot's nodes.
+The images ask CycloneDDS for a 10 MiB socket receive buffer (`docker/cyclone_uri.sh`). When the host did not raise `net.core.rmem_max` (`host/setup_host.sh` does, via `/etc/sysctl.d/99-socialtech-dds.conf`), the entrypoint prints a warning naming it and every ROS node then fails to start ("failed to create domain"), instead of silently losing the LiDAR scans that overflow a UDP buffer (measured: 24 % of the scans on an Orin Nano). An explicit `CYCLONEDDS_URI` keeps its own configuration (interface included) and still gets the buffer request, unless it sets `SocketReceiveBufferSize` itself.
 Shells opened with `docker exec -it <container> bash` get the same ROS environment as the entrypoint.
 
 ## Tools
