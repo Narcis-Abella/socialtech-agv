@@ -35,13 +35,6 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     PATH=/usr/local/cuda-13.2/bin:${PATH} \
     RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-# ROS environment shared by the entrypoint and interactive shells (`docker exec -it ... bash`).
-COPY ros_env.sh /ros_env.sh
-RUN echo 'source /ros_env.sh' >> /etc/bash.bashrc
-COPY --chmod=755 entrypoint.sh /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["bash"]
-
 # ──────────────────────────────────────────────────────────────────────────────
 FROM base AS robot
 
@@ -90,9 +83,11 @@ RUN --mount=type=cache,target=/ws/build \
       --parallel-workers "${COLCON_WORKERS}" \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy
 
-# tools/glim_metrics.py. After the colcon build so this layer never invalidates it.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      python3-numpy python3-scipy
+# ROS environment shared by the entrypoint and interactive shells (`docker exec -it ... bash`).
+# Last on purpose: editing these scripts must not invalidate the SDK and colcon layers above.
+COPY cyclone_uri.sh /cyclone_uri.sh
+COPY ros_env.sh /ros_env.sh
+RUN echo 'source /ros_env.sh' >> /etc/bash.bashrc
+COPY --chmod=755 entrypoint.sh /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["bash"]
