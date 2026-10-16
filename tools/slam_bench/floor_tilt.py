@@ -34,7 +34,7 @@ def load_submap(d):
     return T, p @ T[:3, :3].T + T[:3, 3], n @ T[:3, :3].T
 
 
-def fit_plane(p, rng):
+def fit_plane(p, rng, min_inliers=MIN_INLIERS):
     """RANSAC then least squares on the inliers. Returns (unit normal with z > 0, offset d with n.p = d, inlier count) or None."""
     if len(p) < 3:
         return None
@@ -50,7 +50,7 @@ def fit_plane(p, rng):
     V, off = V[ok], np.einsum("ij,ij->i", V[ok], a[ok])
     k = int(np.argmax((np.abs(search @ V.T - off) < TOL).sum(0)))
     best = np.abs(p @ V[k] - off[k]) < TOL
-    if best.sum() < MIN_INLIERS:
+    if best.sum() < min_inliers:
         return None
     for _ in range(2):  # refit on the inliers, then re-select them with the refined plane
         q = p[best]
