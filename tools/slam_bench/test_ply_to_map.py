@@ -303,6 +303,39 @@ def test_ply_out_is_the_levelled_aligned_cloud_without_floor_and_ceiling():
         assert ex > 9 and ey < 9, (ex, ey)  # same frame as the PGM: levelled, aligned, landscape
 
 
+def speck(x, y, z=0.5):
+    """Three diagonal obstacle cells (8-connected) of 4 points each, floating z above the floor: a thin object seen in a few scans. x, y: lower-left corner of a cell."""
+    cells = [(x + i * RES, y + i * RES) for i in range(3)]
+    return np.array([(cx + dx, cy + dy, z) for cx, cy in cells for dx, dy in ((0.01, 0.01), (0.03, 0.01), (0.01, 0.03), (0.03, 0.03))])
+
+
+def occupied_pixels(pgm):
+    b = Path(pgm).read_bytes()
+    w, h = map(int, b.split(b"\n")[1].split())
+    return int((np.frombuffer(b[-w * h:], np.uint8) == ply_to_map.OCC).sum())
+
+
+def test_obstacle_islands_smaller_than_min_component_become_free_and_walls_stay():
+    Q, _ = ply_to_map.level_to_floor(room())
+    Q = np.r_[Q, speck(-1.0, 0.5)]
+    kept, origin = ply_to_map.rasterize(Q, RES)
+    dropped, _ = ply_to_map.rasterize(Q, RES, min_component=10)
+    assert occupied_near(kept, origin, -0.95, 0.55)                      # off by default: the speck is on the map
+    assert not occupied_near(dropped, origin, -0.95, 0.55)
+    assert cell(dropped, origin, -0.95, 0.55) == ply_to_map.FREE         # open floor again, not unknown
+    assert ((kept == ply_to_map.OCC) & (dropped != ply_to_map.OCC)).sum() == 3   # only the speck's 3 cells went; the walls are big components
+    assert ((dropped == ply_to_map.OCC) & (kept != ply_to_map.OCC)).sum() == 0
+
+
+def test_main_min_component_flag_cleans_the_pgm():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        write_ply(tmp / "room.ply", np.r_[room(), speck(-1.0, 0.5, FLOOR_Z + 0.5) @ tilt_rot(TILT).T])
+        ply_to_map.main([str(tmp / "room.ply"), str(tmp / "a")])
+        ply_to_map.main([str(tmp / "room.ply"), str(tmp / "b"), "--min-component", "10"])
+        assert occupied_pixels(tmp / "a.pgm") - occupied_pixels(tmp / "b.pgm") >= 2
+
+
 if __name__ == "__main__":
     test_read_ply_roundtrip_with_and_without_intensity()
     test_level_to_floor_measures_tilt_and_puts_the_floor_at_zero()
@@ -328,4 +361,6 @@ if __name__ == "__main__":
     test_write_map_makes_pgm_and_map_server_yaml()
     test_main_runs_end_to_end_with_an_optional_tum_trajectory()
     test_ply_out_is_the_levelled_aligned_cloud_without_floor_and_ceiling()
+    test_obstacle_islands_smaller_than_min_component_become_free_and_walls_stay()
+    test_main_min_component_flag_cleans_the_pgm()
     print("ok")

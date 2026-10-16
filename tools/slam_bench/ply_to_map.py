@@ -1,6 +1,6 @@
 """2D occupancy map (map_server PGM + YAML) from a SLAM point cloud in PLY: finds and levels the floor, then drops floor and ceiling.
 
-  ply_to_map.py <in.ply> <out_prefix> [--res 0.05] [--ceil 1.80] [--floor-band 0.10] [--min-hits 2] [--fill 0.3] [--no-align] [--keep-portrait] [--ply-out cloud.ply] [--min-manhattan 0.7] [--min-floor 250] [--max-below 0.10] [--traj poses.tum]
+  ply_to_map.py <in.ply> <out_prefix> [--res 0.05] [--ceil 1.80] [--floor-band 0.10] [--min-hits 2] [--fill 0.3] [--min-component 10] [--no-align] [--keep-portrait] [--ply-out cloud.ply] [--min-manhattan 0.7] [--min-floor 250] [--max-below 0.10] [--traj poses.tum]
 
 Needs numpy + scipy (host/laptop tool, like floor_tilt.py; scipy is not in the robot image). Input: x, y, z only, so it works for any SLAM.
 1. Floor: 10 cm voxels, PCA normals (k=16), planar voxels with |nz| > 0.9, sequential RANSAC (up to 6 planes); the LOWEST plane is the floor
@@ -18,7 +18,7 @@ Needs numpy + scipy (host/laptop tool, like floor_tilt.py; scipy is not in the r
    map is turned about z so the walls lie on the pixel rows/columns (Manhattan: circular mean of 4*theta of the wall normals; only if the walls are
    Manhattan enough, --min-manhattan; --no-align to keep the SLAM world's yaw). The map is then turned another 90 deg if it is taller than wide, so the long side is horizontal (--keep-portrait to skip). The transform PLY -> map is written in the YAML as a comment.
    Heights: < floor-band = floor (marks free), floor-band..ceil = obstacle, > ceil = dropped (ceiling, door frames).
-5. Cells: occupied (0) with >= min-hits obstacle points, else free (254) with floor points, else unknown (205).
+5. Cells: occupied (0) with >= min-hits obstacle points, else free (254) with floor points, else unknown (205). With --min-component N, occupied islands of fewer than N cells (8-connected) are then set free.
 Free space comes only from floor points the sensor actually saw (sparse: --fill closes gaps of about 0.3 m), so large areas the LiDAR never saw the floor of stay unknown.
 """
 import argparse
@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from scipy.ndimage import binary_closing
+from scipy.ndimage import binary_closing, label
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
@@ -177,10 +177,11 @@ def level_to_floor(P, min_floor=250, max_below=0.10, traj=None, align=True, min_
                                         "traj": checked, "yaw_deg": turn, "manhattan": strength, "T": T}
 
 
-def rasterize(Q, res, ceil=1.80, floor_band=0.10, min_hits=2, fill=0.30):
+def rasterize(Q, res, ceil=1.80, floor_band=0.10, min_hits=2, fill=0.30, min_component=0):
     """(grid, origin): grid[row, col] in OCC/FREE/UNK, row 0 = max y (PGM order); origin = (x, y) of the lower-left corner.
     Only floor and obstacle points count; points alone in their 1 m cell (fewer than STRAY_PTS) are dropped: stray points far away would inflate the grid.
-    fill (m): free space is closed over gaps up to about this size (the floor is seen sparsely); obstacles are never overwritten, 0 = off."""
+    fill (m): free space is closed over gaps up to about this size (the floor is seen sparsely); obstacles are never overwritten, 0 = off.
+    min_component: occupied islands (8-connected) of fewer cells than this are set free (isolated specks of thin or dim objects), 0 = off."""
     h = Q[:, 2]
     P = Q[(h > -floor_band) & (h <= ceil)]
     ij = np.floor(P[:, :2]).astype(np.int64)
@@ -205,6 +206,9 @@ def rasterize(Q, res, ceil=1.80, floor_band=0.10, min_hits=2, fill=0.30):
         closed = binary_closing(grid == FREE, structure=(x * x + y * y <= r * r))
         grid[closed & (grid == UNK)] = FREE
     grid[obstacle >= min_hits] = OCC
+    if min_component > 1:
+        lab, _ = label(grid == OCC, structure=np.ones((3, 3)))
+        grid[(lab > 0) & (np.bincount(lab.ravel())[lab] < min_component)] = FREE
     return grid[::-1], origin
 
 
@@ -232,6 +236,7 @@ def main(argv):
     ap.add_argument("--floor-band", type=float, default=0.10, help="m above the floor still counted as floor")
     ap.add_argument("--min-hits", type=int, default=2)
     ap.add_argument("--fill", type=float, default=0.30, help="m: close gaps in the free space up to about this size (0 = off)")
+    ap.add_argument("--min-component", type=int, default=0, help="cells: occupied islands smaller than this are set free (specks of thin objects). 10 removed 1.9%% of eco_-1_01's cells and none of its walls (0 = off)")
     ap.add_argument("--min-floor", type=int, default=250, help="voxels (10 cm) the floor plane must have; smallest real floors seen: 193-300")
     ap.add_argument("--max-below", type=float, default=0.10, help="share of the map allowed > 0.3 m below the floor plane")
     ap.add_argument("--no-align", action="store_true", help="keep the SLAM world's yaw (by default the map is turned so the walls lie on the pixel rows/columns)")
@@ -244,7 +249,7 @@ def main(argv):
         Q, info = level_to_floor(read_ply(a.ply), a.min_floor, a.max_below, None if a.traj is None else read_traj(a.traj), not a.no_align, a.min_manhattan, not a.keep_portrait)
     except ValueError as e:
         sys.exit(f"error: {e}")
-    grid, origin = rasterize(Q, a.res, a.ceil, a.floor_band, a.min_hits, a.fill)
+    grid, origin = rasterize(Q, a.res, a.ceil, a.floor_band, a.min_hits, a.fill, a.min_component)
     write_map(a.out_prefix, grid, a.res, origin, info["T"])
     if a.ply_out:
         write_ply(a.ply_out, Q[(Q[:, 2] > a.floor_band) & (Q[:, 2] <= a.ceil)])
