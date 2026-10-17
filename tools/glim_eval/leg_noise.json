@@ -1,0 +1,9 @@
+{
+  "config_sensors.json": {
+    "sensors": {
+      "imu_acc_noise": 0.02,
+      "imu_gyro_noise": 0.00175,
+      "imu_bias_noise": 1.5e-05
+    }
+  }
+}

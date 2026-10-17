@@ -1,0 +1,12 @@
+{
+  "config_preprocess.json": {
+    "preprocess": {
+      "distance_near_thresh": 0.3,
+      "distance_far_thresh": 8.0,
+      "downsample_resolution": 0.25,
+      "random_downsample_target": 2000,
+      "enable_outlier_removal": true,
+      "outlier_std_mul_factor": 1.5
+    }
+  }
+}

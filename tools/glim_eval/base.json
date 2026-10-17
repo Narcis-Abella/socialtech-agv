@@ -1,0 +1,14 @@
+{
+  "config_ros.json": {
+    "glim_ros": {
+      "imu_topic": "/livox/imu",
+      "points_topic": "/livox/lidar",
+      "extension_modules": ["libmemory_monitor.so"]
+    }
+  },
+  "config_sensors.json": {
+    "sensors": {
+      "T_lidar_imu": [0.011, 0.02329, -0.04412, 0.0, 0.0, 0.0, 1.0]
+    }
+  }
+}
