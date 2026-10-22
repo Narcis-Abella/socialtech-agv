@@ -52,7 +52,10 @@ def cross_track(path, traj):
 
 def distance_to_occupied(occ, res):
     """Distance (m) from each cell centre to the nearest occupied cell centre; 0 on occupied cells. occ[row, col], row 0 = top of the image."""
-    return ndimage.distance_transform_edt(~np.asarray(occ, bool)) * res
+    occ = np.asarray(occ, bool)
+    if not occ.any():
+        return np.full(occ.shape, np.inf)       # scipy returns finite nonsense when there is no background cell
+    return ndimage.distance_transform_edt(~occ) * res
 
 
 def footprint_clearance(dist, origin, res, x, y, yaw, length, width):

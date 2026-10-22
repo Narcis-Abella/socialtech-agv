@@ -119,3 +119,23 @@ def sample_pairs(blocked, n, seed, clearance, dmin, dmax, res, origin):
     if len(pairs) < n:
         raise RuntimeError(f"only {len(pairs)} of {n} pairs found")
     return pairs
+
+
+def lattice_poses(blocked, clearance, spacing, res, origin):
+    """(x, y) on a regular lattice of `spacing` metres inside the largest eroded-free region: positions to survey the map from."""
+    h = blocked.shape[0]
+    free = eroded_free(blocked, clearance, res)
+    lab, k = ndimage.label(free, structure=np.ones((3, 3)))
+    if k == 0:
+        return []
+    comp = lab == (1 + int(np.argmax(ndimage.sum(free, lab, range(1, k + 1)))))
+    x0, y0 = origin[0] + spacing / 2, origin[1] + spacing / 2
+    out = []
+    for iy in range(int((h * res) / spacing)):
+        for ix in range(int((blocked.shape[1] * res) / spacing)):
+            x, y = x0 + ix * spacing, y0 + iy * spacing
+            r, c = to_cell(x, y, origin, res, h)
+            if 0 <= r < h and 0 <= c < blocked.shape[1] and comp[r, c]:
+                out.append((round(x, 3), round(y, 3)))
+    return out
+

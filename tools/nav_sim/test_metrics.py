@@ -101,6 +101,12 @@ def test_footprint_clearance_uses_the_right_image_row():
     assert not m.collides(dist, (0.0, 0.0), 0.05, 1.12, 0.3, 0.0, 0.70, 0.58)   # same x, far from the block
 
 
+def test_an_empty_map_has_infinite_clearance():
+    dist = m.distance_to_occupied(np.zeros((10, 10), bool), 0.05)
+    assert np.all(np.isinf(dist))
+    assert m.footprint_clearance(dist, (0.0, 0.0), 0.05, 0.25, 0.25, 0.0, 0.2, 0.2) == float("inf")
+
+
 def test_footprint_clearance_outside_the_map_is_infinite_not_a_crash():
     dist = m.distance_to_occupied(grid_with_wall(), 0.05)
     assert m.footprint_clearance(dist, (0.0, 0.0), 0.05, -5.0, -5.0, 0.0, 0.70, 0.58) == float("inf")
