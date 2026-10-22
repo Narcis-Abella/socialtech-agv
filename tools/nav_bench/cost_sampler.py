@@ -9,7 +9,15 @@ import numpy as np
 
 # name -> a substring of the process command line
 WATCH = {"fastlio_mapping": "fastlio_mapping", "amcl": "nav2_amcl/amcl", "pointcloud_to_laserscan": "pointcloud_to_laserscan_node",
-         "planar_odom": "lib/planar_odom/planar_odom", "map_server": "nav2_map_server/map_server"}
+         "planar_odom": "lib/planar_odom/planar_odom", "map_server": "nav2_map_server/map_server",
+         # Nav2 simulation (tools/nav_sim): the Nav2 nodes (count them as nav2_*) and the simulator (sim_*, not part of the robot)
+         "nav2_controller": "nav2_controller/controller_server", "nav2_planner": "nav2_planner/planner_server",
+         "nav2_bt_navigator": "nav2_bt_navigator/bt_navigator", "nav2_behaviors": "nav2_behaviors/behavior_server",
+         "nav2_smoother": "nav2_smoother/smoother_server", "nav2_velocity_smoother": "nav2_velocity_smoother/velocity_smoother",
+         "nav2_collision_monitor": "nav2_collision_monitor/collision_monitor", "nav2_waypoint_follower": "nav2_waypoint_follower/waypoint_follower",
+         "nav2_route": "nav2_route/route_server", "nav2_docking": "opennav_docking/opennav_docking",
+         "nav2_lifecycle_manager": "nav2_lifecycle_manager/lifecycle_manager",
+         "sim_gz": "gz sim", "sim_bridge": "ros_gz_bridge/parameter_bridge", "sim_noise": "noisy_"}
 TICK = os.sysconf("SC_CLK_TCK")
 
 

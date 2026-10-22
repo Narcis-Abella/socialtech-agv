@@ -107,6 +107,24 @@ COPY --chmod=755 entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Nav2 in simulation: Gazebo Harmonic + Nav2 on top of `robot`. Nav2 lives here until it goes to the real robot (then it moves to `robot`).
+FROM robot AS sim
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ros-jazzy-ros-gz ros-jazzy-nav2-bringup ros-jazzy-nav2-regulated-pure-pursuit-controller \
+      ros-jazzy-nav2-smac-planner ros-jazzy-xacro
+
+# socialtech_nav: params, launch and map. Separate from docker/ros/ (copied into `robot`) so Nav2 stays out of `robot`.
+WORKDIR /ws
+COPY ros_nav/ src_nav/
+RUN . /opt/ros/jazzy/setup.sh \
+ && colcon build --base-paths src_nav --merge-install --install-base /opt/socialtech_nav
+# Appended here and not in ros_env.sh: that file is copied in `robot`, and editing it would rebuild the sim and mapper stages.
+RUN echo 'if [[ -f /opt/socialtech_nav/setup.bash ]]; then source /opt/socialtech_nav/setup.bash --; fi' >> /ros_env.sh
+
 # Offline mapping (`docker build --target mapper`): Voxel-SLAM + GTSAM + the tools/slam_bench pipeline (make_map.sh). A separate stage: the robot image
 # runs the navigation stack and carries neither GTSAM (with Boost) nor Voxel-SLAM. Without --target, the last stage is the one that gets built.
 FROM robot AS mapper

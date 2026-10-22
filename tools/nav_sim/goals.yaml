@@ -1,0 +1,14 @@
+# Goals in the `map` frame (= Gazebo world frame; spawn at x=-13, y=5), sent in order from wherever the previous one ended.
+# Picked by script on the loyola map (docker/ros_nav/socialtech_nav/maps): free component reachable from the spawn with the
+# robot eroded by 0.35 m, clearance >= 0.9 m, legs 8-25 m, spread by farthest-point choice; the last one returns to the spawn.
+goals:
+  - {x: 8.2,   y: 0.4,  yaw: 0.0}
+  - {x: -3.7,  y: -3.6, yaw: 1.57}
+  - {x: 16.4,  y: -4.5, yaw: 3.14}
+  - {x: -0.8,  y: 5.0,  yaw: -1.57}
+  - {x: -12.9, y: -4.1, yaw: 0.0}
+  - {x: -7.0,  y: 2.2,  yaw: 1.57}
+  - {x: 14.7,  y: 2.7,  yaw: 3.14}
+  - {x: 2.3,   y: 0.0,  yaw: -1.57}
+  - {x: -15.9, y: 0.2,  yaw: 0.0}
+  - {x: -13.0, y: 5.0,  yaw: -1.57}   # return to the spawn
