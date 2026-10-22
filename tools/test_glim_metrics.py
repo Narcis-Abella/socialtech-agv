@@ -145,10 +145,20 @@ def test_floor_sparse():
     assert abs(plane[2] - (-0.75)) < 0.02 and tilt is not None and tilt < 0.5, (plane, tilt)
 
 
+def test_floor_none():
+    """No surface reaches FLOOR_PEAK_MIN_POINTS in any z bin (small or sparse submap, empty cloud): no floor, so None.
+    It must not raise: a caller loops over all submaps of a dump."""
+    rng = np.random.default_rng(5)
+    sparse = np.c_[rng.uniform(0, 5, (30, 2)), rng.uniform(0, 3, 30)]
+    assert glim_metrics.floor_plane(sparse) is None
+    assert glim_metrics.floor_plane(np.empty((0, 3))) is None
+
+
 if __name__ == "__main__":
     test_metrics()
     test_mme()
     test_runs_divergence()
     test_floor()
     test_floor_sparse()
+    test_floor_none()
     print("ok")
