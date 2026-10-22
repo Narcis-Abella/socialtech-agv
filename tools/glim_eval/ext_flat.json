@@ -1,0 +1,13 @@
+{
+  "config_ros.json": {
+    "glim_ros": {
+      "extension_modules": ["libmemory_monitor.so", "libflat_earther.so"]
+    }
+  },
+  "config_flat_earther.json": {
+    "flat_earther": {
+      "min_travel_distance": 20.0,
+      "max_neighbor_distance": 10000.0
+    }
+  }
+}
