@@ -1,6 +1,6 @@
 """Sends the goals of goals.yaml to Nav2 in the simulation and scores each run.
   eval_goals.py <goals.yaml> <map.yaml> <out.json>      (inside the sim image, with the sim and Nav2 running)
-Per goal: reached or not, time, closest approach to a wall and AMCL error, both against the pose Gazebo publishes for the robot (/gt/pose; /odom_raw is wheel odometry with ~6 % slip, not ground truth).
+Per goal: reached or not, time, closest approach to a wall and localization error, both against the pose Gazebo publishes for the robot (/gt/pose; /odom_raw is wheel odometry with ~6 % slip, not ground truth).
 The map frame is the world frame: the map is built with odom_source:=ground_truth, whose odom frame is the world one, and slam_toolbox starts `map` on `odom`."""
 import json
 import math
@@ -25,6 +25,17 @@ def clearance(grid, res, origin, x, y, radius=1.0):
     return float(d.min()) if d.size else float("inf")
 
 
+def robot_xy(buffer):
+    """(x, y) of base_footprint in map from TF, or None if the transform is not there yet. It is AMCL's map->odom composed with the odometry, so it follows the robot at the odometry rate; /amcl_pose is published only after 0.25 m of motion and would lag the ground truth by up to that."""
+    from rclpy.time import Time
+    from tf2_ros import TransformException
+    try:
+        t = buffer.lookup_transform("map", "base_footprint", Time()).transform.translation
+    except TransformException:
+        return None
+    return (t.x, t.y)
+
+
 def summarize(rows):
     """rows: dicts with ok, t (s), clr (m), err (m). Times are those of the goals reached."""
     t = [r["t"] for r in rows if r["ok"]]
@@ -47,15 +58,16 @@ def load_grid(map_yaml):
 
 def main(goals_yaml, map_yaml, out_json):
     import rclpy
-    from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+    from geometry_msgs.msg import PoseStamped
     from action_msgs.msg import GoalStatus
     from nav2_msgs.action import NavigateToPose
     from rclpy.action import ActionClient
+    from tf2_ros import Buffer, TransformListener
 
     rclpy.init()
     nav = rclpy.create_node("eval_goals")
     client = ActionClient(nav, NavigateToPose, "navigate_to_pose")
-    state = {"gt": None, "amcl": None, "min_clr": float("inf")}
+    state = {"gt": None, "min_clr": float("inf")}
     grid, res, origin = load_grid(map_yaml)
 
     def on_gt(m):
@@ -63,8 +75,8 @@ def main(goals_yaml, map_yaml, out_json):
         state["min_clr"] = min(state["min_clr"], clearance(grid, res, origin, *state["gt"]))
 
     nav.create_subscription(PoseStamped, "/gt/pose", on_gt, 10)
-    nav.create_subscription(PoseWithCovarianceStamped, "/amcl_pose",
-                            lambda m: state.update(amcl=(m.pose.pose.position.x, m.pose.pose.position.y)), 10)
+    tf = Buffer()
+    TransformListener(tf, nav)
     client.wait_for_server()  # run_eval.sh has already waited for bt_navigator to be active
     rows = []
     for g in yaml.safe_load(open(goals_yaml))["goals"]:
@@ -87,7 +99,8 @@ def main(goals_yaml, map_yaml, out_json):
                 rclpy.spin_once(nav, timeout_sec=0.1)
             ok = result.result().status == GoalStatus.STATUS_SUCCEEDED
         dt = (nav.get_clock().now() - t0).nanoseconds / 1e9
-        err = math.hypot(state["amcl"][0] - state["gt"][0], state["amcl"][1] - state["gt"][1]) if state["amcl"] and state["gt"] else float("nan")
+        est = robot_xy(tf)
+        err = math.hypot(est[0] - state["gt"][0], est[1] - state["gt"][1]) if est and state["gt"] else float("nan")
         rows.append(dict(goal=g, ok=ok, t=dt, clr=state["min_clr"], err=err))
         print(rows[-1], flush=True)
     json.dump({"rows": rows, "summary": summarize(rows)}, open(out_json, "w"), indent=1)
