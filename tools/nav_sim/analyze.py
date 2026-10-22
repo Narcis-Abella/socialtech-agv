@@ -1,6 +1,6 @@
 """Metrics, summary table and paired comparison of recorded trials (offline: numpy, scipy).
-usage: analyze.py summarize <run dir> [--map map.yaml] [--csv out.csv]
-       analyze.py compare <base run dir> <candidate run dir> [--map map.yaml]
+usage: analyze.py summarize <run dir> [--map map.yaml] [--csv out.csv] [--first N]
+       analyze.py compare <base run dir> <candidate run dir> [--map map.yaml] [--first N]
 <run dir> holds trial_*.json (trials.py). `reached` = Nav2 says succeeded AND the ground-truth pose is within --tol (0.25 m) of the goal. Clearance and collisions use the footprint against the
 occupied cells of the map (unknown cells are not obstacles). Times, SPL and smoothness are compared only on pairs both runs reached."""
 import glob
@@ -124,8 +124,16 @@ def print_summary(rows, name=""):
         print(f"  not reached: {r['tag']} {r['id']} status={r['status']} code={r['error_code']} final_err={fmt(r.get('final_err_xy'))} recoveries={r['recoveries']}")
 
 
+def select(rows, first):
+    """Rows of the first `first` pair ids (sorted), every repetition; all rows when first is None."""
+    if first is None:
+        return rows
+    keep = set(sorted({r["id"] for r in rows})[:first])
+    return [r for r in rows if r["id"] in keep]
+
+
 def parse(argv):
-    opts = {"--map": DEFAULT_MAP, "--csv": None, "--tol": "0.25"}
+    opts = {"--map": DEFAULT_MAP, "--csv": None, "--tol": "0.25", "--first": None}
     pos = []
     i = 0
     while i < len(argv):
@@ -141,14 +149,15 @@ def parse(argv):
 def main(argv):
     pos, opts = parse(argv)
     ctx = context(opts["--map"], float(opts["--tol"]))
+    first = int(opts["--first"]) if opts["--first"] else None
     if pos[0] == "summarize":
-        rows = [trial_metrics(r, ctx) for r in load_trials(pos[1])]
+        rows = select([trial_metrics(r, ctx) for r in load_trials(pos[1])], first)
         print_summary(rows, os.path.basename(os.path.normpath(pos[1])))
         if opts["--csv"]:
             keys = sorted({k for r in rows for k in r})
             open(opts["--csv"], "w").write(",".join(keys) + "\n" + "\n".join(",".join(str(r.get(k, "")) for k in keys) for r in rows) + "\n")
     elif pos[0] == "compare":
-        b, c = ([trial_metrics(r, ctx) for r in load_trials(p)] for p in pos[1:3])
+        b, c = (select([trial_metrics(r, ctx) for r in load_trials(p)], first) for p in pos[1:3])
         res = compare(b, c, COMPARED)
         s = res["_success"]
         print(f"pairs={s['pairs']}  reached only by base={s['only_base']}  only by candidate={s['only_cand']}  McNemar exact p={s['p']:.3g}")

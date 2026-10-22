@@ -81,6 +81,13 @@ def test_aggregate_uses_distributions():
     assert g["duration"]["median"] == 14.0 and g["duration"]["n"] == 6          # only reached trials count for times
 
 
+def test_select_keeps_the_first_n_pair_ids_of_every_repetition():
+    rows = [{"id": f"p{i:02d}", "tag": f"r{k}"} for k in range(2) for i in range(5)]
+    sel = a.select(rows, 3)
+    assert sorted({r["id"] for r in sel}) == ["p00", "p01", "p02"] and len(sel) == 6
+    assert a.select(rows, None) == rows and len(a.select(rows, 99)) == 10
+
+
 def test_compare_pairs_by_id_and_tag():
     base = [{"id": f"p{i}", "tag": "r0", "success": True, "reached": True, "duration": 10.0 + i, "spl": 0.8, "jerk_lin_rms": 1.0} for i in range(6)]
     cand = [{**r, "duration": r["duration"] - 2.0, "jerk_lin_rms": 0.5} for r in base]
