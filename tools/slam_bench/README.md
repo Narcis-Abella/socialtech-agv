@@ -27,13 +27,13 @@ Not deployment code: research tooling, run by hand on a laptop and a Jetson AGX 
 
 ## `agx/` today
 
-The image tags in these scripts date from the benchmark runs (2026-09/10), when `socialtech:robot` carried GLIM and GTSAM and `~/bench_ws` held the other methods compiled on the board. The `robot` stage no longer does.
+The image tags in these scripts date from the benchmark runs (2026-09/10), when the AGX's `socialtech:robot` had GLIM and GTSAM installed (the GLIM queues ran in it) and `~/bench_ws` held the other methods compiled on the board. The `robot` stage no longer does.
 
 | Scripts | Method | Status |
 |---|---|---|
-| `bench_voxelslam*.sh`, `vs_queue1.sh`, `jetson_*.sh`, the Voxel-SLAM calls of `bench_own_queue.sh` and `bench_reps_queue.sh` | Voxel-SLAM | Run in `socialtech:mapper` (`IMAGE=` for `bench_voxelslam.sh`); checked on the AGX with the smoke bag. A port compiled in `~/bench_ws` overrides the image's. |
-| `bench_fastlio*.sh` and the FAST-LIO calls of the queues | FAST-LIO2 | FAST-LIO2 is in the `robot` stage; not rerun since the image changed. |
-| `bench_iglio*.sh`, `bench_r05_queue.sh` | iG-LIO | Record only: iG-LIO existed only compiled in `~/bench_ws`. |
+| `bench_voxelslam*.sh`, `vs_queue1.sh`, `jetson_*.sh`, the Voxel-SLAM calls of `bench_own_queue.sh` and `bench_reps_queue.sh` | Voxel-SLAM | Run in `socialtech:mapper`, the default (`IMAGE=` overrides). A port compiled in `~/bench_ws` overrides the image's. |
+| `bench_fastlio*.sh` and the FAST-LIO calls of the queues | FAST-LIO2 | FAST-LIO2 is in the `robot` stage, but `fastlio_run.sh` sources `/ws/install` unconditionally, so it needs the `~/bench_ws` overlay too. Not rerun since the image changed. |
+| `bench_iglio*.sh`, `bench_r05_queue.sh` | iG-LIO | Record only: iG-LIO is in no image (it was compiled in `~/bench_ws`). `bench_r05_queue.sh` also runs FAST-LIO. |
 | `glim_queue11-24.sh` | GLIM | Record only: GLIM is in no image. The header of each says what the experiment varied; the results are in `notes/slam_seleccion.md` and `notes/glim_*.md` of the SocialTech repo. |
 
 ## Make a map
