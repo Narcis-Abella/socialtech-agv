@@ -1,6 +1,6 @@
 """2D map of a SLAM cloud cleaned with the raw scans: drops points beams pass through, and frees unknown cells beams crossed.
 
-  map_visibility.py <bag> <poses.txt> <world.ply> <out_prefix> [--topic /livox/lidar] [--min-ratio 0.10] [--min-component 10] [--no-fill] [--ply-out cloud.ply]
+  map_visibility.py <bag> <poses.txt> <world.ply> <out_prefix> [--topic /livox/lidar] [--ceil 1.80] [--min-ratio 0.10] [--min-component 10] [--no-fill] [--ply-out cloud.ply]
 
 Needs numpy + scipy (+ rosbags to read the bag). Inputs: the ROS 2 bag of the mapping run (sensor_msgs/PointCloud2 or livox_ros_driver2/CustomMsg), the SLAM poses (t x y z qx qy qz qw, the IMU pose at the END of each
 scan, as Voxel-SLAM's alidarState.txt) and the SLAM cloud in the same world (x y z PLY). The cloud is levelled and aligned like ply_to_map does; the bag is read twice.
@@ -93,9 +93,9 @@ def count_beams(C, scans, extr=EXTR, margin=FILL_MARGIN):
     return hit, passed
 
 
-def ghost_points(P, Q, scans, min_ratio=MIN_RATIO, extr=EXTR):
+def ghost_points(P, Q, scans, min_ratio=MIN_RATIO, extr=EXTR, ceil=pm.OBST_HI):
     """bool per cloud point: it lies in an obstacle-band voxel that is a ghost. P: points in the PLY frame, Q: the same points levelled and aligned (z = height above the floor)."""
-    band = (Q[:, 2] > pm.OBST_LO) & (Q[:, 2] <= pm.OBST_HI)
+    band = (Q[:, 2] > pm.OBST_LO) & (Q[:, 2] <= ceil)
     uk, inv = np.unique(np.floor(P[band] / RATIO_VOX).astype(np.int64), axis=0, return_inverse=True)
     hit, passed = count_beams((uk + 0.5) * RATIO_VOX, scans, extr, RATIO_MARGIN)
     out = np.zeros(len(P), bool)
@@ -123,20 +123,20 @@ def fill_unknown(grid, res, origin, T, scans, traj, extr=EXTR, heights=HEIGHTS):
     return out
 
 
-def build_map(P, Q, T, scans, traj, res=0.05, min_ratio=MIN_RATIO, min_component=MIN_COMPONENT, fill=True, extr=EXTR):
+def build_map(P, Q, T, scans, traj, res=0.05, min_ratio=MIN_RATIO, min_component=MIN_COMPONENT, fill=True, extr=EXTR, ceil=pm.OBST_HI):
     """(grid, origin, Q) of the cleaned map; Q is the cloud without the ghosts. P: SLAM cloud in the PLY frame; Q = the same points levelled and aligned by ply_to_map (T: P -> Q);
     scans: zero-argument function returning the scans (the bag is read twice); traj: (n, 3) path in the PLY frame. min_ratio 0 skips the ghost step."""
     if min_ratio > 0:
-        Q = Q[~ghost_points(P, Q, scans(), min_ratio, extr)]
-    grid, origin = pm.rasterize(Q, res, min_component=min_component)
+        Q = Q[~ghost_points(P, Q, scans(), min_ratio, extr, ceil)]
+    grid, origin = pm.rasterize(Q, res, ceil=ceil, min_component=min_component)
     if fill:
         grid = fill_unknown(grid, res, origin, T, scans(), traj, extr)
     return grid, origin, Q
 
 
-def occupied_points(Q, grid, origin, res=0.05):
+def occupied_points(Q, grid, origin, res=0.05, ceil=pm.OBST_HI):
     """The points of Q in the obstacle band that lie over an occupied cell of grid (row 0 = max y): the cloud the map shows."""
-    Q = Q[(Q[:, 2] > pm.OBST_LO) & (Q[:, 2] <= pm.OBST_HI)]
+    Q = Q[(Q[:, 2] > pm.OBST_LO) & (Q[:, 2] <= ceil)]
     c = np.floor((Q[:, 0] - origin[0]) / res).astype(int)
     r = grid.shape[0] - 1 - np.floor((Q[:, 1] - origin[1]) / res).astype(int)
     ok = (r >= 0) & (r < grid.shape[0]) & (c >= 0) & (c < grid.shape[1])
@@ -201,6 +201,7 @@ def main(argv):
     ap.add_argument("world_ply")
     ap.add_argument("out_prefix")
     ap.add_argument("--topic", default="/livox/lidar")
+    ap.add_argument("--ceil", type=float, default=pm.OBST_HI, help="m above the floor; points higher are dropped (30 for an outdoor map), as in ply_to_map")
     ap.add_argument("--min-ratio", type=float, default=MIN_RATIO, help="hit ratio under which a voxel of 10 cm is a ghost (0 = skip the step)")
     ap.add_argument("--min-component", type=int, default=MIN_COMPONENT, help="cells: occupied islands smaller than this are freed (0 = off)")
     ap.add_argument("--no-fill", action="store_true", help="skip freeing the unknown cells the beams crossed")
@@ -212,10 +213,10 @@ def main(argv):
     except ValueError as e:
         sys.exit(f"error: {e}")
     poses = np.loadtxt(a.poses, usecols=range(8))
-    grid, origin, Qk = build_map(P, Q, info["T"], lambda: bag_scans(a.bag, poses, a.topic), poses[:, 1:4], min_ratio=a.min_ratio, min_component=a.min_component, fill=not a.no_fill)
+    grid, origin, Qk = build_map(P, Q, info["T"], lambda: bag_scans(a.bag, poses, a.topic), poses[:, 1:4], min_ratio=a.min_ratio, min_component=a.min_component, fill=not a.no_fill, ceil=a.ceil)
     pm.write_map(a.out_prefix, grid, 0.05, origin, info["T"])
     if a.ply_out:
-        pm.write_ply(a.ply_out, occupied_points(Qk, grid, origin))
+        pm.write_ply(a.ply_out, occupied_points(Qk, grid, origin, ceil=a.ceil))
     print(f"{grid.shape[1]}x{grid.shape[0]} cells: {(grid == pm.OCC).mean():.1%} occupied, {(grid == pm.FREE).mean():.1%} free, {(grid == pm.UNK).mean():.1%} unknown")
 
 
