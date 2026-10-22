@@ -10,7 +10,7 @@ SCRIPT = HERE / "make_map.sh"
 
 # every stand-in logs its arguments (and VS_SED's content) to $LOG, then does what the real tool does to the files make_map.sh reads
 STUBS = {
-    "run.sh": 'echo "run $* | sed: $(cat "$VS_SED") | rate: $PLAY_RATE" >> "$LOG"\n[ -n "$NO_POSES" ] && exit 0\nmkdir -p "$4/vs/run" && echo "1 0 0 0 0 0 0 1" > "$4/vs/run/alidarState.txt" && : > "$4/node.log"\n',
+    "run.sh": 'echo "run $* | sed: $(cat "$VS_SED") | rate: $PLAY_RATE" >> "$LOG"\n[ -n "$NO_POSES" ] && exit 0\n[ -e "$4/vs/run" ] && { echo "Cannot create save directory: $4/vs/run/" >&2; exit 1; }\nmkdir -p "$4/vs/run" && echo "1 0 0 0 0 0 0 1" > "$4/vs/run/alidarState.txt" && : > "$4/node.log"\n',
     "vs_to_ply.sh": 'echo "vs_to_ply $*" >> "$LOG"\n: > "$2"\n',
     "ply_to_map.sh": 'echo "ply_to_map $*" >> "$LOG"\n[ -n "$REJECT" ] && { echo "error: trajectory check failed (position plane): not the floor"; exit 1; }\n: > "$2.pgm"\n',
     "map_visibility.sh": 'echo "map_visibility $*" >> "$LOG"\nprefix=$4\nmkdir -p "$(dirname "$prefix")"\necho P5 > "$prefix.pgm"; echo "image: $(basename "$prefix").pgm" > "$prefix.yaml"\nwhile [ $# -gt 0 ]; do [ "$1" = --ply-out ] && : > "$2"; shift; done\n',
@@ -87,6 +87,17 @@ def test_poses_of_an_earlier_run_do_not_pass_for_this_one():
         assert "vs_to_ply" not in log(tmp) and not (out / "node.log").exists()
 
 
+def test_a_second_run_in_the_same_output_dir_works():
+    """Voxel-SLAM exits when its save directory (<out>/vs/run) exists, so make_map.sh clears the one of the earlier run."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        assert run(tmp, out).returncode == 0
+        (out / "vs" / "run" / "0.pcd").write_text("an earlier scan")
+        r = run(tmp, out)
+        assert r.returncode == 0, r.stderr
+        assert not (out / "vs" / "run" / "0.pcd").exists() and (out / "map.pgm").exists()
+
+
 def test_a_failing_report_leaves_no_map():
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "o"
@@ -115,6 +126,7 @@ if __name__ == "__main__":
     test_ceil_for_an_outdoor_map_reaches_ply_to_map_and_the_map_that_is_shipped()
     test_a_rejected_floor_stops_the_run_names_the_step_and_leaves_no_map_even_over_an_old_one()
     test_poses_of_an_earlier_run_do_not_pass_for_this_one()
+    test_a_second_run_in_the_same_output_dir_works()
     test_a_failing_report_leaves_no_map()
     test_voxel_slam_that_writes_no_poses_fails_at_its_own_step()
     test_the_flags_make_map_passes_exist_in_the_real_tools()
