@@ -279,6 +279,14 @@ def test_write_map_makes_pgm_and_map_server_yaml():
             assert line in y, (line, y)
 
 
+def test_a_prefix_with_a_dot_keeps_its_name_and_the_yaml_points_at_the_pgm():
+    grid = np.full((2, 2), ply_to_map.FREE, dtype=np.uint8)
+    with tempfile.TemporaryDirectory() as tmp:
+        ply_to_map.write_map(Path(tmp) / "eco_v1.2", grid, RES, (0.0, 0.0))
+        assert sorted(f.name for f in Path(tmp).iterdir()) == ["eco_v1.2.pgm", "eco_v1.2.yaml"]
+        assert "image: eco_v1.2.pgm" in (Path(tmp) / "eco_v1.2.yaml").read_text()
+
+
 def test_main_runs_end_to_end_with_an_optional_tum_trajectory():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -326,6 +334,7 @@ if __name__ == "__main__":
     test_small_gaps_in_explored_floor_are_filled_but_a_big_hole_is_not()
     test_isolated_outliers_do_not_inflate_the_grid()
     test_write_map_makes_pgm_and_map_server_yaml()
+    test_a_prefix_with_a_dot_keeps_its_name_and_the_yaml_points_at_the_pgm()
     test_main_runs_end_to_end_with_an_optional_tum_trajectory()
     test_ply_out_is_the_levelled_aligned_cloud_without_floor_and_ceiling()
     print("ok")
