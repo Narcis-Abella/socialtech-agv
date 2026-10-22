@@ -14,7 +14,7 @@ STUBS = {
     "vs_to_ply.sh": 'echo "vs_to_ply $*" >> "$LOG"\n: > "$2"\n',
     "ply_to_map.sh": 'echo "ply_to_map $*" >> "$LOG"\n[ -n "$REJECT" ] && { echo "error: trajectory check failed (position plane): not the floor"; exit 1; }\n: > "$2.pgm"\n',
     "map_visibility.sh": 'echo "map_visibility $*" >> "$LOG"\nprefix=$4\nmkdir -p "$(dirname "$prefix")"\necho P5 > "$prefix.pgm"; echo "image: $(basename "$prefix").pgm" > "$prefix.yaml"\nwhile [ $# -gt 0 ]; do [ "$1" = --ply-out ] && : > "$2"; shift; done\n',
-    "report.sh": 'echo "report $*" >> "$LOG"\necho "{}" > "$1/report.json"\n',
+    "report.sh": 'echo "report $*" >> "$LOG"\n[ -n "$REPORT_FAIL" ] && exit 1\necho "{}" > "$1/report.json"\n',
 }
 
 
@@ -43,7 +43,7 @@ def test_the_steps_run_in_order_with_the_arguments_each_tool_needs_and_the_map_l
         assert lines[0] == f"run bag dir /livox/lidar /livox/imu {out} | sed: s/^\\( *\\)degrade_bound:.*/\\1degrade_bound: 100000/ | rate: 1.0", lines[0]
         assert lines[1] == f"vs_to_ply {out}/vs/run {out}/world.ply 0.05", lines[1]
         assert lines[2] == f"ply_to_map {out}/world.ply {out}/base --ceil 1.80 --traj {out}/vs/run/alidarState.txt", lines[2]
-        assert lines[3].startswith(f"map_visibility bag dir {out}/vs/run/alidarState.txt {out}/world.ply ") and lines[3].endswith(f"--topic /livox/lidar --ply-out {out}/.build/map_clean.ply"), lines[3]
+        assert lines[3].startswith(f"map_visibility bag dir {out}/vs/run/alidarState.txt {out}/world.ply ") and lines[3].endswith(f"--topic /livox/lidar --ceil 1.80 --ply-out {out}/.build/map_clean.ply"), lines[3]
         assert (out / "map.pgm").exists() and (out / "map_clean.ply").exists() and (out / "report.json").exists()   # the cleaned cloud is the one that matches the PGM
         assert (out / "map.yaml").read_text().strip() == "image: map.pgm"      # the YAML names the final PGM, not a temporary one
 
@@ -54,10 +54,11 @@ def test_the_replay_rate_defaults_to_1x_and_can_be_changed():
         assert "| rate: 3" in log(tmp)
 
 
-def test_ceil_for_an_outdoor_map_reaches_ply_to_map():
+def test_ceil_for_an_outdoor_map_reaches_ply_to_map_and_the_map_that_is_shipped():
     with tempfile.TemporaryDirectory() as tmp:
         assert run(tmp, Path(tmp) / "o", {"CEIL": "30"}).returncode == 0
-        assert " --ceil 30 " in log(tmp)
+        by_tool = {l.split()[0]: l for l in log(tmp).splitlines()}
+        assert " --ceil 30 " in by_tool["ply_to_map"] and " --ceil 30 " in by_tool["map_visibility"], by_tool
 
 
 def test_a_rejected_floor_stops_the_run_names_the_step_and_leaves_no_map_even_over_an_old_one():
@@ -74,6 +75,26 @@ def test_a_rejected_floor_stops_the_run_names_the_step_and_leaves_no_map_even_ov
         assert "map_visibility" not in log(tmp)
 
 
+def test_poses_of_an_earlier_run_do_not_pass_for_this_one():
+    """voxelslam_run.sh decides the run is over from the age of alidarState.txt: an old one would end it at once and feed an old map."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        (out / "vs" / "run").mkdir(parents=True)
+        (out / "vs" / "run" / "alidarState.txt").write_text("1 0 0 0 0 0 0 1\n")
+        (out / "node.log").write_text("resetting system\n")
+        r = run(tmp, out, {"NO_POSES": "1"})      # this run writes nothing
+        assert r.returncode != 0 and "step 'voxelslam'" in r.stderr, r.stderr
+        assert "vs_to_ply" not in log(tmp) and not (out / "node.log").exists()
+
+
+def test_a_failing_report_leaves_no_map():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        r = run(tmp, out, {"REPORT_FAIL": "1"})
+        assert r.returncode != 0 and "step 'report'" in r.stderr, r.stderr
+        assert not (out / "map.pgm").exists() and not (out / "map.yaml").exists() and not (out / "map_clean.ply").exists()
+
+
 def test_voxel_slam_that_writes_no_poses_fails_at_its_own_step():
     with tempfile.TemporaryDirectory() as tmp:
         r = run(tmp, Path(tmp) / "o", {"NO_POSES": "1"})
@@ -85,14 +106,16 @@ def test_the_flags_make_map_passes_exist_in_the_real_tools():
     ply = subprocess.run([sys.executable, str(HERE / "ply_to_map.py"), "--help"], capture_output=True, text=True).stdout
     vis = subprocess.run([sys.executable, str(HERE / "map_visibility.py"), "--help"], capture_output=True, text=True).stdout
     assert "--ceil" in ply and "--traj" in ply, ply
-    assert "--topic" in vis and "--ply-out" in vis, vis
+    assert "--topic" in vis and "--ply-out" in vis and "--ceil" in vis, vis
 
 
 if __name__ == "__main__":
     test_the_steps_run_in_order_with_the_arguments_each_tool_needs_and_the_map_lands_in_the_output_dir()
     test_the_replay_rate_defaults_to_1x_and_can_be_changed()
-    test_ceil_for_an_outdoor_map_reaches_ply_to_map()
+    test_ceil_for_an_outdoor_map_reaches_ply_to_map_and_the_map_that_is_shipped()
     test_a_rejected_floor_stops_the_run_names_the_step_and_leaves_no_map_even_over_an_old_one()
+    test_poses_of_an_earlier_run_do_not_pass_for_this_one()
+    test_a_failing_report_leaves_no_map()
     test_voxel_slam_that_writes_no_poses_fails_at_its_own_step()
     test_the_flags_make_map_passes_exist_in_the_real_tools()
     print("ok")

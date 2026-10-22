@@ -16,7 +16,7 @@ here=$(dirname "$(readlink -f "$0")")
 fail() { echo "make_map: FAILED at step '$1': $2" >&2; exit 1; }
 
 mkdir -p "$out" "$out/.build"
-rm -f "$out/map.pgm" "$out/map.yaml" "$out/map_clean.ply" "$out/report.json" "$out/.build/map.pgm" "$out/.build/map.yaml" "$out/.build/map_clean.ply"   # a map of an earlier run must not pass for this one
+rm -f "$out/map.pgm" "$out/map.yaml" "$out/map_clean.ply" "$out/report.json" "$out/.build/map.pgm" "$out/.build/map.yaml" "$out/.build/map_clean.ply" "$out/vs/run/alidarState.txt" "$out/node.log"   # a map of an earlier run must not pass for this one
 
 printf 's/^\\( *\\)degrade_bound:.*/\\1degrade_bound: %s/\n' "$DEGRADE_BOUND" > "$out/voxelslam.sed"
 VS_SED="$out/voxelslam.sed" PLAY_RATE="$PLAY_RATE" $VOXELSLAM_RUN "$bag" "$LIDAR" "$IMU" "$out" > "$out/voxelslam_run.log" 2>&1 \
@@ -25,9 +25,9 @@ VS_SED="$out/voxelslam.sed" PLAY_RATE="$PLAY_RATE" $VOXELSLAM_RUN "$bag" "$LIDAR
 $VS_TO_PLY "$out/vs/run" "$out/world.ply" "$VOXEL" > "$out/vs_to_ply.log" 2>&1 || fail vs_to_ply "see $out/vs_to_ply.log"
 $PLY_TO_MAP "$out/world.ply" "$out/base" --ceil "$CEIL" --traj "$out/vs/run/alidarState.txt" > "$out/ply_to_map.log" 2>&1 \
   || fail ply_to_map "$(tail -n 1 "$out/ply_to_map.log")"
-$MAP_VISIBILITY "$bag" "$out/vs/run/alidarState.txt" "$out/world.ply" "$out/.build/map" --topic "$LIDAR" --ply-out "$out/.build/map_clean.ply" > "$out/map_visibility.log" 2>&1 \
+$MAP_VISIBILITY "$bag" "$out/vs/run/alidarState.txt" "$out/world.ply" "$out/.build/map" --topic "$LIDAR" --ceil "$CEIL" --ply-out "$out/.build/map_clean.ply" > "$out/map_visibility.log" 2>&1 \
   || fail map_visibility "see $out/map_visibility.log"
 mv "$out/.build/map.pgm" "$out/map.pgm" && mv "$out/.build/map.yaml" "$out/map.yaml" && mv "$out/.build/map_clean.ply" "$out/map_clean.ply" \
   || fail map_visibility "it wrote no map.pgm / map.yaml / map_clean.ply"
-$MAP_REPORT "$out" > /dev/null || fail report "see the message above"
+$MAP_REPORT "$out" > /dev/null || { rm -f "$out/map.pgm" "$out/map.yaml" "$out/map_clean.ply"; fail report "see the message above"; }
 echo "make_map: OK -> $out/map.yaml ($(python3 -c "import json,sys; r=json.load(open(sys.argv[1])); print('resets', r['resets'], '| end-to-start', r['end_to_start_m'], 'm | sensor height', r['sensor_height_m'], 'm')" "$out/report.json" 2>/dev/null))"
