@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs a scenario file against Nav2 in the simulation, inside the `sim` image on the board. usage: run_trials.sh <scenario.json> <out dir> [reps]
 #   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (nav2_params.yaml instead of the packaged one), SET (space-separated path=value overrides of it, e.g. "amcl.ros__parameters.alpha1=0.05"), MAP (map yaml instead of the packaged loyola.yaml), SIM_SRC (hospital-agv-sim checkout to build),
-#   SIM_ARGS (extra simulation.launch.py arguments: world:=, spawn_x:=, noise_seed:=, odom_source:= ...), ROS_DOMAIN_ID (53), SIM_WAIT (45 s), NAV_TIMEOUT (180 s), plus the env of trials.py
+#   SIM_ARGS (extra simulation.launch.py arguments: world:=, spawn_x:=, noise_seed:=, odom_source:= ...), ROS_DOMAIN_ID (53), SIM_WAIT (45 s), NAV_TIMEOUT (180 s), plus RUNNER (nav_sim/trials.py; nav_sim/plan_bench.py for the planner benchmark) and the env of the runner
 set -eo pipefail
 scenario=${1:?scenario.json}; out=${2:?out dir}; reps=${3:-1}
 source "${ROS_ENV:-/ros_env.sh}"
@@ -29,7 +29,7 @@ sleep 5
 ps -eo pid,args | grep -E 'nav2|opennav|gz|noisy|bridge' | grep -v grep | cut -c1-160 > "$out/ps.txt"
 python3 /tools/nav_bench/cost_sampler.py sample "$out/cost.csv" --every 1.0 &
 sampler=$!
-python3 /tools/nav_sim/trials.py "$scenario" "$out" "$reps" --ros-args -p use_sim_time:=true 2>&1 | tee "$out/trials.log"
+python3 /tools/${RUNNER:-nav_sim/trials.py} "$scenario" "$out" "$reps" --ros-args -p use_sim_time:=true 2>&1 | tee "$out/trials.log"
 kill $sampler 2>/dev/null || true
 python3 /tools/nav_bench/cost_sampler.py summarize "$out/cost.csv" > "$out/cost_summary.txt" 2>&1 || true
 echo done
