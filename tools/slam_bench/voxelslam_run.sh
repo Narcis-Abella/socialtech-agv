@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run Voxel-SLAM (ROS 2 port) on one Livox CustomMsg bag (the port's PointCloud2 mode expects per-point time relative to header.stamp, ours is absolute) inside the robot image; the final poses are <out_dir>/vs/run/alidarState.txt.
+# Run Voxel-SLAM (ROS 2 port) on one Livox CustomMsg bag (the port's PointCloud2 mode expects per-point time relative to header.stamp, ours is absolute) inside the mapper image; the final poses are <out_dir>/vs/run/alidarState.txt.
 # The poses are only written after the global stage, which is triggered by setting the `finish` parameter after playback.
 # usage (in container): voxelslam_run.sh <bag_dir> <lidar_topic> <imu_topic> <out_dir>
 # env: PLAY_RATE (1.0)   VS_SED (sed script applied to the generated config, one expression per line; voxelslam_degrade.sed raises degrade_bound)

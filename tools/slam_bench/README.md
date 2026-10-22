@@ -12,7 +12,7 @@ Not deployment code: research tooling, run by hand on a laptop and a Jetson AGX 
 | `restamp.py` | KISS-ICP writes bag time; replace it with each scan's `header.stamp` |
 | `aruco_metric.py` | M3DGR ArUco end-pose error (Corridor01, Elevator01), same formula as the dataset script; robust to blank lines |
 | `odom_to_tum.py` | rclpy recorder: `nav_msgs/Odometry` topic -> TUM, exits when the topic goes silent |
-| `fastlio_run.sh`, `iglio_run.sh`, `voxelslam_run.sh` | run one method on one bag inside `socialtech:robot` (workspace at `/ws`, tools at `/tools`, output at `/out`) |
+| `fastlio_run.sh`, `iglio_run.sh`, `voxelslam_run.sh` | run one method on one bag inside an image (workspace at `/ws`, tools at `/tools`, output at `/out`): `socialtech:mapper` for Voxel-SLAM, `socialtech:robot` for FAST-LIO2; iG-LIO is in no image |
 | `eval_all.py` | One markdown table from `<root>/<method>/<sequence>/*.tum`: APE (SE(3) alignment, offset 0 and best offset) for mocap sequences, ArUco closure for Corridor01 / Elevator01 |
 | `traj_metrics.py` | Ground-truth-free table for our own bags (flat floor, return to start): path, end-start distance, z / roll / pitch range, divergence between runs |
 | `collect_results.sh` | Copy all trajectories from the AGX into the layout `eval_all.py` reads (GLIM runs, competitors at 0.5x; skips contaminated runs) |
@@ -23,7 +23,18 @@ Not deployment code: research tooling, run by hand on a laptop and a Jetson AGX 
 | `vs_to_ply.py` | Voxel-SLAM output (one body-frame PCD per frame + `alidarState.txt`) -> one world-frame PLY |
 | `map_report.py` | The `report.json` of a `make_map.sh` run |
 | `voxelslam_degrade.sed` | `degrade_bound: 100000` for `voxelslam_run.sh` (`VS_SED`): the port's default 10 resets on bags with featureless stretches and never finishes |
-| `agx/` | wrappers and queues as run on the AGX (`docker run` lines, DDS domain per method) |
+| `agx/` | wrappers and queues as run on the AGX (`docker run` lines, DDS domain per method); see below for which still run |
+
+## `agx/` today
+
+The image tags in these scripts date from the benchmark runs (2026-09/10), when the AGX's `socialtech:robot` had GLIM and GTSAM installed (the GLIM queues ran in it) and `~/bench_ws` held the other methods compiled on the board. The `robot` stage no longer does.
+
+| Scripts | Method | Status |
+|---|---|---|
+| `bench_voxelslam*.sh`, `vs_queue1.sh`, `jetson_*.sh`, the Voxel-SLAM calls of `bench_own_queue.sh` and `bench_reps_queue.sh` | Voxel-SLAM | Run in `socialtech:mapper`, the default (`IMAGE=` overrides). A port compiled in `~/bench_ws` overrides the image's. |
+| `bench_fastlio*.sh` and the FAST-LIO calls of the queues | FAST-LIO2 | FAST-LIO2 is in the `robot` stage, but `fastlio_run.sh` sources `/ws/install` unconditionally, so it needs the `~/bench_ws` overlay too. Not rerun since the image changed. |
+| `bench_iglio*.sh`, `bench_r05_queue.sh` | iG-LIO | Record only: iG-LIO is in no image (it was compiled in `~/bench_ws`). `bench_r05_queue.sh` also runs FAST-LIO. |
+| `glim_queue11-24.sh` | GLIM | Record only: GLIM is in no image. The header of each says what the experiment varied; the results are in `notes/slam_seleccion.md` and `notes/glim_*.md` of the SocialTech repo. |
 
 ## Make a map
 
