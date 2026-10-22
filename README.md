@@ -61,7 +61,7 @@ Shells opened with `docker exec -it <container> bash` get the same ROS environme
 
 ## Tools
 
-The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; its integration into the `robot` image is still to do). The tools below are offline research helpers used for that comparison and for the maps; none of them is part of the image. The GLIM ones are kept as reference and comparison tooling.
+The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; used offline to build the maps: it is in the `mapper` image, not in `robot`, which runs FAST-LIO2 and AMCL on the finished map). The tools below are offline research helpers used for that comparison and for the maps; none of them is part of the image. The GLIM ones are kept as reference and comparison tooling.
 
 - `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
 - `tools/slam_bench/ply_to_map.py`: levelled, wall-aligned 2D map (`map_server` PGM + YAML) from a PLY of any SLAM; `--ply-out` saves the cloud it was made from; `--min-component N` frees occupied specks smaller than N cells.
