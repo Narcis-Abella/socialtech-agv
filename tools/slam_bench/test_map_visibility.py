@@ -157,6 +157,18 @@ def test_points_the_beams_pass_through_are_flagged_and_the_walls_are_not():
     assert ghost[:n].mean() < 0.02, ghost[:n].mean()    # the real surfaces: the beams end there
 
 
+def test_the_ghost_band_goes_up_to_ceil():
+    scans, traj = drive(planes())
+    high = np.random.default_rng(4).uniform([4.85, 0.35, 2.0], [5.15, 0.65, 2.3], (300, 3))     # a phantom above the default 1.80 m
+    P, n, Q = world_cloud(scans, high)
+    args = (P, Q, T, lambda: scans, traj)
+    raw, _, _ = mv.build_map(*args, min_ratio=0, fill=False, extr=(0, 0, 0), ceil=2.35)   # 2.35: above the phantom, under the 2.4 m corridor ceiling
+    clean, _, _ = mv.build_map(*args, fill=False, extr=(0, 0, 0), ceil=2.35)
+    assert (raw == pm.OCC).sum() - (clean == pm.OCC).sum() >= 20                              # build_map passes ceil on to the ghost step
+    assert not mv.ghost_points(P, Q, scans, extr=(0, 0, 0))[n:].any()                         # out of the band: not judged
+    assert mv.ghost_points(P, Q, scans, extr=(0, 0, 0), ceil=2.35)[n:].all()
+
+
 def test_voxels_seen_in_few_scans_are_not_flagged():
     scans, _ = drive(planes())
     P, n, Q = world_cloud(scans, PHANTOM)
@@ -188,6 +200,21 @@ def test_occupied_points_are_the_band_points_over_occupied_cells():
     assert mv.occupied_points(Q, grid, (0.0, 0.0), 0.05).tolist() == [[0.07, 0.17, 0.5]]
 
 
+def test_a_higher_ceil_keeps_the_points_between_the_default_ceiling_and_it():
+    """--ceil (m above the floor) is the same knob as in ply_to_map: the outdoor map (CEIL=30 in make_map.sh) must keep what is above 1.80 m."""
+    scans, traj = drive(planes())
+    P, n, Q = world_cloud(scans)
+    args = (P, Q, T, lambda: scans, traj)
+    low, org, Qlow = mv.build_map(*args, fill=False, extr=(0, 0, 0))
+    high, _, Qhigh = mv.build_map(*args, fill=False, extr=(0, 0, 0), ceil=3.0)
+    assert (high == pm.OCC).sum() > (low == pm.OCC).sum()                 # the corridor ceiling (2.4 m) is now an obstacle
+    grid = np.full((4, 6), pm.FREE, np.uint8)
+    grid[0, 1] = pm.OCC
+    Qp = np.array([[0.07, 0.17, 2.0]])
+    assert len(mv.occupied_points(Qp, grid, (0.0, 0.0), 0.05)) == 0
+    assert len(mv.occupied_points(Qp, grid, (0.0, 0.0), 0.05, ceil=3.0)) == 1       # the saved cloud follows the map
+
+
 def test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag():
     scans, traj = drive(planes(pillar=True))
     P, n, Q = world_cloud(scans, PHANTOM)
@@ -204,6 +231,9 @@ def test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag():
             assert (tmp / "a.pgm").exists() and (tmp / "a.yaml").exists()
             assert occupied_pixels(tmp / "b.pgm") > occupied_pixels(tmp / "a.pgm")         # the ghosts are gone from a
             assert len(pm.read_ply(tmp / "a.ply")) > 1000
+            mv.main(args + [str(tmp / "c"), "--ceil", "3.0", "--ply-out", str(tmp / "c.ply")])
+            assert pm.read_ply(tmp / "c.ply")[:, 2].max() > 1.8 > pm.read_ply(tmp / "a.ply")[:, 2].max()     # the saved cloud follows the map
+            assert occupied_pixels(tmp / "c.pgm") > occupied_pixels(tmp / "a.pgm")          # --ceil reaches the map
     finally:
         mv.bag_scans = read_bag
 
@@ -278,6 +308,8 @@ if __name__ == "__main__":
     test_voxels_seen_in_few_scans_are_not_flagged()
     test_build_map_drops_the_phantom_and_frees_the_unknown_without_touching_the_rest()
     test_occupied_points_are_the_band_points_over_occupied_cells()
+    test_a_higher_ceil_keeps_the_points_between_the_default_ceiling_and_it()
+    test_the_ghost_band_goes_up_to_ceil()
     test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag()
     test_custom_points_reads_the_cdr_bytes_whatever_the_frame_id_and_the_padding()
     test_bag_scans_gives_the_same_scans_from_a_custommsg_bag_and_a_pointcloud2_bag()
