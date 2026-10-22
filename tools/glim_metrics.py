@@ -130,8 +130,13 @@ def floor_plane(points):
     None if no clear floor. ponytail: the floor is the lowest significant z peak, so a submap that sees no
     floor may pick a table top; add a sensor-height check if that shows up."""
     z = points[:, 2]
+    if len(z) == 0:
+        return None
     hist, edges = np.histogram(z, bins=np.arange(z.min(), z.max() + FLOOR_BIN_M, FLOOR_BIN_M))
-    low = edges[np.flatnonzero(hist >= FLOOR_PEAK_MIN_POINTS)[0]] + FLOOR_BIN_M / 2
+    peaks = np.flatnonzero(hist >= FLOOR_PEAK_MIN_POINTS)
+    if peaks.size == 0:
+        return None
+    low = edges[peaks[0]] + FLOOR_BIN_M / 2
     floor = points[np.abs(z - low) < FLOOR_BAND_M]
     for _ in range(2):  # the second pass refits on the plane's inliers, which reach a tilted floor's far side
         if len(floor) < max(FLOOR_MIN_POINTS, FLOOR_MIN_FRACTION * len(points)):
