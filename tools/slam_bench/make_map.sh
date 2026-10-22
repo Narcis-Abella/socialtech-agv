@@ -17,7 +17,7 @@ fail() { echo "make_map: FAILED at step '$1': $2" >&2; exit 1; }
 
 mkdir -p "$out" "$out/.build"
 rm -f "$out/map.pgm" "$out/map.yaml" "$out/map_clean.ply" "$out/report.json" "$out/.build/map.pgm" "$out/.build/map.yaml" "$out/.build/map_clean.ply" "$out/node.log"   # a map of an earlier run must not pass for this one
-[ -e "$out/vs/run" ] && rm -r "$out/vs/run"   # the poses and scans of an earlier run too; Voxel-SLAM exits if its save directory exists
+[ -e "$out/vs/run" ] && { rm -r "$out/vs/run" || fail cleanup "cannot remove $out/vs/run of an earlier run (made by another user?)"; }   # its poses and scans go too: Voxel-SLAM exits if its save directory exists
 
 printf 's/^\\( *\\)degrade_bound:.*/\\1degrade_bound: %s/\n' "$DEGRADE_BOUND" > "$out/voxelslam.sed"
 VS_SED="$out/voxelslam.sed" PLAY_RATE="$PLAY_RATE" $VOXELSLAM_RUN "$bag" "$LIDAR" "$IMU" "$out" > "$out/voxelslam_run.log" 2>&1 \

@@ -98,6 +98,21 @@ def test_a_second_run_in_the_same_output_dir_works():
         assert not (out / "vs" / "run" / "0.pcd").exists() and (out / "map.pgm").exists()
 
 
+def test_a_run_directory_that_cannot_be_removed_stops_at_its_own_step():
+    if os.geteuid() == 0:
+        return      # root can remove anything
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        (out / "vs" / "run").mkdir(parents=True)
+        (out / "vs").chmod(0o555)               # an earlier run as another user: its directory cannot be removed
+        try:
+            r = run(tmp, out)
+        finally:
+            (out / "vs").chmod(0o755)
+        assert r.returncode != 0 and "step 'cleanup'" in r.stderr, r.stderr
+        assert not (Path(tmp) / "log.txt").exists()      # no tool ran, in particular not Voxel-SLAM
+
+
 def test_a_failing_report_leaves_no_map():
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "o"
@@ -127,6 +142,7 @@ if __name__ == "__main__":
     test_a_rejected_floor_stops_the_run_names_the_step_and_leaves_no_map_even_over_an_old_one()
     test_poses_of_an_earlier_run_do_not_pass_for_this_one()
     test_a_second_run_in_the_same_output_dir_works()
+    test_a_run_directory_that_cannot_be_removed_stops_at_its_own_step()
     test_a_failing_report_leaves_no_map()
     test_voxel_slam_that_writes_no_poses_fails_at_its_own_step()
     test_the_flags_make_map_passes_exist_in_the_real_tools()
