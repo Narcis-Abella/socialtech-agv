@@ -1,0 +1,7 @@
+{"run": "d08_gyro_0p5_from_21_after_pose-f2h", "state": "LOCALIZED", "open_s": 0.6986234188079834, "scored_s": 0.49635958671569824, "outside_s": 0.14049339294433594, "max_xy_m": 0.5305129928653066, "max_yaw_deg": 8.030853590461236}
+{"run": "h28_lio_diverges_after_localized-f2h", "state": "LOCALIZED", "open_s": 12.898947954177856, "scored_s": 12.495996475219727, "outside_s": 2.3379263877868652, "max_xy_m": 1.2341184321581173, "max_yaw_deg": 38.60006416219489}
+{"run": "h32_amcl_moved_by_foreign_initialpose-f2h", "state": "LOCALIZED", "open_s": 8.198832988739014, "scored_s": 7.9965691566467285, "outside_s": 0.0, "max_xy_m": 0.06245956740715229, "max_yaw_deg": 0.5974101927395159}
+{"run": "h00_nominal_supervised-f2h", "state": "LOCALIZED", "open_s": 40.59903860092163, "scored_s": 39.048205614089966, "outside_s": 0.0, "max_xy_m": 0.1559993555980172, "max_yaw_deg": 3.894245240495642}
+{"run": "mem-eco01-c00-m4", "state": "LOCALIZED", "open_s": 485.2988097667694, "scored_s": 472.8280267715454, "outside_s": 0.0, "max_xy_m": 0.13365429666856557, "max_yaw_deg": 3.9010405387441027}
+{"run": "h45_lio_gyro_bias_0p2_in_s2-f2h", "state": "LOCALIZED", "open_s": 48.89990544319153, "scored_s": 44.40671348571777, "outside_s": 0.0, "max_xy_m": 0.1628298860306561, "max_yaw_deg": 3.140418887017792}
+{"run": "d09_gyro_0p3_after_localized-f2h", "state": "LOCALIZED", "open_s": 47.39836525917053, "scored_s": 43.45293164253235, "outside_s": 0.0, "max_xy_m": 0.1325867740842864, "max_yaw_deg": 4.259386094638918}

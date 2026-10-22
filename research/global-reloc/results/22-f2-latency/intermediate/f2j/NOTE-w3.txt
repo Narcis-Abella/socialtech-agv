@@ -1,0 +1,1 @@
+w3: batch stopped on purpose after the run in progress (batch loop killed by PID; the last run lacks its table and exposure rows). INTERMEDIATE tree: period 0.5 s, voxelization still the slow one (0.57 CPU-s per check, 88 % of a core back to back). Superseded by reloc-f2k-20261011 (bit-identical fast voxel).

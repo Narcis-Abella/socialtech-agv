@@ -1,0 +1,1 @@
+{"run": "k00_nominal-x0", "state": "LOCALIZED", "open_s": 53.199, "scored_s": 51.631, "outside_s": 0.0, "max_xy_m": 0.155, "max_yaw_deg": 2.915, "close_at_s": 53.413, "out_at_s": null, "latency_s": 0.0, "lead_s": null, "checks": 97, "checks_failed": 0, "first_failed_check_s": null, "check_wall_s_median": 0.35}

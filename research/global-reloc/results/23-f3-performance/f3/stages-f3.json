@@ -1,0 +1,138 @@
+{
+ "accepted_attempts": 14,
+ "dist": {
+  "startup_to_first_input_s": {
+   "n": 14,
+   "median": 10.959,
+   "p95": 11.308,
+   "max": 11.311,
+   "min": 9.699
+  },
+  "imu_time_s": {
+   "n": 14,
+   "median": 2.908,
+   "p95": 4.803,
+   "max": 4.803,
+   "min": 2.204
+  },
+  "lio_time_s": {
+   "n": 14,
+   "median": 0.567,
+   "p95": 0.639,
+   "max": 0.7,
+   "min": 0.503
+  },
+  "submap_exposure_s": {
+   "n": 14,
+   "median": 3.037,
+   "p95": 22.848,
+   "max": 22.849,
+   "min": 2.941
+  },
+  "submap_build_s": {
+   "n": 14,
+   "median": 0.625,
+   "p95": 4.47,
+   "max": 4.6,
+   "min": 0.6
+  },
+  "search_worker_wall_s": {
+   "n": 14,
+   "median": 11.161,
+   "p95": 17.421,
+   "max": 18.592,
+   "min": 9.792
+  },
+  "map_field_s": {
+   "n": 14,
+   "median": 0.124,
+   "p95": 0.188,
+   "max": 0.228,
+   "min": 0.12
+  },
+  "fft_primary_s": {
+   "n": 14,
+   "median": 3.153,
+   "p95": 6.048,
+   "max": 6.399,
+   "min": 2.896
+  },
+  "fft_confirm_s": {
+   "n": 14,
+   "median": 3.289,
+   "p95": 5.985,
+   "max": 6.563,
+   "min": 2.82
+  },
+  "gicp_s": {
+   "n": 14,
+   "median": 3.577,
+   "p95": 4.235,
+   "max": 4.309,
+   "min": 3.223
+  },
+  "score_s": {
+   "n": 14,
+   "median": 0.561,
+   "p95": 0.584,
+   "max": 0.587,
+   "min": 0.312
+  },
+  "confirm_total_s": {
+   "n": 14,
+   "median": 5.375,
+   "p95": 8.373,
+   "max": 9.082,
+   "min": 4.581
+  },
+  "handoff_publish_s": {
+   "n": 14,
+   "median": 0.801,
+   "p95": 0.968,
+   "max": 1.001,
+   "min": 0.75
+  },
+  "handoff_confirm_s": {
+   "n": 14,
+   "median": 5.699,
+   "p95": 8.777,
+   "max": 9.85,
+   "min": 5.449
+  },
+  "map_check_s": {
+   "n": 14,
+   "median": 0.8,
+   "p95": 0.968,
+   "max": 1.0,
+   "min": 0.75
+  },
+  "protocol_accept_from_first_input": {
+   "n": 14,
+   "median": 23.056,
+   "p95": 42.758,
+   "max": 44.247,
+   "min": 18.795
+  },
+  "accept_from_lio_ready": {
+   "n": 14,
+   "median": 20.183,
+   "p95": 39.252,
+   "max": 40.741,
+   "min": 13.44
+  },
+  "accept_from_acq_end": {
+   "n": 14,
+   "median": 15.526,
+   "p95": 18.374,
+   "max": 19.251,
+   "min": 10.401
+  },
+  "localized_from_first_input": {
+   "n": 14,
+   "median": 31.83,
+   "p95": 49.213,
+   "max": 50.697,
+   "min": 25.081
+  }
+ }
+}

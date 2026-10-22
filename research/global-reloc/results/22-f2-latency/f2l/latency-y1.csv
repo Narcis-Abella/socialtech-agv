@@ -1,0 +1,24 @@
+run,observed,verdict,gate_open_s,out_at_s,close_at_s,latency_s,exposure_max_xy_m,exposure_max_yaw_deg,first_failed_check_s,checks,checks_failed,check_wall_s_median,max_pass_age_s,withheld_in_doubt,withheld_stale,worker_cpu_pct_of_core,min_support_passed,min_tail_support_passed
+k00_nominal-y1,LOCALIZED(None)/LOCALIZED(None),PASS,54.2,,54.418,0.0,,,,99,0,0.35,1.17,0,0,57.8,0.992,0.994
+k40_relay_passthrough-y1,LOCALIZED(None)/LOCALIZED(None),PASS,54.199,,54.427,0.0,,,,99,0,0.35,1.11,0,0,57.5,0.992,0.994
+k10_gyro_0p5_from_31-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,13.9,13.212,14.17,0.958,0.865,12.966,"[13.7, 14.1]",27,2,0.35,1.44,4,0,64.4,0.801,0.778
+k11_gyro_0p5_from_35-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,10.6,,10.828,0.0,,,"[10.5, 10.85]",21,2,0.35,1.37,4,0,64.0,0.977,0.973
+k12_gyro_0p5_from_38p5-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,15.1,13.867,15.331,1.464,0.561,9.39,"[15.0, 15.4]",29,2,0.35,1.53,5,0,60.7,0.726,0.704
+k13_gyro_0p5_from_42-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,16.799,,17.001,0.0,,,"[16.6, 16.95]",32,2,0.35,1.53,4,0,60.1,0.985,0.98
+k14_gyro_0p5_from_47-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,25.499,,25.708,0.0,,,"[25.3, 25.7]",48,2,0.35,1.48,5,0,60.0,0.754,0.73
+k20_gyro_0p3_from_35-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,18.399,,18.612,0.0,,,"[18.3, 18.7]",35,2,0.35,1.46,5,0,60.4,0.803,0.786
+k21_gyro_0p4_from_35-y1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_stalled),PASS,56.299,,56.522,0.0,,,,104,0,0.35,2.56,10,10,60.2,0.86,0.816
+k22_gyro_0p7_from_35-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,10.6,10.458,10.873,0.415,0.444,11.838,"[10.6, 10.95]",21,2,0.35,1.42,5,0,64.3,0.922,0.912
+k23_gyro_1p0_from_35-y1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,9.599,9.071,9.815,0.744,1.633,38.373,,17,0,0.35,1.1,0,0,60.2,0.925,0.919
+k24_gyro_2p0_from_35-y1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,9.4,9.05,9.687,0.637,1.471,85.077,,17,0,0.35,1.05,0,0,60.4,0.993,0.995
+k25_gyro_1p0_from_42-y1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,17.298,17.192,17.543,0.351,0.589,48.677,"[17.2, 17.55]",32,1,0.35,0.99,3,0,57.9,0.993,0.995
+k30_gyro_1p0_35_to_37_transient-y1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,10.2,9.99,10.438,0.448,0.713,20.123,,19,0,0.35,1.16,2,0,61.7,0.746,0.713
+k31_acc_x2_from_35-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,48.797,,49.708,0.0,,,"[13.7, 14.05]",92,3,0.35,1.53,8,0,59.3,0.89,0.851
+k32_acc_x4_from_35-y1,LOCALIZED(None)/LOCALIZATION_LOST(odometry_implausible),PASS,7.899,,8.174,0.0,,,,15,0,0.35,1.17,0,0,64.2,0.993,0.995
+k33_gyro_m0p5_from_35-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,14.398,13.936,14.67,0.734,0.357,18.413,"[14.3, 14.65]",28,2,0.35,1.44,4,0,62.2,0.869,0.873
+d08_gyro_0p5_from_21_after_pose-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,2.0,,3.076,0.0,,,"[0.6, 1.0]",7,3,0.4,1.47,10,0,87.8,0.797,0.78
+d07_gyro_0p5_from_18_at_handover-y1,HANDOFF_FAILED(map_check_geometry),PASS,0.0,,,,,,,,,,,,,,,
+h27_lio_diverges_in_s2-y1,HANDOFF_FAILED(amcl_not_confirmed),PASS,0.0,,,,,,,,,,,,,,,
+h32_amcl_moved_by_foreign_initialpose-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,9.499,,9.773,0.0,,,"[9.9, 10.25]",20,2,0.35,1.4,9,0,64.6,0.993,0.996
+k11_gyro_0p5_from_35_r2-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,14.499,13.85,14.709,0.858,0.58,12.378,"[14.4, 14.8]",28,2,0.35,1.6,5,0,62.6,0.848,0.849
+k11_gyro_0p5_from_35_r3-y1,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,9.998,,10.284,0.0,,,"[9.9, 10.25]",20,2,0.35,1.33,4,0,63.9,0.969,0.948

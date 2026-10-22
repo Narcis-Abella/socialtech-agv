@@ -1,0 +1,9 @@
+/gate_probe
+/nav_gate
+/cmd_vel
+/cmd_vel_gated
+/global_reloc/nav_permit
+/global_reloc/state
+/nav_gate/status
+/parameter_events
+/rosout

@@ -1,0 +1,5 @@
+run,observed,verdict,gate_open_s,out_at_s,close_at_s,latency_s,exposure_max_xy_m,exposure_max_yaw_deg,first_failed_check_s,checks,checks_failed,check_wall_s_median,max_pass_age_s,withheld_in_doubt,withheld_stale,worker_cpu_pct_of_core,min_support_passed,min_tail_support_passed
+k00_nominal-w3,LOCALIZED(None)/LOCALIZED(None),PASS,50.4,,50.666,0.0,,,,79,0,0.6,1.43,0,0,88.5,0.992,0.994
+k40_relay_passthrough-w3,LOCALIZED(None)/LOCALIZED(None),PASS,51.399,,51.623,0.0,,,,81,0,0.6,1.46,0,0,88.1,0.992,0.994
+k10_gyro_0p5_from_31-w3,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,9.3,9.764,10.612,0.848,0.401,1.837,"[8.0, 8.6]",17,3,0.64,2.09,14,0,96.0,0.8,0.774
+k11_gyro_0p5_from_35-w3,LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent),PASS,10.599,9.651,10.888,1.236,0.403,9.886,"[10.2, 10.8]",18,2,0.6,2.07,8,1,94.8,0.797,0.774

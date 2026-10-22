@@ -1,0 +1,105 @@
+# Candidate GR-S2S3-F2b (2026-10-11). sha256 unless noted. Paths under /home/jetson are on the Orin NX.
+status: FASE 2 VERIFIED - VALIDATED_IN_REPLAY (note 21, Part B). Not validated on hardware.
+method commits 5bb95ef (map check) + f524d04 (permit withheld in doubt); gate commit 8a88d16; evaluator tool 7881d62; harness 252a18a; branch feat/global-reloc, local, not pushed
+predecessors: F1 GR-S2S3-F1 = c026a7b (frozen, untouched); GR-S2S3-F2 = 98926f7 (PARTIAL, h27 open; identity in ../candidate-identity.txt); tree f2g = 5bb95ef (superseded by f524d04, evidence in ../f2g/)
+
+## method code (tools/) - identical to F1: verify.py, search_v2.py, correlative_search.py, search_tiles.py, lio_submap.py, imu_ready.py, register_v2.cpp, nav_bench files
+98b64b7d9d1470696d3808fe823856d1443e4117c333e7a0184e5dbe3860a24c  global_reloc_3d/reloc_node.py
+beb03962ae8f2232500b1b8ecc4cf3f018bac36636e0cd59e4e69874fc4e9b17  global_reloc_3d/reloc_core.py
+2c62f75593d1772fa96eaa1658c038eccd66b6646129e777d70569184a790ebe  global_reloc_3d/map_check.py
+3dc43a3be91fd1ddcc9bba8babdbcdcc55b17a3ca2b7b4ddbbce95bb9f16a86e  global_reloc_3d/nav_gate.py
+f5a295ea4093a655b39f35e84af83747406e09b60c135e820c1e5aca33df29da  global_reloc_3d/gate_outlet.py
+751d1fa1c509eefe17734957f8bcd581aa6710bde960e0177f30a30faa801b2a  global_reloc_3d/can_deadman.py
+befad8238bd56744bb48c074a0d9a421ba91a2ae2026b82078a9470861693f26  global_reloc_3d/verify.py
+97d325ae05d9ae8ea02fc56cb75cbafcb850136d59104b1ba1ecdc01544d44f9  global_reloc_3d/search_v2.py
+8744868dc132124fe8636c0901ab6e0c98d00bf7e89a5e30e24e0e3006070341  global_reloc_3d/correlative_search.py
+ac17d83e19fbf3d30aececb01a65bf89bb8138023972a8a262cbfa0da60fe470  global_reloc_3d/search_tiles.py
+b3cd2f27abf59356cc67ad392218db284905fb12a4ea3afde0f16753af8fc098  global_reloc_3d/lio_submap.py
+293f9517fbb13160ece2c444ebc2bd68469dc610cd7fbf1f0ffd271e109f9899  global_reloc_3d/imu_ready.py
+7522f7d33ca1e3e8733d47d758f2c99e56f0e8ed4e373d0f7643afce63f7f6c7  global_reloc_3d/register_v2.cpp
+7969621c7c6007b537899a97475b2f626f46bd203bb9b01ff0ad0e7cdc788c3d  global_reloc_3d/launch/reloc_online.launch.py
+b1b06eaf65f7942e471ba6eb62910228401a4d65ba2d0a72c0dd1b94a31cfa89  nav_bench/planar_odom.py
+df25cf2c74ed0e0306365651d7d9525ffb3bbf68263550cc900d7ceb349424ac  nav_bench/config/amcl.yaml
+f6d3a4bcc00a89cfaab06801394cacd4cbfa5bb07e7ae069ab775220278f7c7b  nav_bench/config/scan.yaml
+
+## harness and evaluator (tools/global_reloc_3d/)
+b374db0ef81f3b57764d54659762437197fac20ad2cadeb421d3bd4429c2d5ba  run_online.sh
+aba8c0f55304ece3b95f56192e4966c6c8257852c4bd83466561c0e49c603466  online_inner.sh
+ef0428de612c51943659e94156b4ff234aa92bf2a795eff52a502208718f637b  fault_relay.py
+ff37d0f11e79a4ce6a6e489eb2848a63a48cd1eba674878d92aa26ea1ed69141  f2_check.py
+4ec789a759838cf1418902ca766e48d5a32dd5d171743b6da975f5091dedffdf  batch_faults_f2.sh
+a9f3a23a9371cf5c7bf353ceed11406bb3e8934b7acb232db987fc2a425c5365  batch_faults_s2s3.sh
+fe99725d4a1dd5641fbf5ca31181f4530fbe50e4bc113316228796e669649b39  batch_s2s3.sh
+b4853bf1a38c225b1b02d858e54e8fd4fe3429e2be06735018dfa1cf62604e7a  batch_restarts.sh
+be992f0afd485919b265e381d76257f154e7edff4c8063676ebd71f35ac95df5  gen_restart_cases.py
+3ef1a92ce2609a33dc1cb106fc5c9f34e0f40279cc6931f09f1dfa265d985f80  restart_summary.py
+905a1be85bf4af3e70edd8c71ecb3704b704223d73f5bdbf5a19a7c78210ab24  io_stall_audit.py
+660f695e170d784704a09dd15810fa7ada3477f880c107e154a44f1732ed3a2c  mem_trend.py
+cc7372534fa452fc5aa71d84ac8ec981a3a728eced0f9dc44b11de93a6014a7a  gate_probe.py
+755bf664b21017a1693e99ec526ee43f36558903d258dacd233eb87778ebebe9  permit_stub.py
+469ee2f6b852b1de0dbd355b386e5541af37ef54b18d943e52783babbb910453  gate_cell_test.sh
+6b29e19a4bf92cf5d6b1872cbe730e1eb66d9c357db20adea6df81225367b85d  gate_cell_inner.sh
+bff94cd16a1fe82b5807ef9282a96fc38dd871ef7134e2b0e64fff9ce1408000  gate_cell_check.py
+7c136a491791044bdad9020990db1377883318761b24ccdc5edc30e5bca15917  evaluate_online.py
+1c8d04eeff15682623bafb5b436aec82e74cc3d6f1e46318fd1bb99df54bbea2  evaluate.py
+78730b2b91ce85ee43c898a14f39271179410877388d341cb523f3b56e16777d  permit_exposure.py
+
+## binaries and images outside git (NX)
+adeb0ee95bd70190df9cf61a0bd09139c7c376da684ac99a197beaafcc226330  register_v2 (aarch64, same binary as F1; copied by hand into each deployed tree; build command still not recorded in the repo)
+socialtech:reloc-online  sha256:a15d214c9f5cc406c13bda10063f729b6b1cc6e5de6a4ffd2a2e035f43635845  (method image, same as F1)
+socialtech:mapper-verify sha256:88380b4b1b720a2e5f3b65fd0091ba7d9229fb409d87ce96f04184b981ed330c  (evaluator image)
+socialtech:gate-can      sha256:54430fca54a59be70c41211527c4248d7b66d7c74bdc914a1042abfe9beebdc2  (vcan tests only; local build)
+tracer_base: unmodified, from the image, tracer_ros2 commit 2c4938db, ugv_sdk f2704eac
+
+## deployed trees on the NX
+tools-sha256-f2h.txt  /home/jetson/work/reloc-f2h-20261011/tools (final)
+../f2g/tools-sha256-f2g.txt  /home/jetson/work/reloc-f2g-20261011/tools (method 5bb95ef; gate-cell tests ran here, gate files identical to the final tree)
+
+## result files (sha256)
+2356dc89eda6ba68bea408700104c9574dc269291fd743e1de2039363d1fb1df  f2h/INVALID-u1.txt
+80edc323bc39853c6383c08e27f7d85c7f8265fb5c50edf18a20efa5bad65278  f2h/batch-g2h.log
+9fda56067273fa7a5d70b7bb6c93a56a79877f7dfa1ea64bd963288bc8517688  f2h/batch-r2h.log
+357e61cd4401f104c236dc1702811c92d26ba7b34f5ad20ae7c87cbe62768d72  f2h/cases-restarts50.csv
+e4e552eaca485d63e2f14b0a445c654f96fd7b24179307881e3064033edc29da  f2h/chain5.sh
+719877fa296520957dd379ff8ffd6a7b96730a63f15a570e75cca1dee73cf8b7  f2h/exposure-f2h.jsonl
+3835eca8b88f44a3bbd74bd8130e38021def34bbc23e8de2c49acdcec853ebed  f2h/exposure-u2.jsonl
+ea8bb7bb43cf78e9d205aea482be763c6d40d60df09a2564537b08e1d84f9e41  f2h/mem-f2h-m4.json
+baa0b0ff114dba163e323b18285c64763f59839a0e617e6027fa4d1e36752020  f2h/nvme-timeouts-per-day.txt
+8db2be9a9d4802816947cabb2b1d476640129a9e577f15303cedffeecf48a0c2  f2h/restart-summary-rs50h.json
+3f9e9dc2b0bdaf4ce5fd6a56f2adf0bd1e4df665b1d5ec2d8cae0ba8e591cf77  f2h/stalls-f2h.csv
+bd6ae0d872202318aab2ee02349258024c8c032edb042544a7aa46177966a22b  f2h/table-f2h.csv
+0a7ff37e93dd88ccda1deeebdcca95f3e07b27c6353e7b0ee2964cf931c7c5ac  f2h/table-rs50h.csv
+018ddbe98ed35a68afdc2daab1c60a8f7fc3c736d0a9d593503b224a06e774ef  f2h/table-u1.csv
+52fd28df218cfe0f3d7947e7248489d7840fc22618b3ab2b9057514f50a3d2d2  f2h/table-u2.csv
+0dec10d2869140f23e665330172a6714c31817214d9819f30ff056ffc99833b2  f2h/table-u3.csv
+90a4783ff73c115423d4a08cc881ab3e674b731610b35ba044015ea2682f7e0d  f2h/table-u4.csv
+8706bc01c5309d4e22177d548a3ee16d3ef5e51f0588eca87268cc964ea1d491  f2h/table-u5.csv
+1ab8c7f0dc3500d947cde99ddee0349622f5fd4a4882e7090385bad340f96f3b  f2h/tools-sha256-f2h.txt
+017baf76c0624f1efcac9bd476062d481d43df78b97b9d289b77fbfbffa0d971  f2g/batch-g2g.log
+1d373d41f67bfa1cd198f6da3c9e1ec9f57eb47f1f298967715ac4e997d5b893  f2g/batch-r2g.log
+5c9af01af9c0174b1e5b10e3915c8c91e979074e65e183a262d33dabe4897b5f  f2g/batch-rs50b.log
+0fb9f7c47dfe530f9f9670ed95f980410ac53a57bc1b5277b61822794616fc24  f2g/batch-t1-s2s3.log
+69e37205248b2969996e8fb7c5cae4f593cdce0997616b39f3153f579b648479  f2g/batch-t4-s2s3.log
+357e61cd4401f104c236dc1702811c92d26ba7b34f5ad20ae7c87cbe62768d72  f2g/cases-restarts50.csv
+b8262f550248b8491cfc14dac527f7e52627c4d6e071a275466d9147053f7400  f2g/chain4.sh
+844826f530797325bab21e40e8b9bd2bcb2fd79114d2847456c4748086f7d5fb  f2g/exposure-f2g.jsonl
+a1e01ec847473226076b1761ee982f05d265e66f4ae2a9ac98967f5d197d6684  f2g/mem-f2g-m3.json
+c8a49efff31656f2114225833db0e4c787ff728dafd07987e84cf3b2394a2791  f2g/nvme-and-stalls.txt
+252c2cd0a94c5c3d6be6a52e486749adaf1f49a49e0c449261a6b77e82e71efc  f2g/restart-summary-rs50.json
+61228e792b2eef5785205e15ca1371e1a5050b3946f9880b0d11895cc802da83  f2g/table-f2g.csv
+585cfd040407b40be085cdceb65919faaf1c0a575383d68e70005aea6ccf4a6d  f2g/table-rs50.csv
+220f0a6ef3a830133514b0fd08c2f0ac68206e2d3224c08b5dfbe503cf4318f5  f2g/table-rs50b.csv
+28c29026fb1fdeda3fe2619f26e6bdd53f57707e7234c8e27bcf167123a8d8ae  f2g/table-t1.csv
+3ad0c658a7c1250b4774c79406791f78ded356bd5c883310c96df53498be5c5b  f2g/table-t2.csv
+8594e49cb01df605c963867925036edf317546e00f6cebede96468894927b6cc  f2g/table-t3.csv
+23b3e2f0e251a62561ad309aeb7a8075910d455df7c3709e9e80c34276dba967  f2g/table-t4.csv
+d860976de848f62432a9a238d3342e897823673287fb3ad8d9851f60c3917fae  f2g/table-t5.csv
+6df5ed3d5d1375184a261ba256244317c2d3b1ce88bd6b40013159e856528dbe  f2g/table-t6.csv
+25c2e3dc22618f7bc6ffa912f870df53fdfc4f1ea7529c05088af88dc1cf0d62  f2g/table-t7.csv
+9dfffd3eaaa95f6856bc4232305731b2362a7a0239438865ab0a7fbfaddefb84  f2g/targeted1.sh
+9d2c7df0e6a81048fcabcec8172e2ce8fa27327cd4c77392645873f6059dde83  f2g/targeted2.sh
+8b5265a2e5ea9f1b15d0644f9425e0b5457389ddf68e07ec13d540cce6c92d0a  f2g/tools-sha256-f2g.txt
+02293dd7770d583fbe3c5b4bf98d5300b6c0ad43615ee6901cb3c8cc700da0fd  f2g/gate-cell/v1/result.json
+b20c3754a44a2fe87ad5effae3e013a04d7296babda4762bb440e38c92201f57  f2g/gate-cell/v2/result.json
+1db93c6f9b99a597c152b7f62d20ef272f27c4221733800ae380e125d20728f5  f2g/gate-cell/v1/candump_all.log
+c3ccd5fa9e5b7038874637bf8b284c781dd858121c0ba58f97e9122f42e10116  f2g/gate-cell/v2/candump_all.log

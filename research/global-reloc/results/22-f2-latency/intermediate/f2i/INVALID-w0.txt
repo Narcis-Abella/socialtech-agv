@@ -1,0 +1,1 @@
+w0 (3 runs): INVALID, infrastructure. The new tree lacked tools/nav_bench (overlay.py), the container exited before the launch. Nothing ran. Fixed by copying the sibling tool dirs from the f2h tree; rerun as w1.

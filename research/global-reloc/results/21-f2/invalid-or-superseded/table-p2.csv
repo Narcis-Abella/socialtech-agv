@@ -1,0 +1,3 @@
+run,expect,observed,verdict,fails,class,accepted,pose_published,accepted_stage,attempt_end_s,accept_s,localized_s,lost_s,fault_s,fault_to_lost_s,gate_nonzero,gate_open_s,gate_last_nonzero_after_revoke_s,permit_true,monitor_max_xy_m,monitor_max_tf_gap_s,odom_max_speed,xy_err_m,pss_peak_mb,orphans
+h00_nominal_supervised-p2,LOCALIZED\(None\)/LOCALIZED\(None\),LOCALIZED(None)/LOCALIZED(None),PASS,,correct_accept,True,True,s2,24.08,18.98,24.08,,,,445,44.4,,447,0.145,0.23,0.8,0.036379847975028995,262.4,fastlio=0 search=0 register=0
+h38_second_permit_publisher-p2,LOCALIZED\(None\)/LOCALIZED\(None\),LOCALIZED(None)/LOCALIZED(None),PASS,,correct_accept,True,True,s2,24.31,19.1,24.31,,0.43,,8,0.7,,203,0.15,0.22,0.78,0.032824872171788026,254.3,fastlio=0 search=0 register=0

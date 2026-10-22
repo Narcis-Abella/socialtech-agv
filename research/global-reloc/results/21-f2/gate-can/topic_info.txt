@@ -1,0 +1,112 @@
+Type: geometry_msgs/msg/Twist
+
+Publisher count: 1
+
+Node name: nav_gate
+Node namespace: /
+Topic type: geometry_msgs/msg/Twist
+Topic type hash: RIHS01_9c45bf16fe0983d80e3cfe750d6835843d265a9a6c46bd2e609fcddde6fb8d2a
+Endpoint type: PUBLISHER
+GID: 01.10.64.94.2c.21.ca.bb.10.9d.8a.da.00.00.16.03
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (5)
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Subscription count: 2
+
+Node name: tracer
+Node namespace: /
+Topic type: geometry_msgs/msg/Twist
+Topic type hash: RIHS01_9c45bf16fe0983d80e3cfe750d6835843d265a9a6c46bd2e609fcddde6fb8d2a
+Endpoint type: SUBSCRIPTION
+GID: 01.10.c8.a8.c4.89.9d.5a.01.1f.c6.09.00.00.19.04
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (5)
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: gate_probe
+Node namespace: /
+Topic type: geometry_msgs/msg/Twist
+Topic type hash: RIHS01_9c45bf16fe0983d80e3cfe750d6835843d265a9a6c46bd2e609fcddde6fb8d2a
+Endpoint type: SUBSCRIPTION
+GID: 01.10.d0.23.4f.eb.80.2e.e2.18.4a.e1.00.00.17.04
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (50)
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Type: geometry_msgs/msg/Twist
+
+Publisher count: 1
+
+Node name: gate_probe
+Node namespace: /
+Topic type: geometry_msgs/msg/Twist
+Topic type hash: RIHS01_9c45bf16fe0983d80e3cfe750d6835843d265a9a6c46bd2e609fcddde6fb8d2a
+Endpoint type: PUBLISHER
+GID: 01.10.d0.23.4f.eb.80.2e.e2.18.4a.e1.00.00.16.03
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (5)
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Subscription count: 1
+
+Node name: nav_gate
+Node namespace: /
+Topic type: geometry_msgs/msg/Twist
+Topic type hash: RIHS01_9c45bf16fe0983d80e3cfe750d6835843d265a9a6c46bd2e609fcddde6fb8d2a
+Endpoint type: SUBSCRIPTION
+GID: 01.10.64.94.2c.21.ca.bb.10.9d.8a.da.00.00.19.04
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): KEEP_LAST (5)
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+/tracer
+  Subscribers:
+    /cmd_vel_gated: geometry_msgs/msg/Twist
+    /light_control: tracer_msgs/msg/TracerLightCmd
+    /parameter_events: rcl_interfaces/msg/ParameterEvent
+  Publishers:
+    /odom: nav_msgs/msg/Odometry
+    /parameter_events: rcl_interfaces/msg/ParameterEvent
+    /rosout: rcl_interfaces/msg/Log
+    /tf: tf2_msgs/msg/TFMessage
+    /tracer_status: tracer_msgs/msg/TracerStatus
+  Service Servers:
+    /tracer/describe_parameters: rcl_interfaces/srv/DescribeParameters
+    /tracer/get_parameter_types: rcl_interfaces/srv/GetParameterTypes
+    /tracer/get_parameters: rcl_interfaces/srv/GetParameters
+    /tracer/get_type_description: type_description_interfaces/srv/GetTypeDescription
+    /tracer/list_parameters: rcl_interfaces/srv/ListParameters
+    /tracer/set_parameters: rcl_interfaces/srv/SetParameters
+    /tracer/set_parameters_atomically: rcl_interfaces/srv/SetParametersAtomically
+  Service Clients:
+
+  Action Servers:
+
+  Action Clients:
+

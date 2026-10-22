@@ -1,0 +1,1 @@
+x0 (1 run, k00): smoke test of the final tree, valid, not counted in the tables of note 22 (x1 repeats it).

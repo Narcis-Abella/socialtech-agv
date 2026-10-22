@@ -1,0 +1,3 @@
+k11_gyro_0p5_from_35-f3q2r PASS  | LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent)  | class=correct_accept localized_s=31.8 lost_s=39.3 gate_open_s=6.7 gate_last_nonzero_after_revoke_s=-0.498 orphans=fastlio=0 search=0 register=0
+k11_gyro_0p5_from_35_r2-f3q2r PASS  | LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent)  | class=correct_accept localized_s=35.91 lost_s=37.96 gate_open_s=1.3 gate_last_nonzero_after_revoke_s=-0.53 orphans=fastlio=0 search=0 register=0
+k11_gyro_0p5_from_35_r3-f3q2r PASS  | LOCALIZED(None)/LOCALIZATION_LOST(map_incoherent)  | class=correct_accept localized_s=31.86 lost_s=38.31 gate_open_s=5.7 gate_last_nonzero_after_revoke_s=-0.543 orphans=fastlio=0 search=0 register=0

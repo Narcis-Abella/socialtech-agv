@@ -1,0 +1,129 @@
+{
+ "frames_total": 870,
+ "can_ids_seen": {
+  "421": 1,
+  "111": 870
+ },
+ "phases": [
+  {
+   "phase": "false",
+   "frames": 30,
+   "nonzero": 0,
+   "first_nonzero_after_s": null,
+   "last_nonzero_after_s": null,
+   "zero_after_last_nonzero": 30,
+   "pass": true
+  },
+  {
+   "phase": "true",
+   "frames": 50,
+   "nonzero": 48,
+   "first_nonzero_after_s": 0.285,
+   "last_nonzero_after_s": 4.985,
+   "zero_after_last_nonzero": 0,
+   "pass": true
+  },
+  {
+   "phase": "false",
+   "frames": 50,
+   "nonzero": 0,
+   "first_nonzero_after_s": null,
+   "last_nonzero_after_s": null,
+   "zero_after_last_nonzero": 50,
+   "pass": true
+  },
+  {
+   "phase": "true",
+   "frames": 50,
+   "nonzero": 48,
+   "first_nonzero_after_s": 0.27,
+   "last_nonzero_after_s": 4.97,
+   "zero_after_last_nonzero": 0,
+   "pass": true
+  },
+  {
+   "phase": "silent",
+   "frames": 50,
+   "nonzero": 4,
+   "first_nonzero_after_s": 0.06,
+   "last_nonzero_after_s": 0.36,
+   "zero_after_last_nonzero": 46,
+   "pass": true
+  },
+  {
+   "phase": "true",
+   "frames": 50,
+   "nonzero": 48,
+   "first_nonzero_after_s": 0.258,
+   "last_nonzero_after_s": 4.958,
+   "zero_after_last_nonzero": 0,
+   "pass": true
+  },
+  {
+   "phase": "exit",
+   "frames": 53,
+   "nonzero": 0,
+   "first_nonzero_after_s": null,
+   "last_nonzero_after_s": null,
+   "zero_after_last_nonzero": 53,
+   "pass": true
+  }
+ ],
+ "gate_enforced": true,
+ "bypass_closed_gate": {
+  "frames": 65,
+  "nonzero": 0,
+  "first_nonzero_after_s": null,
+  "last_nonzero_after_s": null,
+  "zero_after_last_nonzero": 65,
+  "socket_from_graph": "REFUSED [Errno 2] No such file or directory",
+  "graph_sees_socket_dir": "ls: cannot access '/sock': No such file or directory",
+  "main_graph_sees_driver": false,
+  "pass": true
+ },
+ "source_dies_while_open": {
+  "frames": 28,
+  "nonzero": 0,
+  "first_nonzero_after_s": null,
+  "last_nonzero_after_s": null,
+  "zero_after_last_nonzero": 28,
+  "pass": true
+ },
+ "outlet_killed_while_open": {
+  "frames": 74,
+  "nonzero": 0,
+  "first_nonzero_after_s": null,
+  "last_nonzero_after_s": null,
+  "zero_after_last_nonzero": 74,
+  "pass": true
+ },
+ "resumes_after_outlet_restart": true,
+ "gate_killed_while_open": {
+  "frames": 48,
+  "nonzero": 1,
+  "first_nonzero_after_s": 0.008,
+  "last_nonzero_after_s": 0.008,
+  "zero_after_last_nonzero": 47,
+  "pass": true
+ },
+ "deadman": {
+  "seen": 785,
+  "zeros_written": 85,
+  "overrides": [
+   {
+    "started_epoch": 1791672642.4012916,
+    "silence_s": 0.30197925999527797,
+    "ended_epoch": 1791672646.6793566
+   }
+  ]
+ },
+ "outlet_stats2": {
+  "forwarded": 55,
+  "nonzero_forwarded": 55,
+  "zero_fill": 72,
+  "dropped_malformed": 0,
+  "dropped_sequence": 0,
+  "dropped_stale": 0
+ },
+ "all_pass": true
+}

@@ -6,7 +6,8 @@
 #        LIDAR (/livox/lidar)  IMU (/livox/imu)  ROS_DOMAIN_ID (79: GLIM 11, FAST-LIO2/iG-LIO 77, Voxel-SLAM 78)
 #        AMCL_OVERRIDES="alpha1=0.02 ..." (AMCL parameters over config/amcl.yaml)  INIT_STD (m) and INIT_YAW_STD (deg, 15): publish /initialpose with that covariance
 #        instead of the set_initial_pose parameter (which gives AMCL a ZERO covariance)  COST=1: CPU and RAM per process to <out_dir>/cost.{csv,txt}
-#        FASTLIO_SED=<file>: sed script applied to the generated fastlio.yaml (key names are unique there; check the diff)  RECORD=1: also record /scan /tf /tf_static /Odometry to <out_dir>/inputs, the input of run_amcl_only.sh
+#        INIT_XYYAW="x y yaw" and LEVEL_Q="qx qy qz qw": initial pose and odom levelling from outside (e.g. a global relocalizer and IMU gravity)
+#        instead of from the reference; with INIT_STD the /initialpose then carries INIT_XYYAW  FASTLIO_SED=<file>: sed script applied to the generated fastlio.yaml (key names are unique there; check the diff)  RECORD=1: also record /scan /tf /tf_static /Odometry to <out_dir>/inputs, the input of run_amcl_only.sh
 set -eo pipefail
 bag=$1; map=$2; ref=$3; h=$4; out=$5
 tools=$(dirname "$(readlink -f "$0")")
@@ -21,8 +22,10 @@ sed -e "s|lid_topic:.*|lid_topic: \"${LIDAR:-/livox/lidar}\"|" -e "s|imu_topic:.
     -e "s|pcd_save_en:.*|pcd_save_en: false|" -e "s|map_en:.*|map_en: false|" -e "s|path_en:.*|path_en: false|" -e "s|^\( *\)gyr_cov:.*|\1gyr_cov: 1.0|" -e "s|^\( *\)acc_cov:.*|\1acc_cov: 1.0|" \
     "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" > "$out/fastlio.yaml"   # gyr_cov/acc_cov 1.0 instead of upstream 0.1: stops FAST-LIO2 degrading in featureless corridors (M3DGR Corridor01)
 [ -n "${FASTLIO_SED:-}" ] && sed -i -f "$FASTLIO_SED" "$out/fastlio.yaml"   # optional FAST-LIO2 parameter overrides, one sed expression per line (experiments)
-read -r x y yaw < <(python3 "$tools/pose_eval.py" init --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}")
-read -r qx qy qz qw < <(python3 "$tools/pose_eval.py" level --ref "$ref" --map "$map")
+if [ -n "${INIT_XYYAW:-}" ]; then read -r x y yaw <<< "$INIT_XYYAW"
+else read -r x y yaw < <(python3 "$tools/pose_eval.py" init --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}"); fi
+if [ -n "${LEVEL_Q:-}" ]; then read -r qx qy qz qw <<< "$LEVEL_Q"
+else read -r qx qy qz qw < <(python3 "$tools/pose_eval.py" level --ref "$ref" --map "$map"); fi
 echo "initial pose (map frame): $x $y $yaw; level quaternion: $qx $qy $qz $qw" | tee "$out/initial_pose.txt"
 
 ros2 launch "$tools/launch/bench_a.launch.py" fastlio_params:="$out/fastlio.yaml" map:="$map" init_x:="$x" init_y:="$y" init_yaw:="$yaw" \
@@ -38,7 +41,12 @@ if [ -n "${RECORD:-}" ]; then   # python resets SIGINT (ignored in background jo
 fi
 sleep 15   # lifecycle bring-up (map_server, AMCL) before the first scan
 if [ -n "${INIT_STD:-}" ]; then
-  msg=$(python3 "$tools/pose_eval.py" initpose --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}" --std "$INIT_STD" --yaw-std "${INIT_YAW_STD:-15}")
+  if [ -n "${INIT_XYYAW:-}" ]; then
+    msg=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from pose_eval import initpose_json; print(initpose_json(tuple(map(float, sys.argv[2:5])), float(sys.argv[5]), float(sys.argv[6])))' \
+      "$tools" $x $y $yaw "$INIT_STD" "${INIT_YAW_STD:-15}")
+  else
+    msg=$(python3 "$tools/pose_eval.py" initpose --ref "$ref" --map "$map" --dist "${DIST:-1.0}" --dyaw "${DYAW:-20}" --std "$INIT_STD" --yaw-std "${INIT_YAW_STD:-15}")
+  fi
   timeout 30 ros2 topic pub --once -w 1 /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$msg" > "$out/initpose.log" 2>&1 \
     || { kill -TERM "$launch" "$rec_a" "$rec_o" ${bagrec:-} ${cost:-} 2>/dev/null; echo "FAIL: /initialpose not delivered in 30 s (AMCL never became active; see $out/launch.log)"; exit 1; }
 fi
