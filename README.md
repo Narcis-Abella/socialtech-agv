@@ -64,6 +64,7 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 - `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
 - `tools/slam_bench/ply_to_map.py`: levelled, wall-aligned 2D map (`map_server` PGM + YAML) from a PLY of any SLAM; `--ply-out` saves the cloud it was made from; `--min-component N` frees occupied specks smaller than N cells.
 - `tools/slam_bench/map_visibility.py`: the same map cleaned with the raw scans: drops cloud points the beams mostly pass through (thin or dim specks) and frees the unknown cells the beams crossed (needs the bag, as PointCloud2 or Livox CustomMsg, and the SLAM poses).
+- `tools/slam_bench/bag_check.py`: gaps in the LiDAR and IMU streams of a bag, from the recording times; run it right after recording (a scan lost while recording is gone for good and nothing warns about it).
 - `tools/slam_bench/make_map.sh`: bag to 2D map in one command inside the `mapper` image (Voxel-SLAM, `vs_to_ply.py`, `ply_to_map.py`, `map_visibility.py`); see `tools/slam_bench/README.md`.
 
 ```bash

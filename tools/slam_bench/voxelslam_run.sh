@@ -14,7 +14,7 @@ sed -e "s|lid_topic:.*|lid_topic: \"$lidar\"|" -e "s|imu_topic:.*|imu_topic: \"$
     -e "s|imu_acc_unit_is_g:.*|imu_acc_unit_is_g: true|" -e "s|save_path:.*|save_path: \"$out/vs/\"|" \
     -e "s|bagname:.*|bagname: \"run\"|" -e "s|is_save_map:.*|is_save_map: 1|" \
     "$(ros2 pkg prefix voxel_slam)/share/voxel_slam/config/mid360.yaml" > "$cfg"
-[ -n "${VS_SED:-}" ] && sed -i -f "$VS_SED" "$cfg"   # optional parameter overrides, one sed expression per line
+[ -n "${VS_SED:-}" ] && sed -i -f "$VS_SED" "$cfg"   # optional parameter overrides, one sed expression per line (experiments)
 ros2 run voxel_slam voxelslam --ros-args --params-file "$cfg" -p finish:=false > "$out/node.log" 2>&1 &
 node=$!
 sleep 6
