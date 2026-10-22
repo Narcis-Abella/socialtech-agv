@@ -1,0 +1,4 @@
+# default for the launch argument `overrides`: nothing to override (an empty ros__parameters block would be a YAML null that rcl refuses)
+/**:
+  ros__parameters:
+    use_sim_time: true

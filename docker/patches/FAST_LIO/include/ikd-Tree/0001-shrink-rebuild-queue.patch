@@ -1,0 +1,18 @@
+Shrink the ikd-Tree rebuild-operation queue (Q_LEN 1e6 -> 1e5): the global tree object statically holds Q_LEN
+Operation_Logger_Type entries = 80 MB, resident. Instrumented runs on 3 bags (Corridor01, eco01, hospital_02): no queue-peak report (printed from 200 entries) and no overflow;
+odometry byte-identical on 4 bags. Applied inside the submodule.
+Base: hku-mars/ikd-Tree e2e3f4e (submodule of FAST_LIO a4743b0, branch fast_lio).
+
+diff --git a/ikd_Tree.h b/ikd_Tree.h
+index d4b302e..5e705a7 100644
+--- a/ikd_Tree.h
++++ b/ikd_Tree.h
+@@ -15,7 +15,7 @@
+ #define Multi_Thread_Rebuild_Point_Num 1500
+ #define DOWNSAMPLE_SWITCH true
+ #define ForceRebuildPercentage 0.2
+-#define Q_LEN 1000000
++#define Q_LEN 100000
+ 
+ using namespace std;
+ 

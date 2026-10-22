@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>planar_odom</name>
+  <version>0.1.0</version>
+  <description>FAST-LIO2 /Odometry to a levelled planar base_footprint TF</description>
+  <maintainer email="narcis.abellallos@gmail.com">Narcis-Abella</maintainer>
+  <license>GPL-2.0-only</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

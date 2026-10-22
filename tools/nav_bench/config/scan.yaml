@@ -1,0 +1,16 @@
+# pointcloud_to_laserscan on FAST-LIO2's deskewed /cloud_registered_body. Heights are metres above the floor in base_footprint
+# (planar_odom.py), the same band ply_to_map.py rasterizes as obstacle: --floor-band 0.10 .. --ceil 1.80. Keep both in sync.
+/**:
+  ros__parameters:
+    target_frame: base_footprint
+    transform_tolerance: 0.2
+    min_height: 0.10
+    max_height: 1.80
+    angle_min: -3.14159
+    angle_max: 3.14159
+    angle_increment: 0.00873   # 0.5 deg
+    scan_time: 0.1
+    range_min: 0.5             # FAST-LIO2 already drops points inside blind: 0.5
+    range_max: 60.0
+    use_inf: true
+    inf_epsilon: 1.0
