@@ -12,6 +12,7 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | `docker/robot.repos` | Third-party ROS sources, pinned by commit |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
 | `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
+| `tools/` | Offline research helpers: SLAM benchmark, 2D map from a PLY, GLIM dump to PLY and config evaluation (see Tools) |
 | `tools/nav_bench/` | Localization bench (stage A): FAST-LIO2 + AMCL over a bag's own map, scored against Voxel-SLAM (see its README) |
 
 ## Jetson setup (once per board)
@@ -28,6 +29,9 @@ sudo ./setup_host.sh --check       # verify; all checks should PASS
 Idempotent: re-run after changing `robot.conf` (emptying a feature removes/disables it) or after an
 L4T/kernel update (rebuilds the `gs_usb` CAN driver when the kernel ABI changed; `--check` flags a stale one).
 It also disables the passwordless sudo that SDK Manager leaves for the default user, after you confirm its password.
+It also builds and starts `nvme-heartbeat` (`host/nvme-heartbeat.c`, `NVME_HEARTBEAT=1`), a workaround for Orin NVMe interrupts that get lost and
+stall a process for 30 s; `--check` fails if it is not running on every online CPU or its log shows a read blocked >= 1 s in the last hour
+(`journalctl -u nvme-heartbeat`).
 
 ## Images
 
@@ -47,11 +51,67 @@ On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=
 | Stage | Contents |
 |---|---|
 | `base` | ROS 2 Jazzy, CycloneDDS, CUDA 13.2 runtime (must match the host L4T driver) |
-| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, Nav2 AMCL + map_server, pointcloud_to_laserscan |
+| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, Nav2 AMCL + map_server, pointcloud_to_laserscan, entrypoint and ROS environment |
+| `mapper` | `robot` + GTSAM 4.3.0, Voxel-SLAM and `rosbags`: offline mapping (`tools/slam_bench/make_map.sh`). Build it with `--target mapper`; without `--target` the last stage in the file is built |
 
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
 Without `DDS_IFACE`, CycloneDDS picks a network interface arbitrarily and other machines may not see the robot's nodes.
+The images ask CycloneDDS for a 10 MiB socket receive buffer (`docker/cyclone_uri.sh`). When the host did not raise `net.core.rmem_max` (`host/setup_host.sh` does, via `/etc/sysctl.d/99-socialtech-dds.conf`), the entrypoint prints a warning naming it and every ROS node then fails to start ("failed to create domain"), instead of silently losing the LiDAR scans that overflow a UDP buffer (measured: 24 % of the scans on an Orin Nano). An explicit `CYCLONEDDS_URI` keeps its own configuration (interface included) and still gets the buffer request, unless it sets `SocketReceiveBufferSize` itself.
 Shells opened with `docker exec -it <container> bash` get the same ROS environment as the entrypoint.
+
+## Tools
+
+The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; its integration into the `robot` image is still to do). The tools below are offline research helpers used for that comparison and for the maps; none of them is part of the image. The GLIM ones are kept as reference and comparison tooling.
+
+- `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
+- `tools/slam_bench/ply_to_map.py`: levelled, wall-aligned 2D map (`map_server` PGM + YAML) from a PLY of any SLAM; `--ply-out` saves the cloud it was made from; `--min-component N` frees occupied specks smaller than N cells.
+- `tools/slam_bench/map_visibility.py`: the same map cleaned with the raw scans: drops cloud points the beams mostly pass through (thin or dim specks) and frees the unknown cells the beams crossed (needs the bag, as PointCloud2 or Livox CustomMsg, and the SLAM poses).
+- `tools/slam_bench/bag_check.py`: gaps in the LiDAR and IMU streams of a bag, from the recording times; run it right after recording (a scan lost while recording is gone for good and nothing warns about it).
+- `tools/slam_bench/make_map.sh`: bag to 2D map in one command inside the `mapper` image (Voxel-SLAM, `vs_to_ply.py`, `ply_to_map.py`, `map_visibility.py`); see `tools/slam_bench/README.md`.
+
+```bash
+# GLIM map dump (glim_rosbag -p dump_path:=...) -> PLY, same points as offline_viewer's Export Points.
+python3 tools/glim_dump_to_ply.py <dump_dir> map.ply
+python3 tools/test_glim_dump_to_ply.py   # self-check
+```
+
+Needs numpy (apt: `python3-numpy`). Differences from the GUI export are listed in the script's docstring.
+
+### GLIM config evaluation
+
+Compare GLIM configs on recorded bags. GLIM is not deterministic, so each config runs several times.
+
+```bash
+# In the robot image (needs GLIM): N runs of one config = installed defaults + overlays, in order.
+docker run --rm --network host -v ~/rosbags:/bags -v ~/glim_eval:/eval -v "$PWD/tools:/tools" socialtech:robot \
+  /tools/glim_eval.sh /bags/mapping_eco_-1_01 /eval/eco01_legacy 3 /tools/glim_eval/base.json /tools/glim_eval/legacy.json
+# Anywhere with numpy + scipy: metrics per run + divergence between runs.
+python3 tools/glim_metrics.py ~/glim_eval/eco01_legacy/run*/
+python3 tools/test_glim_config.py && python3 tools/test_glim_metrics.py   # self-checks
+```
+
+`glim_config.py` rejects overlay parameters that the installed GLIM does not have (GLIM itself ignores them silently).
+Metrics need no ground truth; definitions in `glim_metrics.py`. The main signals: `revisit_p90_m`
+(doubled walls where a place is passed again), `mme` (Mean Map Entropy: blur anywhere, also within
+one pass), `z_range_m` / `roll_range_deg` / `pitch_range_deg` (drift on a flat floor), run divergence (stability).
+
+| Overlay (`tools/glim_eval/`) | On top of | What |
+|---|---|---|
+| `base.json` | defaults | Livox topics, Mid-360 `T_lidar_imu` (IMU pose in the LiDAR frame, Mid-360 manual), headless modules |
+| `legacy.json` | `base.json` | Previous (Humble, GLIM 1.0.x) config ported to 1.2.x, including its `T_lidar_imu`, to reproduce its results |
+| `mid360_T.json` | `legacy.json` | Restores the Mid-360 `T_lidar_imu` over the legacy one |
+| `keyframes.json` | `base.json` | Legacy `odometry_estimation` + `sub_mapping` only (keyframe and submap density) |
+| `loop_overlap.json` | `base.json` | `min_implicit_loop_overlap` 0.05: more loop constraints (needs dense keyframes to matter) |
+| `far_8m.json` | `base.json` | `distance_far_thresh` 8 m, as in the legacy config: more frequent keyframes/submaps? |
+| `density.json` | `base.json` | Denser submaps: more keyframes, 5 cm voxels, no point cap |
+
+`base.json` alone is not a usable map: GLIM's default keyframing gives ~3 submaps per 170 m (about 20x fewer
+points than the legacy config) and almost no backend optimization. `mme` is only comparable between maps of
+similar density (a sparse map scores "crisper").
+
+Not portable from the legacy config: its crop box kept only z in [-0.43, 1.23] m through a `crop_bbox_invert`
+parameter that upstream GLIM does not have (1.2.x only removes points inside the box). Left out: frame IDs,
+QoS, image topic, `ring_field` (Livox has no ring field; ignored when absent), viewers.
 
 ## Where changes go
 

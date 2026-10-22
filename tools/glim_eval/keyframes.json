@@ -1,0 +1,28 @@
+{
+  "config_odometry_gpu.json": {
+    "odometry_estimation": {
+      "initialization_window_size": 2.0,
+      "use_isam2_dogleg": true,
+      "voxel_resolution": 0.5,
+      "voxel_resolution_max": 1.0,
+      "voxel_resolution_dmin": 1.0,
+      "voxel_resolution_dmax": 10.0,
+      "voxelmap_levels": 1,
+      "full_connection_window_size": 3,
+      "max_num_keyframes": 8,
+      "keyframe_max_overlap": 0.6,
+      "keyframe_delta_trans": 0.5,
+      "keyframe_delta_rot": 0.2
+    }
+  },
+  "config_sub_mapping_gpu.json": {
+    "sub_mapping": {
+      "enable_optimization": true,
+      "create_between_factors": true,
+      "keyframe_voxel_resolution": 0.1,
+      "submap_downsample_resolution": 0.15,
+      "submap_voxel_resolution": 0.1,
+      "submap_target_num_points": 150000
+    }
+  }
+}
