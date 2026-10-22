@@ -2,11 +2,12 @@
 # Run Voxel-SLAM (ROS 2 port) on one Livox CustomMsg bag (the port's PointCloud2 mode expects per-point time relative to header.stamp, ours is absolute) inside the robot image; the final poses are <out_dir>/vs/run/alidarState.txt.
 # The poses are only written after the global stage, which is triggered by setting the `finish` parameter after playback.
 # usage (in container): voxelslam_run.sh <bag_dir> <lidar_topic> <imu_topic> <out_dir>
+# env: PLAY_RATE (1.0)   VS_SED (sed script applied to the generated config, one expression per line; voxelslam_degrade.sed raises degrade_bound)
 set -eo pipefail
 bag=$1; lidar=$2; imu=$3; out=$4
 source /opt/ros/jazzy/setup.bash
 export CMAKE_PREFIX_PATH=/opt/socialtech:$CMAKE_PREFIX_PATH AMENT_PREFIX_PATH=/opt/socialtech:$AMENT_PREFIX_PATH
-source /ws/install/setup.bash
+[ -f /ws/install/setup.bash ] && source /ws/install/setup.bash   # optional overlay (the bench boards build Voxel-SLAM there); the mapper image has it under /opt/socialtech
 mkdir -p "$out/vs"
 cfg=$out/voxelslam.yaml
 sed -e "s|lid_topic:.*|lid_topic: \"$lidar\"|" -e "s|imu_topic:.*|imu_topic: \"$imu\"|" \

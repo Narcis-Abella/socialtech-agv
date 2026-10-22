@@ -1,0 +1,6 @@
+# Third-party sources for the `mapper` image (offline mapping), pinned by commit (vcstool format, same rules as robot.repos).
+repositories:
+  voxel_slam_ros2:
+    type: git
+    url: https://github.com/turtiesio/voxel-slam-ros2.git
+    version: 4d06f3e3150c0a1b224b234328ec8e0d9a0377f7  # main 2026-01-18; only the VoxelSLAM/ package (CustomMsg) is built, unmodified
