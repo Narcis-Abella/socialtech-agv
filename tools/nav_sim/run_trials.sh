@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs a scenario file against Nav2 in the simulation, inside the `sim` image on the board. usage: run_trials.sh <scenario.json> <out dir> [reps]
-#   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (nav2_params.yaml instead of the packaged one), SET (space-separated path=value overrides of it, e.g. "amcl.ros__parameters.alpha1=0.05"), MAP (map yaml instead of the packaged loyola.yaml), SIM_SRC (hospital-agv-sim checkout to build),
+#   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (nav2_params.yaml instead of the packaged one), SET (comma-separated path=value overrides of it, e.g. "amcl.ros__parameters.alpha1=0.05,amcl.ros__parameters.alpha2=0.05"), MAP (map yaml instead of the packaged loyola.yaml), SIM_SRC (hospital-agv-sim checkout to build),
 #   SIM_ARGS (extra simulation.launch.py arguments: world:=, spawn_x:=, noise_seed:=, odom_source:= ...), ROS_DOMAIN_ID (53), SIM_WAIT (45 s), NAV_TIMEOUT (180 s), plus RUNNER (nav_sim/trials.py; nav_sim/plan_bench.py for the planner benchmark) and the env of the runner
 set -eo pipefail
 scenario=${1:?scenario.json}; out=${2:?out dir}; reps=${3:-1}
@@ -16,8 +16,8 @@ fi
 ros2 launch hospital-agv-sim simulation.launch.py headless:=true $SIM_ARGS > "$out/sim.log" 2>&1 &
 sleep "${SIM_WAIT:-45}"
 params=${PARAMS:-$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml}
-if [ -n "$SET" ]; then   # parameter variant: path=value pairs applied to the base file (params_variant.py keeps types and refuses unknown keys)
-  python3 /tools/nav_sim/params_variant.py "$params" "$out/params_variant.yaml" $SET
+if [ -n "$SET" ]; then   # parameter variant: comma-separated path=value pairs applied to the base file (params_variant.py keeps types and refuses unknown keys)
+  python3 /tools/nav_sim/params_variant.py "$params" "$out/params_variant.yaml" ${SET//,/ }
   params=$out/params_variant.yaml
 fi
 ros2 launch socialtech_nav nav_sim.launch.py params_file:=$params ${MAP:+map:=$MAP} > "$out/nav.log" 2>&1 &
