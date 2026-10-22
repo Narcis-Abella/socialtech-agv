@@ -1,0 +1,7 @@
+{
+  "config_sensors.json": {
+    "sensors": {
+      "imu_gyro_noise": 0.00175
+    }
+  }
+}

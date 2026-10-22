@@ -9,7 +9,7 @@ import numpy as np
 
 # name -> a substring of the process command line
 WATCH = {"fastlio_mapping": "fastlio_mapping", "amcl": "nav2_amcl/amcl", "pointcloud_to_laserscan": "pointcloud_to_laserscan_node",
-         "planar_odom": "planar_odom.py", "map_server": "nav2_map_server/map_server"}
+         "planar_odom": "lib/planar_odom/planar_odom", "map_server": "nav2_map_server/map_server"}
 TICK = os.sysconf("SC_CLK_TCK")
 
 

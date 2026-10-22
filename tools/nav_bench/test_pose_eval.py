@@ -61,6 +61,16 @@ def test_pgm_rows_are_flipped_and_outside_is_255():
         assert list(v) == [10, 254, 255], v
 
 
+def test_reference_points_outside_the_map_are_not_counted_as_free():
+    """A reference from another run or a wrong T leaves the PGM: that must not read as 'on free space'."""
+    with tempfile.TemporaryDirectory() as d:
+        open(os.path.join(d, "m.yaml"), "w").write(YAML)
+        open(os.path.join(d, "map.pgm"), "wb").write(b"P5\n80 80\n255\n" + bytes([254]) * 6400)       # 20 x 20 m, all free
+        write_tum(os.path.join(d, "ref.tum"), [0, 1, 2, 3], [0.0, 1.0, 500.0, 600.0], [0.0, 0.0, 500.0, 600.0], [0.0] * 4)   # two inside, two far outside
+        r = pe.ref_vs_map(os.path.join(d, "ref.tum"), os.path.join(d, "m.yaml"))
+        assert r["ref_on_free_pct"] == 50.0, r
+
+
 def test_evaluate_finds_convergence_loss_and_jumps():
     t = np.arange(0, 60, 0.5)
     ref = np.c_[0.5 * t, np.zeros_like(t), np.zeros_like(t)]

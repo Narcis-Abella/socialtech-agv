@@ -213,7 +213,7 @@ def ref_vs_map(ref_path, map_yaml, ref_dt=0.0):
     _, ref = reference_map(ref_path, T, ref_dt)
     _, xyz, _, _ = read_poses(ref_path)
     v = cells(read_pgm(m["image"]), m["resolution"], m["origin"], ref[:, :2])
-    return {"ref_poses": len(ref), "ref_on_free_pct": float((v >= FREE).mean() * 100), "ref_on_occupied_pct": float((v < 50).mean() * 100),
+    return {"ref_poses": len(ref), "ref_on_free_pct": float(((v >= FREE) & (v < 255)).mean() * 100), "ref_on_occupied_pct": float((v < 50).mean() * 100),
             "sensor_height_m": float(np.median(xyz @ T[2, :3] + T[2, 3]))}
 
 
