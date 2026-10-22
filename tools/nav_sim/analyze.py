@@ -17,6 +17,7 @@ import stats
 
 DEFAULT_MAP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps", "loyola_gt.yaml")      # registered to the simulated world
 FOOTPRINT = (0.70, 0.58)
+HZ = 50.0                              # sampling rate of trials.py rows
 COMPARED = ["duration", "path_len", "spl", "final_err_xy", "recoveries", "jerk_lin_rms", "jerk_lin_p95", "acc_lin_p95", "jerk_ang_rms", "acc_ang_p95", "vx_reversals",
             "xtrack_p95", "loc_err_p95", "clearance_min", "idle_frac"]
 
@@ -58,8 +59,8 @@ def trial_metrics(rec, ctx):
     out["vx_mean"] = float(np.mean(rows[:, col["cmd_vx"]]))
     out["vx_reversals"] = m.sign_reversals(rows[:, col["cmd_vx"]], 0.01)
     out["wz_reversals"] = m.sign_reversals(rows[:, col["cmd_wz"]], 0.02)
-    dt = np.diff(t)
-    speed = np.hypot(*np.diff(gt, axis=0).T) / np.maximum(dt, 1e-6)
+    k = max(1, int(round(0.5 * HZ)))      # speed over 0.5 s windows: /gt/pose updates at ~20 Hz, so per-row differences are zero most of the time
+    speed = np.hypot(*(gt[k:] - gt[:-k]).T) / np.maximum(t[k:] - t[:-k], 1e-6)
     out["idle_frac"] = float(np.mean(speed < 0.02)) if len(speed) else 0.0
     plan = np.asarray(rec["plan_first"], float)
     if len(plan) > 1:

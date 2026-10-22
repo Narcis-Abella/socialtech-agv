@@ -61,6 +61,19 @@ def test_oscillating_command_is_counted():
     assert r["vx_reversals"] > 5 and r["jerk_lin_rms"] > 1.0
 
 
+def test_idle_fraction_ignores_the_ground_truth_update_rate():
+    tr = straight_trial()
+    for i, row in enumerate(tr["rows"]):
+        if i % 5:                                          # the ground truth only updates every 5th sample (like /gt/pose at 20 Hz against 50 Hz rows)
+            row[1:3] = tr["rows"][i - i % 5][1:3]
+    assert a.trial_metrics(tr, ctx())["idle_frac"] < 0.02  # it is driving the whole time
+    stop = straight_trial()
+    n = len(stop["rows"])
+    for row in stop["rows"][n // 2:]:
+        row[1:3] = stop["rows"][n // 2][1:3]                # stands still for the second half
+    assert abs(a.trial_metrics(stop, ctx())["idle_frac"] - 0.5) < 0.05
+
+
 def test_aggregate_uses_distributions():
     rows = [{"id": f"p{i}", "tag": "r0", "success": i % 4 != 0, "reached": i % 4 != 0, "duration": 10.0 + i, "spl": 0.8} for i in range(8)]
     g = a.aggregate(rows)
