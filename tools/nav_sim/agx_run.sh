@@ -22,7 +22,7 @@ start)
   tar -C "$repo" -c tools | ssh_ "tar -x -C $remote"
   ssh_ "[ -f ~/sim_src/hospital-agv-sim_$hash/package.xml ]" || git -C "$sim" archive HEAD | ssh_ "tar -x -C ~/sim_src/hospital-agv-sim_$hash"
   { echo "SIM_SRC=/simsrc"; echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-53}"; printf '%s\n' "$@"; echo "SIM_COMMIT=$hash"; echo "REPO_COMMIT=$(git -C "$repo" rev-parse --short HEAD)$([ -n "$(git -C "$repo" status --porcelain)" ] && echo -dirty)"; } | ssh_ "cat > $remote/env.list"
-  ssh -f -n -i "$KEY" "$HOST" "cd $remote && setsid nohup sh -c 'timeout ${RUN_TIMEOUT:-7200} docker run --rm --name nav2run --network host --env-file env.list -e DDS_IFACE=lo -v \$PWD/tools:/tools:ro -v \$PWD/out:/out -v \$HOME/sim_src/hospital-agv-sim_$hash:/simsrc:ro ${IMAGE:-socialtech:sim-main} /tools/${ENTRY:-nav_sim/run_trials.sh} /tools/$scen /out $reps > run.log 2>&1; echo rc=\$? >> run.log; docker kill nav2run > /dev/null 2>&1' > /dev/null 2>&1 &"
+  ssh -f -n -i "$KEY" "$HOST" "cd $remote && setsid nohup sh -c 'timeout ${RUN_TIMEOUT:-7200} docker run --rm --name nav2run --network host --env-file env.list -e DDS_IFACE=lo -v \$PWD/tools:/tools:ro -v \$PWD/out:/out -v \$HOME/sim_src/hospital-agv-sim_$hash:/simsrc:ro ${IMAGE:-socialtech:sim-main} /tools/${ENTRY:-nav_sim/run_trials.sh} /tools/$scen /out $reps > run.log 2>&1; echo rc=\$? >> run.log; docker kill nav2run > /dev/null 2>&1' > /dev/null 2>&1 &" > /dev/null 2>&1   # the local ssh must not keep the caller's pipe open
   echo "$remote" ;;
 wait)
   until ssh_ "grep -q '^rc=' ${2:?remote dir}/run.log" 2> /dev/null; do sleep 20; done
