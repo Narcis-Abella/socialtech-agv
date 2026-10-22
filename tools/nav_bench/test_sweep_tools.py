@@ -1,7 +1,9 @@
 """Checks overlay.py and summarize.py (no ROS needed). Run: python3 test_sweep_tools.py"""
 import json
 import os
+import subprocess
 import tempfile
+from pathlib import Path
 
 import overlay
 import summarize
@@ -25,6 +27,21 @@ def test_summarize_makes_one_row_per_run_and_marks_a_run_without_report():
         assert t[0].split()[:3] == ["run", "conv_s", "pos_med"] and t[0].split()[-1] == "drops", t[0]
         assert t[1].split() == ["a", "31", "0.14", "0.28", "0.31", "7.5", "0", "44", "9.0", "0.79", "2"], t[1]
         assert t[2].split() == ["b", "NO", "REPORT"], t[2]
+
+
+def test_one_failing_configuration_does_not_stop_the_sweep():
+    """run_amcl_only.sh exits 1 for a config that never converged; the others must still run and the summary must still be written."""
+    here = Path(__file__).resolve().parent
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "sweep.sh").write_bytes((here / "sweep.sh").read_bytes())
+        (d / "run_amcl_only.sh").write_text('#!/bin/bash\nsleep 0.3\ncase "$4" in *bad) echo FAIL; exit 1;; esac\nmkdir -p "$4"\n')
+        (d / "summarize.py").write_text('print("SUMMARY")\n')
+        (d / "run_amcl_only.sh").chmod(0o755)
+        (d / "sweep.sh").chmod(0o755)
+        r = subprocess.run([str(d / "sweep.sh"), "bag", "map", "ref", str(d / "out"), "2", "a|", "bad|", "c|", "d|"], capture_output=True, text=True, timeout=60)
+        assert r.returncode == 0 and "SUMMARY" in r.stdout, (r.returncode, r.stdout, r.stderr)
+        assert all((d / "out" / f"{n}.stdout").exists() for n in "a bad c d".split()), sorted(os.listdir(d / "out"))
 
 
 if __name__ == "__main__":

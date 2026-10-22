@@ -14,6 +14,15 @@ def test_parse_status_returns_rss_in_mb():
     assert abs(cs.rss_mb(STATUS) - 234567 / 1024) < 1e-9
 
 
+def test_every_watched_pattern_matches_the_command_line_the_bench_really_runs():
+    cmdlines = {"fastlio_mapping": "/opt/socialtech/lib/fast_lio/fastlio_mapping --ros-args --params-file /out/fastlio.yaml",
+                "amcl": "/opt/ros/jazzy/lib/nav2_amcl/amcl --ros-args -r __node:=amcl",
+                "planar_odom": "/opt/socialtech/lib/planar_odom/planar_odom --ros-args -r __node:=planar_odom",     # the C++ node, not planar_odom.py
+                "map_server": "/opt/ros/jazzy/lib/nav2_map_server/map_server --ros-args"}
+    for name, cmd in cmdlines.items():
+        assert cs.WATCH[name] in cmd, (name, cs.WATCH[name])
+
+
 def test_summary_gives_mean_p95_cpu_and_peak_rss_per_process_and_the_total():
     rows = [(float(t), "amcl", 30.0 + t, 100.0 + t) for t in range(0, 11)] + [(float(t), "fastlio_mapping", 100.0, 300.0) for t in range(0, 11)]
     s = cs.summarize(rows)

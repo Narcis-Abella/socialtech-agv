@@ -12,7 +12,7 @@ for cfg in "$@"; do
   i=$((i+1))
   # shellcheck disable=SC2086
   ROS_DOMAIN_ID=$((${DOMAIN_BASE:-100} + i)) "$tools/run_amcl_only.sh" "$bag" "$map" "$ref" "$root/$name" $kv > "$root/$name.stdout" 2>&1 &
-  [ $(jobs -rp | wc -l) -ge "$par" ] && wait -n
+  [ $(jobs -rp | wc -l) -ge "$par" ] && { wait -n || true; }   # a config that fails (exit 1) must not stop the others
 done
 wait
 python3 "$tools/summarize.py" "$root" | tee "$root/summary.txt"
