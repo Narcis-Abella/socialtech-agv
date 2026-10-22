@@ -42,3 +42,16 @@ def write_map(est, prefix, res, origin):
     img[est["occupied"]] = 0
     Image.fromarray(img).save(prefix + ".pgm")
     open(prefix + ".yaml", "w").write(f"image: {os.path.basename(prefix)}.pgm\nmode: trinary\nresolution: {res}\norigin: [{origin[0]}, {origin[1]}, 0.0]\nnegate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n")
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+
+    import scenarios as sc
+    if len(sys.argv) != 4:
+        raise SystemExit("usage: gt_map.py <scans.json> <out prefix> <reference map.yaml (grid size and origin)>")
+    ref = sc.load_map(sys.argv[3])
+    est = integrate(json.load(open(sys.argv[1]))["scans"], ref["occ"].shape, ref["res"], ref["origin"])
+    write_map(est, sys.argv[2], ref["res"], ref["origin"])
+    print(f"occupied {int(est['occupied'].sum())} cells, free {int(est['free'].sum())}, of {est['occupied'].size}")

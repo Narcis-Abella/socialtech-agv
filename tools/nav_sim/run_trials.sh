@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs a scenario file against Nav2 in the simulation, inside the `sim` image on the board. usage: run_trials.sh <scenario.json> <out dir> [reps]
-#   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (nav2_params.yaml instead of the packaged one), SIM_SRC (hospital-agv-sim checkout to build),
+#   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (nav2_params.yaml instead of the packaged one), MAP (map yaml instead of the packaged loyola.yaml), SIM_SRC (hospital-agv-sim checkout to build),
 #   SIM_ARGS (extra simulation.launch.py arguments: world:=, spawn_x:=, noise_seed:=, odom_source:= ...), ROS_DOMAIN_ID (53), SIM_WAIT (45 s), NAV_TIMEOUT (180 s), plus the env of trials.py
 set -eo pipefail
 scenario=${1:?scenario.json}; out=${2:?out dir}; reps=${3:-1}
@@ -15,7 +15,7 @@ if ! ros2 pkg prefix hospital-agv-sim > /dev/null 2>&1; then
 fi
 ros2 launch hospital-agv-sim simulation.launch.py headless:=true $SIM_ARGS > "$out/sim.log" 2>&1 &
 sleep "${SIM_WAIT:-45}"
-ros2 launch socialtech_nav nav_sim.launch.py ${PARAMS:+params_file:=$PARAMS} > "$out/nav.log" 2>&1 &
+ros2 launch socialtech_nav nav_sim.launch.py ${PARAMS:+params_file:=$PARAMS} ${MAP:+map:=$MAP} > "$out/nav.log" 2>&1 &
 if ! timeout "${NAV_TIMEOUT:-180}" bash -c 'until [ "$(ros2 lifecycle get /bt_navigator 2>/dev/null | tail -1)" = "active [3]" ]; do sleep 2; done'; then
   echo "bt_navigator not active after ${NAV_TIMEOUT:-180} s: see $out/sim.log and $out/nav.log" >&2
   exit 1

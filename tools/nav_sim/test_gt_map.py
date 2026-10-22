@@ -92,6 +92,8 @@ def test_lattice_poses_are_spaced_free_and_cover_the_region():
     assert len(pts) > 20
     xs = sorted({round(x, 3) for x, _ in pts})
     assert all(abs((b - a) - 1.0) < 1e-6 for a, b in zip(xs, xs[1:]))
+    ys = sorted({round(y, 3) for _, y in pts})
+    assert all(abs((b - a) - 1.0) < 1e-6 for a, b in zip(ys, ys[1:]))
     from scipy import ndimage
     d = ndimage.distance_transform_edt(~blocked) * RES
     for x, y in pts:

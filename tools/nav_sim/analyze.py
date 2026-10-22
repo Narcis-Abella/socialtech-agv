@@ -15,7 +15,7 @@ import metrics as m
 import scenarios as sc
 import stats
 
-DEFAULT_MAP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docker", "ros_nav", "socialtech_nav", "maps", "loyola.yaml")
+DEFAULT_MAP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps", "loyola_gt.yaml")      # registered to the simulated world
 FOOTPRINT = (0.70, 0.58)
 COMPARED = ["duration", "path_len", "spl", "final_err_xy", "recoveries", "jerk_lin_rms", "jerk_lin_p95", "acc_lin_p95", "jerk_ang_rms", "acc_ang_p95", "vx_reversals",
             "xtrack_p95", "loc_err_p95", "clearance_min", "idle_frac"]
