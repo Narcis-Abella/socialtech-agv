@@ -22,3 +22,8 @@ JETSON_CLOCKS=0
 
 # 1 = install Tailscale and log in (prints a login URL on first run). 0 does not uninstall it.
 TAILSCALE=1
+
+# 1 = run the NVMe heartbeat (host/nvme-heartbeat.c): bounds the ~30 s stalls caused by lost NVMe interrupts on
+# Orin to ~50 ms, at ~0.2-0.3 % of one core. 0 = stop and disable it (binary and unit stay). Keep 1 unless the stalls
+# are proven fixed in the kernel.
+NVME_HEARTBEAT=1

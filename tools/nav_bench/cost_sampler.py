@@ -9,7 +9,7 @@ import numpy as np
 
 # name -> a substring of the process command line
 WATCH = {"fastlio_mapping": "fastlio_mapping", "amcl": "nav2_amcl/amcl", "pointcloud_to_laserscan": "pointcloud_to_laserscan_node",
-         "planar_odom": "planar_odom.py", "map_server": "nav2_map_server/map_server",
+         "planar_odom": "lib/planar_odom/planar_odom", "map_server": "nav2_map_server/map_server",
          # Nav2 simulation (tools/nav_sim): the Nav2 nodes (count them as nav2_*) and the simulator (sim_*, not part of the robot)
          "nav2_controller": "nav2_controller/controller_server", "nav2_planner": "nav2_planner/planner_server",
          "nav2_bt_navigator": "nav2_bt_navigator/bt_navigator", "nav2_behaviors": "nav2_behaviors/behavior_server",
