@@ -220,9 +220,9 @@ def write_ply(path, P):
 def write_map(prefix, grid, res, origin, T=None):
     """PGM + map_server YAML. T (4x4, the PLY's frame -> the map's frame) goes in as a comment: map_server ignores it, you need it to relate waypoints to the SLAM world."""
     prefix = Path(prefix)
-    prefix.with_suffix(".pgm").write_bytes(b"P5\n%d %d\n255\n" % (grid.shape[1], grid.shape[0]) + grid.tobytes())
+    Path(f"{prefix}.pgm").write_bytes(b"P5\n%d %d\n255\n" % (grid.shape[1], grid.shape[0]) + grid.tobytes())
     # free_thresh 0.196, not Nav2's 0.25: map_server reads a pixel as free when (255 - pixel) / 255 <= free_thresh, and unknown (205) is 0.19608
-    prefix.with_suffix(".yaml").write_text(f"image: {prefix.name}.pgm\nmode: trinary\nresolution: {res}\norigin: [{origin[0]}, {origin[1]}, 0.0]\n"
+    Path(f"{prefix}.yaml").write_text(f"image: {prefix.name}.pgm\nmode: trinary\nresolution: {res}\norigin: [{origin[0]}, {origin[1]}, 0.0]\n"
                                            "negate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n"
                                            + ("" if T is None else "# T_map_world (row-major; p_map = T p_ply):\n" + "".join(f"# {row}\n" for row in np.asarray(T).tolist())))
 
