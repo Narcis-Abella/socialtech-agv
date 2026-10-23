@@ -1,7 +1,7 @@
 """Runs the trials of a scenario file against Nav2 in the simulation and records raw series for offline analysis (metrics.py).
 usage (inside the sim image, with the simulation and Nav2 running): trials.py <scenario.json> <out dir> [reps] --ros-args -p use_sim_time:=true
 Each trial: put the robot at `start` (Gazebo set_pose), reset AMCL and the costmaps, wait until the estimate is within 0.3 m of the ground truth, send the goal, record until the result.
-env: INIT_SIGMA_XY (0.1 m), INIT_SIGMA_YAW (0.1 rad) of the /initialpose covariance; INIT_OFFSET_M / INIT_OFFSET_DEG (0, 0): the pose given to AMCL is the true start moved by that much (direction turns 60 deg per trial, yaw sign alternates) to test convergence; SETTLE_TIMEOUT (15 s) how long to wait for the estimate to be within 0.3 m before sending the goal; TRIAL_TIMEOUT (240 s of simulation time); ROBOT_NAME (tracer_robot); WORLD (loyola)."""
+env: CHAIN (unset): 1 = only the first trial resets the robot and AMCL, the next ones start where the previous ended (long-horizon localisation drift); INIT_SIGMA_XY (0.1 m), INIT_SIGMA_YAW (0.1 rad) of the /initialpose covariance; INIT_OFFSET_M / INIT_OFFSET_DEG (0, 0): the pose given to AMCL is the true start moved by that much (direction turns 60 deg per trial, yaw sign alternates) to test convergence; SETTLE_TIMEOUT (15 s) how long to wait for the estimate to be within 0.3 m before sending the goal; TRIAL_TIMEOUT (240 s of simulation time); ROBOT_NAME (tracer_robot); WORLD (loyola)."""
 import json
 import math
 import os
@@ -123,8 +123,10 @@ class Runner:
 
     def run_trial(self, trial, tag):
         offset = init_offset(self.k, float(os.environ.get("INIT_OFFSET_M", 0)), float(os.environ.get("INIT_OFFSET_DEG", 0)))
+        chained = bool(os.environ.get("CHAIN")) and self.k > 0   # CHAIN=1: no teleport and no AMCL reset after the first trial; the robot continues from where it is
         self.k += 1
-        init_err = self.reset(trial["start"], offset)
+        est = self.estimate()
+        init_err = (math.hypot(est[0] - self.gt[0], est[1] - self.gt[1]) if est else math.nan) if chained else self.reset(trial["start"], offset)
         goal = NavigateToPose.Goal()
         p = PoseStamped()
         p.header.frame_id, p.header.stamp = "map", self.n.get_clock().now().to_msg()
