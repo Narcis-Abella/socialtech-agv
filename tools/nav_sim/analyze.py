@@ -120,8 +120,30 @@ def print_summary(rows, name=""):
         if isinstance(v, dict) and v.get("n"):
             print(f"{k:28s} {v['n']:3d} {fmt(v['median']):>9s} {fmt(v['p95']):>9s} {fmt(v['max']):>9s}")
     bad = [r for r in rows if not r["reached"]]
+    if bad:
+        print("  failures by cause:", ", ".join(f"{k} x{v}" for k, v in sorted(failure_table(rows).items(), key=lambda kv: -kv[1])))
     for r in bad:
-        print(f"  not reached: {r['tag']} {r['id']} status={r['status']} code={r['error_code']} final_err={fmt(r.get('final_err_xy'))} recoveries={r['recoveries']}")
+        print(f"  not reached: {r['tag']} {r['id']} status={r['status']} {error_name(r['error_code'])} final_err={fmt(r.get('final_err_xy'))} recoveries={r['recoveries']} t={fmt(r['duration'])}s")
+
+
+ERRORS = {0: "none", 100: "UNKNOWN", 101: "INVALID_CONTROLLER", 102: "TF_ERROR", 103: "INVALID_PATH", 104: "PATIENCE_EXCEEDED", 105: "FAILED_TO_MAKE_PROGRESS", 106: "NO_VALID_CONTROL",
+          107: "CONTROLLER_TIMED_OUT", 200: "UNKNOWN", 201: "INVALID_PLANNER", 202: "TF_ERROR", 203: "START_OUTSIDE_MAP", 204: "GOAL_OUTSIDE_MAP", 205: "START_OCCUPIED", 206: "GOAL_OCCUPIED",
+          207: "TIMEOUT", 208: "NO_VALID_PATH"}      # nav2_msgs FollowPath (1xx) and ComputePathToPose (2xx) in Jazzy 1.3.13
+
+
+def error_name(code):
+    return ERRORS.get(code, f"code {code}")
+
+
+def failure_table(rows):
+    """Count of trials not reached, by the cause Nav2 reports (or timeout / succeeded but away from the goal)."""
+    out = {}
+    for r in rows:
+        if r["reached"]:
+            continue
+        key = "succeeded but away from the goal" if r["status"] == "succeeded" else (error_name(r["error_code"]) if r["error_code"] > 0 else r["status"])
+        out[key] = out.get(key, 0) + 1
+    return out
 
 
 def select(rows, first):

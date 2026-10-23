@@ -81,6 +81,19 @@ def test_aggregate_uses_distributions():
     assert g["duration"]["median"] == 14.0 and g["duration"]["n"] == 6          # only reached trials count for times
 
 
+def test_error_names_decode_the_nav2_codes():
+    assert a.error_name(0) == "none" and a.error_name(104) == "PATIENCE_EXCEEDED" and a.error_name(103) == "INVALID_PATH"
+    assert a.error_name(203) == "START_OUTSIDE_MAP" and a.error_name(205) == "START_OCCUPIED" and a.error_name(208) == "NO_VALID_PATH"
+    assert a.error_name(4242) == "code 4242" and a.error_name(-1) == "code -1"
+
+
+def test_failure_table_counts_by_cause_and_status():
+    rows = [{"reached": True, "status": "succeeded", "error_code": 0}, {"reached": False, "status": "aborted", "error_code": 104}, {"reached": False, "status": "aborted", "error_code": 104},
+            {"reached": False, "status": "timeout", "error_code": -1}, {"reached": False, "status": "succeeded", "error_code": 0, "final_err_xy": 0.6}]
+    t = a.failure_table(rows)
+    assert t == {"PATIENCE_EXCEEDED": 2, "timeout": 1, "succeeded but away from the goal": 1}
+
+
 def test_select_keeps_the_first_n_pair_ids_of_every_repetition():
     rows = [{"id": f"p{i:02d}", "tag": f"r{k}"} for k in range(2) for i in range(5)]
     sel = a.select(rows, 3)
