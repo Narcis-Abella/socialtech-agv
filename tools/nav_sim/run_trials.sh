@@ -30,6 +30,7 @@ if ! timeout "${NAV_TIMEOUT:-180}" bash -c 'until [ "$(ros2 lifecycle get /bt_na
   exit 1
 fi
 sleep 5
+ros2 param list /controller_server > "$out/declared_controller.txt" 2>&1   # to check that an overlay's keys are parameters of the plugin
 ps -eo pid,args | grep -E 'nav2|opennav|gz|noisy|bridge' | grep -v grep | cut -c1-160 > "$out/ps.txt"
 python3 /tools/nav_bench/cost_sampler.py sample "$out/cost.csv" --every 1.0 &
 sampler=$!
