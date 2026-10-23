@@ -1,5 +1,6 @@
 """Occupancy map from 2D scans taken at exactly known poses (offline: numpy, PIL). No SLAM, so the map is registered to the simulated world by construction.
-integrate(): each scan is {pose: [x, y, yaw], angle_min, angle_increment, range_min, range_max, ranges}; a beam with no return (inf) clears the cells up to range_max."""
+integrate(): each scan is {pose: [x, y, yaw], angle_min, angle_increment, range_min, range_max, ranges}; a beam with no return (inf or beyond range_max) is ignored unless clear_unreturned=True
+(clearing it marked the empty outside of the loyola building as free, and AMCL cannot localize in a void)."""
 import math
 import os
 
@@ -7,7 +8,7 @@ import numpy as np
 from PIL import Image
 
 
-def integrate(scans, shape, res, origin, min_hits=2, hit_fraction=0.2, min_free=2):
+def integrate(scans, shape, res, origin, min_hits=2, hit_fraction=0.2, min_free=2, clear_unreturned=False):
     h, w = shape
     free_n, hit_n = np.zeros(shape, np.int32), np.zeros(shape, np.int32)
     for s in scans:
@@ -15,8 +16,10 @@ def integrate(scans, shape, res, origin, min_hits=2, hit_fraction=0.2, min_free=
         r = np.asarray(s["ranges"], float)
         ang = s["angle_min"] + s["angle_increment"] * np.arange(len(r)) + yaw
         hit = np.isfinite(r) & (r >= s["range_min"]) & (r < s["range_max"] * 0.999)
-        reach = np.where(hit, r, s["range_max"])                     # no return or beyond the range: the ray clears up to range_max
+        reach = np.where(hit, r, s["range_max"])                     # with clear_unreturned, a ray without return clears up to range_max
         usable = ~np.isnan(r) & ~(np.isfinite(r) & (r < s["range_min"]))   # NaN and returns inside the blind zone say nothing
+        if not clear_unreturned:
+            usable &= hit                                           # a ray that saw nothing says nothing: open space seen through a gap is not known floor
         for i in np.flatnonzero(usable):
             end = reach[i] - (res if hit[i] else 0.0)
             if end <= 0:

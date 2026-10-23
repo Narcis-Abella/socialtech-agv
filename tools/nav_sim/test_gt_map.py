@@ -59,7 +59,7 @@ def test_a_cell_never_hit_is_not_occupied_and_unseen_is_unknown():
     occ = np.zeros((40, 160), bool)                      # 2 m x 8 m
     occ[:, 0] = True
     s = fake_scan(occ, 1.0, 1.0, rmax=3.0)
-    est = g.integrate([s], shape=occ.shape, res=RES, origin=(0.0, 0.0))
+    est = g.integrate([s], shape=occ.shape, res=RES, origin=(0.0, 0.0), clear_unreturned=True)
     assert not est["free"][5, 150] and not est["occupied"][5, 150]          # x = 7.5 m, beyond the 3 m range of the only pose: unknown
     assert est["free"][38, 40]                                              # x = 2.0 m, y = 0.1 m: inside the range, free
 
@@ -124,7 +124,7 @@ def test_a_single_spurious_return_is_not_an_obstacle():
 def test_a_cell_is_never_both_free_and_occupied():
     shape = (60, 160)
     scans = [beams(1.0, 1.0, 0.0, 3.0, n=3), beams(5.0, 1.0, math.pi, float("inf"), n=3)]  # three hits on (4, 1) from the west, three rays through it from the east
-    est = g.integrate(scans, shape=shape, res=RES, origin=(0.0, 0.0))
+    est = g.integrate(scans, shape=shape, res=RES, origin=(0.0, 0.0), clear_unreturned=True)
     r, c = sc.to_cell(4.0, 1.0, (0.0, 0.0), RES, 60)
     assert est["occupied"][r, c] and not est["free"][r, c]
     assert not (est["free"] & est["occupied"]).any()
@@ -134,6 +134,15 @@ def test_the_ray_does_not_clear_the_cell_it_hits():
     est = g.integrate([beams(1.0, 1.0, 0.0, 3.04, n=2)], shape=(60, 160), res=RES, origin=(0.0, 0.0))   # the hit lands inside cell 4.00-4.05, not on its edge
     r, c = sc.to_cell(4.04, 1.0, (0.0, 0.0), RES, 60)
     assert est["hits"][r, c] == 2 and est["passes"][r, c] == 0
+
+
+def test_rays_without_a_return_say_nothing_by_default():
+    shape = (60, 160)
+    scans = [beams(1.0, 1.0, 0.0, float("inf"), n=5), beams(1.0, 1.0, 0.3, 50.0, n=5)]            # nothing seen within range, and a "return" beyond range_max
+    est = g.integrate(scans, shape=shape, res=RES, origin=(0.0, 0.0))
+    assert not est["free"].any() and not est["occupied"].any()                                    # open space seen through a gap is not floor we know
+    on = g.integrate(scans, shape=shape, res=RES, origin=(0.0, 0.0), clear_unreturned=True)
+    assert on["free"].sum() > 100 and not on["occupied"].any()
 
 
 if __name__ == "__main__":
