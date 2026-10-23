@@ -1,7 +1,7 @@
 """Imports a box-only SDF world (e.g. mertgulerx/world-collection, Apache-2.0: worlds/<ID>/<ID>.sdf + world.yaml) into the nav_sim world format of worlds.py: the boxes become
 the structure of our own world (loyola name, our systems and physics step) and the evaluation map is rasterized from the same boxes, so it is registered to the world by construction.
 Used with world-collection commit 435a4b59491c412b0872ddca5675c6d9817dd986 (git clone https://github.com/mertgulerx/world-collection into a fresh directory; nothing of it is executed); the generated worlds go to worlds_ext/ (git-ignored, regenerate).
-usage: ext_worlds.py <world dir> <out dir> [name]      writes world.sdf, map.pgm/.yaml and scenario.json (the spawns of world.yaml chained S1 -> S2 -> ... as trials)
+usage: ext_worlds.py <world dir> <out dir> [name] [res=0.05]      writes world.sdf, map.pgm/.yaml and scenario.json (the spawns of world.yaml chained S1 -> S2 -> ... as trials)
 Only collision boxes of models other than the ground plane are read; a box that does not stand on the floor (z = height / 2) or has roll/pitch is refused (the 2D map would be wrong)."""
 import math
 import os
@@ -62,14 +62,14 @@ def spec_from_boxes(name, boxes, spawns, res=0.05, margin=1.0):
     return {"name": name, "res": res, "bounds": [min(xs) - margin, min(ys) - margin, max(xs) + margin, max(ys) + margin], "seed": [spawns[0]["x"], spawns[0]["y"]], "boxes": boxes, "trials": trials}
 
 
-def main(world_dir, out_dir, name=None):
+def main(world_dir, out_dir, name=None, res=0.05):
     wid = os.path.basename(world_dir.rstrip("/"))
     meta = yaml.safe_load(open(os.path.join(world_dir, "world.yaml")))
     boxes = parse_boxes(os.path.join(world_dir, wid + ".sdf"))
-    spec = spec_from_boxes(name or wid, boxes, meta["spawns"])
+    spec = spec_from_boxes(name or wid, boxes, meta["spawns"], res=float(res))
     trials = worlds.build(spec, out_dir)
     print(wid, len(boxes), "boxes;", [(t["id"], t["shortest"]) for t in trials])
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:4])
+    main(*sys.argv[1:5])

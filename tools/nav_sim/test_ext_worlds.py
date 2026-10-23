@@ -60,6 +60,17 @@ def test_spec_bounds_cover_all_boxes_and_the_seed_is_the_first_spawn():
     assert len(spec["boxes"]) == 2 and spec["boxes"][0]["mapped"] is True
 
 
+def test_a_finer_resolution_doubles_the_cells_and_keeps_the_extent():
+    import worlds
+    boxes = ew.parse_boxes(write(SDF))
+    a = ew.spec_from_boxes("w1", boxes, spawns=[{"id": "S1", "x": 2.0, "y": 1.0, "yaw": 0.0}])
+    b = ew.spec_from_boxes("w1", boxes, spawns=[{"id": "S1", "x": 2.0, "y": 1.0, "yaw": 0.0}], res=0.025)
+    (oa, _), (ob, _) = worlds.rasterize(a), worlds.rasterize(b)
+    assert b["res"] == 0.025 and a["bounds"] == b["bounds"]
+    assert abs(ob.shape[0] / oa.shape[0] - 2) < 0.05 and abs(ob.shape[1] / oa.shape[1] - 2) < 0.05
+    assert abs(ob.sum() * 0.025 ** 2 - oa.sum() * 0.05 ** 2) / (oa.sum() * 0.05 ** 2) < 0.05     # same obstacle area
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
