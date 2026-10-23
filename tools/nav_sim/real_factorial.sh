@@ -16,7 +16,12 @@ CFG=$(python3 - <<'PY'
 D = dict(alpha1=0.2, alpha2=0.2, alpha3=0.2, alpha4=0.2, update_min_d=0.25, update_min_a=0.2, z_hit=0.5, z_rand=0.5, max_beams=120, sigma_hit=0.2, min_particles=500, max_particles=2000)
 V = {"default": {}, "default_r2": {}, "rot": dict(alpha1=0.01, alpha4=0.01), "trans": dict(alpha2=0.01, alpha3=0.01), "a1": dict(alpha1=0.01), "a4": dict(alpha4=0.01),
      "all01": dict(alpha1=0.01, alpha2=0.01, alpha3=0.01, alpha4=0.01), "rng12": dict(laser_max_range=12.0), "rng6": dict(laser_max_range=6.0)}
+V["upd"] = dict(alpha1=0.01, alpha2=0.01, alpha3=0.01, alpha4=0.01, update_min_d=0.05, update_min_a=0.05)
+import os
+keep = os.environ.get("VARIANTS", "").split()
 for name, v in V.items():
+    if keep and name not in keep:
+        continue
     print(name + "|" + " ".join(f"{k}={x}" for k, x in {**D, **v}.items()))
 PY
 )
