@@ -108,6 +108,18 @@ def test_sample_pairs_are_reproducible_reachable_and_in_range():
     assert sc.sample_pairs(occ, **{**kw, "seed": 6}) != p1
 
 
+def test_goal_band_keeps_goals_close_to_the_obstacles():
+    occ = room()
+    kw = dict(n=12, seed=5, clearance=0.45, dmin=2.0, dmax=7.0, res=RES, origin=(0.0, 0.0))
+    tight = sc.sample_pairs(occ, goal_band=0.65, **kw)
+    d = sc.distance_to_occupied_cells(occ, RES)
+    for t in tight:
+        r, c = sc.to_cell(t["goal"][0], t["goal"][1], (0.0, 0.0), RES, 100)
+        assert 0.45 <= d[r, c] < 0.65                       # inside the band
+    loose = sc.sample_pairs(occ, **kw)
+    assert max(d[sc.to_cell(t["goal"][0], t["goal"][1], (0.0, 0.0), RES, 100)] for t in loose) >= 0.65   # without the band, goals reach the room centre
+
+
 def test_sample_pairs_stay_in_the_main_component():
     occ = room()
     occ[:, 100] = True                            # splits the room in two halves

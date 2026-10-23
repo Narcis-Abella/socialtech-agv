@@ -92,8 +92,8 @@ def shortest_length(free, a, b, res):
     return _Grid(free).shortest(a, b) * res
 
 
-def sample_pairs(blocked, n, seed, clearance, dmin, dmax, res, origin):
-    """n reproducible start/goal pairs in the largest connected eroded-free region, Euclidean distance in [dmin, dmax], reachable; with the reference shortest length."""
+def sample_pairs(blocked, n, seed, clearance, dmin, dmax, res, origin, goal_band=None):
+    """n reproducible start/goal pairs in the largest connected eroded-free region, Euclidean distance in [dmin, dmax], reachable; with the reference shortest length. goal_band (m): goals only where the clearance is below it (between `clearance` and `goal_band`: tight goals)."""
     h = blocked.shape[0]
     free = eroded_free(blocked, clearance, res)
     lab, k = ndimage.label(free, structure=np.ones((3, 3)))
@@ -101,11 +101,14 @@ def sample_pairs(blocked, n, seed, clearance, dmin, dmax, res, origin):
         raise ValueError("no free cell at that clearance")
     comp = lab == (1 + int(np.argmax(ndimage.sum(free, lab, range(1, k + 1)))))
     cells = np.argwhere(comp)
+    goals = np.argwhere(comp & ~eroded_free(blocked, goal_band, res)) if goal_band else cells
+    if len(goals) == 0:
+        raise ValueError("no goal cell inside the band")
     grid, rng, pairs = _Grid(comp), np.random.default_rng(seed), []
     for _ in range(1000 * n):
         if len(pairs) == n:
             break
-        a, b = cells[rng.integers(len(cells))], cells[rng.integers(len(cells))]
+        a, b = cells[rng.integers(len(cells))], goals[rng.integers(len(goals))]
         (sx, sy), (gx, gy) = to_xy(a[0], a[1], origin, res, h), to_xy(b[0], b[1], origin, res, h)
         d = math.hypot(gx - sx, gy - sy)
         if not dmin <= d <= dmax:
