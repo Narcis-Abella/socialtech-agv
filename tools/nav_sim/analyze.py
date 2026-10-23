@@ -1,6 +1,6 @@
 """Metrics, summary table and paired comparison of recorded trials (offline: numpy, scipy).
-usage: analyze.py summarize <run dir> [--map map.yaml] [--csv out.csv] [--first N]
-       analyze.py compare <base run dir> <candidate run dir> [--map map.yaml] [--first N]
+usage: analyze.py summarize <run dir> [--map map.yaml] [--csv out.csv] [--first N] [--exclude p19,p20]
+       analyze.py compare <base run dir> <candidate run dir> [--map map.yaml] [--first N] [--exclude ids]
 <run dir> holds trial_*.json (trials.py). `reached` = Nav2 says succeeded AND the ground-truth pose is within --tol (0.25 m) of the goal. Clearance and collisions use the footprint against the
 occupied cells of the map (unknown cells are not obstacles). Times, SPL and smoothness are compared only on pairs both runs reached."""
 import glob
@@ -48,6 +48,7 @@ def trial_metrics(rec, ctx):
     t, gt = rows[:, col["t"]], rows[:, [col["gt_x"], col["gt_y"]]]
     est = rows[:, [col["est_x"], col["est_y"]]]
     out["path_len"] = m.path_length(gt)
+    out["stuck_start"] = bool(out["path_len"] < 0.3 and rec["duration"] > 10.0)   # a pose from which the robot cannot move (physical contact the lidar does not see): invalid pair
     out["final_err_xy"] = float(math.hypot(rows[-1, col["gt_x"]] - rec["goal"][0], rows[-1, col["gt_y"]] - rec["goal"][1]))
     out["final_err_yaw"] = abs(wrap(rows[-1, col["gt_yaw"]] - rec["goal"][2]))
     out["reached"] = bool(out["success"] and out["final_err_xy"] <= ctx["tol"])
@@ -119,6 +120,9 @@ def print_summary(rows, name=""):
     for k, v in g.items():
         if isinstance(v, dict) and v.get("n"):
             print(f"{k:28s} {v['n']:3d} {fmt(v['median']):>9s} {fmt(v['p95']):>9s} {fmt(v['max']):>9s}")
+    stuck = [r["id"] for r in rows if r.get("stuck_start")]
+    if stuck:
+        print("  stuck at the start (physical contact, probably an invalid pair; exclude with --exclude):", ",".join(stuck))
     bad = [r for r in rows if not r["reached"]]
     if bad:
         print("  failures by cause:", ", ".join(f"{k} x{v}" for k, v in sorted(failure_table(rows).items(), key=lambda kv: -kv[1])))
@@ -146,6 +150,11 @@ def failure_table(rows):
     return out
 
 
+def exclude(rows, ids):
+    """Rows without the given pair ids (every repetition)."""
+    return rows if not ids else [r for r in rows if r["id"] not in set(ids)]
+
+
 def select(rows, first):
     """Rows of the first `first` pair ids (sorted), every repetition; all rows when first is None."""
     if first is None:
@@ -155,7 +164,7 @@ def select(rows, first):
 
 
 def parse(argv):
-    opts = {"--map": DEFAULT_MAP, "--csv": None, "--tol": "0.25", "--first": None}
+    opts = {"--map": DEFAULT_MAP, "--csv": None, "--tol": "0.25", "--first": None, "--exclude": None}
     pos = []
     i = 0
     while i < len(argv):
@@ -172,14 +181,15 @@ def main(argv):
     pos, opts = parse(argv)
     ctx = context(opts["--map"], float(opts["--tol"]))
     first = int(opts["--first"]) if opts["--first"] else None
+    excl = opts["--exclude"].split(",") if opts["--exclude"] else None
     if pos[0] == "summarize":
-        rows = select([trial_metrics(r, ctx) for r in load_trials(pos[1])], first)
+        rows = select(exclude([trial_metrics(r, ctx) for r in load_trials(pos[1])], excl), first)
         print_summary(rows, os.path.basename(os.path.normpath(pos[1])))
         if opts["--csv"]:
             keys = sorted({k for r in rows for k in r})
             open(opts["--csv"], "w").write(",".join(keys) + "\n" + "\n".join(",".join(str(r.get(k, "")) for k in keys) for r in rows) + "\n")
     elif pos[0] == "compare":
-        b, c = (select([trial_metrics(r, ctx) for r in load_trials(p)], first) for p in pos[1:3])
+        b, c = (select(exclude([trial_metrics(r, ctx) for r in load_trials(p)], excl), first) for p in pos[1:3])
         res = compare(b, c, COMPARED)
         s = res["_success"]
         print(f"pairs={s['pairs']}  reached only by base={s['only_base']}  only by candidate={s['only_cand']}  McNemar exact p={s['p']:.3g}")

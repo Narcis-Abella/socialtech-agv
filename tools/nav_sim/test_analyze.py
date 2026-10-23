@@ -81,6 +81,26 @@ def test_aggregate_uses_distributions():
     assert g["duration"]["median"] == 14.0 and g["duration"]["n"] == 6          # only reached trials count for times
 
 
+def test_a_robot_that_never_moved_is_flagged_as_stuck_at_the_start():
+    tr = straight_trial(status="aborted")
+    for row in tr["rows"]:
+        row[1:3] = tr["rows"][0][1:3]                      # the ground truth never changes while Nav2 keeps commanding
+    r = a.trial_metrics(tr, ctx())
+    assert r["stuck_start"] and not r["reached"]
+    assert not a.trial_metrics(straight_trial(), ctx())["stuck_start"]
+    short = straight_trial(length=0.6, speed=0.3)           # a real but very short trial is not "stuck"
+    assert not a.trial_metrics(short, ctx())["stuck_start"]
+    tiny = straight_trial(length=0.2, speed=0.1)            # moved little in 2 s: a goal right next to the start, not a robot that cannot move
+    assert not a.trial_metrics(tiny, ctx())["stuck_start"]
+
+
+def test_exclude_drops_pair_ids_from_every_repetition():
+    rows = [{"id": f"p{i:02d}", "tag": f"r{k}"} for k in range(2) for i in range(4)]
+    out = a.exclude(rows, ["p01", "p03"])
+    assert sorted({r["id"] for r in out}) == ["p00", "p02"] and len(out) == 4
+    assert a.exclude(rows, []) == rows and a.exclude(rows, None) == rows
+
+
 def test_error_names_decode_the_nav2_codes():
     assert a.error_name(0) == "none" and a.error_name(104) == "PATIENCE_EXCEEDED" and a.error_name(103) == "INVALID_PATH"
     assert a.error_name(203) == "START_OUTSIDE_MAP" and a.error_name(205) == "START_OCCUPIED" and a.error_name(208) == "NO_VALID_PATH"
