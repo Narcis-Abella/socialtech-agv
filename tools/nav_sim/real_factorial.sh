@@ -6,9 +6,9 @@
 set -eo pipefail
 out=${1:?out dir}
 nb=/tools/nav_bench
-declare -A INPUTS=([eco01]=/navout/b_eco01_rec/inputs [eco03]=/navout/b_eco03_rec/inputs [eco01syn]=/navout/b_eco01_syn/inputs [eco03syn]=/navout/b_eco03_syn/inputs)   # *syn: /scan replaced by noise-free rays on the map (synth_scan.py)
-declare -A MAPS=([eco01]=/data/eco_-1_01/map.yaml [eco03]=/data/eco_-1_03/final.yaml [eco01syn]=/data/eco_-1_01/map.yaml [eco03syn]=/data/eco_-1_03/final.yaml)
-declare -A REFS=([eco01]=/data/eco_-1_01/alidarState.txt [eco03]=/data/eco_-1_03/alidarState.txt [eco01syn]=/data/eco_-1_01/alidarState.txt [eco03syn]=/data/eco_-1_03/alidarState.txt)
+declare -A INPUTS=([eco01]=/navout/b_eco01_rec/inputs [eco03]=/navout/b_eco03_rec/inputs [eco01syn]=/navout/b_eco01_syn/inputs [eco03syn]=/navout/b_eco03_syn/inputs [hospital02]=/inputs/hospital02/inputs [zona01]=/inputs/zona01/inputs [seat01]=/inputs/seat01/inputs [zona05]=/inputs/zona05/inputs [zona06]=/inputs/zona06/inputs)   # *syn: /scan replaced by noise-free rays on the map (synth_scan.py)
+declare -A MAPS=([eco01]=/data/eco_-1_01/map.yaml [eco03]=/data/eco_-1_03/final.yaml [eco01syn]=/data/eco_-1_01/map.yaml [eco03syn]=/data/eco_-1_03/final.yaml [hospital02]=/data/live_hospital_02/final.yaml [zona01]=/data/live_zona_01/final.yaml [seat01]=/data/live_seat_01/final.yaml [zona05]=/data/live_zona_05/final.yaml [zona06]=/data/live_zona_06/final.yaml)
+declare -A REFS=([eco01]=/data/eco_-1_01/alidarState.txt [eco03]=/data/eco_-1_03/alidarState.txt [eco01syn]=/data/eco_-1_01/alidarState.txt [eco03syn]=/data/eco_-1_03/alidarState.txt [hospital02]=/data/live_hospital_02/alidarState.txt [zona01]=/data/live_zona_01/alidarState.txt [seat01]=/data/live_seat_01/alidarState.txt [zona05]=/data/live_zona_05/alidarState.txt [zona06]=/data/live_zona_06/alidarState.txt)
 mkdir -p "$out"
 # variant name -> overrides over the Nav2 defaults (no key twice in one config); "bench" is config/amcl.yaml as it is
 CFG=$(python3 - <<'PY'

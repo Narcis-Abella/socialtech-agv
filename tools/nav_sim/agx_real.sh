@@ -9,7 +9,7 @@ repo=$(cd "$(dirname "$0")/../.." && pwd)
 read -r nct load <<< "$(ssh_ 'echo $(docker ps -q | wc -l) $(cut -d" " -f1 /proc/loadavg)')"
 { [ "$nct" = 0 ] && awk -v l="$load" 'BEGIN{exit !(l < 2)}'; } || { echo "the AGX is busy (containers=$nct load=$load)" >&2; exit 1; }
 remote=nav2runs/${2:?name}_$(date +%y%m%d_%H%M%S)
-ssh_ "mkdir -p $remote/out"
+ssh_ "mkdir -p $remote/out ~/nav_inputs"
 tar -C "$repo" -c tools | ssh_ "tar -x -C $remote"
-ssh -f -n -i "$KEY" "$HOST" "cd $remote && setsid nohup sh -c 'docker run --rm --name nav2run --network host -e PAR=${PAR:-4} -e RATE=${RATE:-5} -e BAGS=\"${BAGS:-eco01 eco03}\" -v \$PWD/tools:/tools:ro -v \$PWD/out:/out -v \$HOME/nav_out:/navout:ro -v \$HOME/nav_data:/data:ro ${IMAGE:-socialtech:sim-main} /tools/nav_sim/${SCRIPT:-real_sweeps.sh} /out > run.log 2>&1; echo rc=\$? >> run.log' > /dev/null 2>&1 &" > /dev/null 2>&1
+ssh -f -n -i "$KEY" "$HOST" "cd $remote && setsid nohup sh -c 'docker run --rm --name nav2run --network host -e PAR=${PAR:-4} -e RATE=${RATE:-5} -e BAGS=\"${BAGS:-eco01 eco03}\" -v \$PWD/tools:/tools:ro -v \$PWD/out:/out -v \$HOME/nav_out:/navout:ro -v \$HOME/nav_data:/data:ro -v \$HOME/rosbags:/bags:ro -v \$HOME/nav_inputs:/inputs ${IMAGE:-socialtech:sim-main} /tools/nav_sim/${SCRIPT:-real_sweeps.sh} /out > run.log 2>&1; echo rc=\$? >> run.log' > /dev/null 2>&1 &" > /dev/null 2>&1
 echo "$remote"
