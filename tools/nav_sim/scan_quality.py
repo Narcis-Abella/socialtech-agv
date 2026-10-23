@@ -49,6 +49,44 @@ def band_stats(r, d, bands=BANDS, within=WITHIN):
     return out
 
 
+def static_pairs(poses, pos_thr=0.005, yaw_thr=0.0009):
+    """Flags (N-1) of the consecutive scan pairs between which the reference pose did not move (displacement < pos_thr m and rotation < yaw_thr rad; NaN poses are never static)."""
+    p = np.asarray(poses, float)
+    d = np.hypot(*np.diff(p[:, :2], axis=0).T)
+    dy = np.abs((np.diff(p[:, 2]) + np.pi) % (2 * np.pi) - np.pi)
+    with np.errstate(invalid="ignore"):
+        return (d < pos_thr) & (dy < yaw_thr)
+
+
+def frame_jitter(scans, pair_mask, max_step=0.3):
+    """Between consecutive scans of a still robot the same bin should give the same range. Returns (mean range, range difference) of the bins finite in both frames and closer than max_step
+    (same surface), and the flicker: bins finite in exactly one of the two frames over bins finite in either."""
+    s = np.asarray(scans, float)
+    m = np.asarray(pair_mask, bool)
+    a, b = s[:-1][m], s[1:][m]
+    fa, fb = np.isfinite(a), np.isfinite(b)
+    both = fa & fb
+    d = b[both] - a[both]
+    r = 0.5 * (a[both] + b[both])
+    keep = np.abs(d) < max_step
+    either = (fa | fb).sum()
+    return r[keep], d[keep], (float((fa ^ fb).sum() / either) if either else math.nan)
+
+
+def flicker_bands(scans, pair_mask, bands=BANDS):
+    """Flicker (see frame_jitter) per range band, the range being that of the frame in which the bin has data."""
+    s = np.asarray(scans, float)
+    m = np.asarray(pair_mask, bool)
+    a, b = s[:-1][m], s[1:][m]
+    fa, fb = np.isfinite(a), np.isfinite(b)
+    r = np.where(fa, a, b)
+    out = []
+    for lo, hi in zip(bands[:-1], bands[1:]):
+        either = (fa | fb) & (r >= lo) & (r < hi)
+        out.append(float(((fa ^ fb) & either).sum() / either.sum()) if either.sum() else math.nan)
+    return out
+
+
 def finite_share(scans):
     return np.mean(np.isfinite(np.asarray(scans, float)), axis=1)
 
