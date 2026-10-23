@@ -129,8 +129,19 @@ def turn_spec():
             "trials": [{"id": "l_out", "start": [1.0, 0.8, 0.0], "goal": [11.2, 11.0, math.pi / 2]}, {"id": "l_back", "start": [11.2, 11.0, -math.pi / 2], "goal": [1.0, 0.8, math.pi]}]}
 
 
+def rows_spec():
+    """A 36 x 16 m hall with 3 rows x 5 columns of identical 2.0 x 0.8 m blocks (1.5 m high) every 6 m along x: the perceptual aliasing of the real eco_-1 bags (rows of near-identical objects). Beyond the
+    12 m of the simulated lidar the hall ends are out of reach, so in the middle only the parallel walls and the periodic blocks are visible. Trials run end to end along the four lanes, both ways."""
+    boxes = [box("n", 18.0, 8.05, 36.2, 0.1), box("s", 18.0, -8.05, 36.2, 0.1), box("w", -0.05, 0.0, 0.1, 16.2), box("e", 36.05, 0.0, 0.1, 16.2)]
+    boxes += [box(f"blk{i}{j}", 6.0 * (i + 1), 4.0 * (j - 1), 2.0, 0.8, sz=1.5) for i in range(5) for j in range(3)]
+    lanes = [-6.0, -2.0, 2.0, 6.0]
+    trials = [{"id": f"fwd{k}", "start": [2.0, y, 0.0], "goal": [34.0, y, 0.0]} for k, y in enumerate(lanes)]
+    trials += [{"id": f"back{k}", "start": [34.0, y, math.pi], "goal": [2.0, y, math.pi]} for k, y in enumerate(lanes)]
+    return {"name": "rows", "res": 0.05, "bounds": [-1.0, -9.0, 37.0, 9.0], "seed": [2.0, -6.0], "boxes": boxes, "trials": trials}
+
+
 ALL = {"doors": doors_spec, "corridor_gap12": lambda: corridor_spec(1.2, "corridor_gap12"), "corridor_gap09": lambda: corridor_spec(0.9, "corridor_gap09"),
-       "corridor_blocked": lambda: corridor_spec(0.0, "corridor_blocked"), "turn_l": turn_spec}
+       "corridor_blocked": lambda: corridor_spec(0.0, "corridor_blocked"), "turn_l": turn_spec, "rows": rows_spec}
 
 
 if __name__ == "__main__":

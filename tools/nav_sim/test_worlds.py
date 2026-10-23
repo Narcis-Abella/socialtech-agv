@@ -107,6 +107,21 @@ def test_build_writes_world_map_and_scenario():
     assert mp["res"] == RES and mp["occ"].any() and (~mp["blocked"]).any()
 
 
+def test_rows_hall_has_identical_periodic_blocks_and_reachable_lanes():
+    spec = w.rows_spec()
+    blocks = [b for b in spec["boxes"] if b["name"].startswith("blk")]
+    assert len(blocks) == 15 and len({(b["sx"], b["sy"], b["sz"]) for b in blocks}) == 1      # identical
+    xs = sorted({b["x"] for b in blocks})
+    assert len(xs) == 5 and np.allclose(np.diff(xs), 6.0)                                    # one period along x
+    trials = w.scenario(spec)
+    assert len(trials) >= 6 and all(t["reachable"] for t in trials)
+    assert all(t["shortest"] > 25 for t in trials)                                           # lane to lane across the hall
+    occ, origin = w.rasterize(spec)
+    for t in trials:
+        r, c = sc.to_cell(t["start"][0], t["start"][1], origin, spec["res"], occ.shape[0])
+        assert not occ[r, c]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
