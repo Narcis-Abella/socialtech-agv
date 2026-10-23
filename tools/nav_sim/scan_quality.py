@@ -131,6 +131,17 @@ def main(bag, map_yaml, ref_path, max_scans=None):
     print(f"{len(t)} scans of {nb} beams ({math.degrees(inc):.2f} deg), rate {1 / np.median(np.diff(t)):.1f} Hz, scans on the reference {len(keep)}")
     print(f"beams with data per scan: median {100 * np.median(fs):.0f} % (p5 {100 * np.percentile(fs, 5):.0f} %, p95 {100 * np.percentile(fs, 95):.0f} %) = {np.median(fs) * nb:.0f} of {nb}")
     print(f"endpoint to nearest occupied map cell (all ranges): median {100 * np.median(D):.1f} cm, p95 {100 * np.percentile(D, 95):.1f} cm; within 5 cm {100 * np.mean(D <= 0.05):.0f} %, 10 cm {100 * np.mean(D <= 0.10):.0f} %, 30 cm {100 * np.mean(D <= 0.30):.0f} %")
+    st = static_pairs(poses)
+    rj, dj, fl = frame_jitter(scans, st)
+    print(f"\nstill robot (reference moved < 5 mm and 0.05 deg between scans): {int(st.sum())} pairs; bins with data in only one of two consecutive scans (flicker): {100 * fl:.1f} % of the bins that have data in either")
+    print(f"{'range band (m)':>16s} {'pairs-bins':>11s} {'sigma cm':>9s} {'rms cm':>7s} {'|d|>5cm':>8s} {'|d|>10cm':>9s} {'flicker':>8s}   (sigma = 1.4826*MAD/sqrt2 of the range difference of the same bin in two frames)")
+    fb = flicker_bands(scans, st)
+    for (lo, hi), f in zip(zip(BANDS[:-1], BANDS[1:]), fb):
+        mk = (rj >= lo) & (rj < hi)
+        if mk.sum() > 50:
+            x = dj[mk]
+            print(f"{lo:>7.1f}-{hi:<7.1f} {int(mk.sum()):11d} {100 * 1.4826 * np.median(np.abs(x - np.median(x))) / math.sqrt(2):9.2f} {100 * np.sqrt(np.mean(x * x) / 2):7.2f} {100 * np.mean(np.abs(x) > 0.05):7.1f}% {100 * np.mean(np.abs(x) > 0.10):8.1f}% {100 * f:7.1f}%")
+    print()
     print(f"{'range band (m)':>16s} {'beams':>8s} {'share':>6s} {'median cm':>10s} {'p95 cm':>8s} {'<=5cm':>6s} {'<=10cm':>7s} {'<=30cm':>7s}")
     for b in band_stats(R, D):
         if b["n"]:

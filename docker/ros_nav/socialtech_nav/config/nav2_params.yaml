@@ -3,13 +3,14 @@
 # frames base_footprint; 2D ObstacleLayer on /scan (local), static + inflation (global); inflation 0.55 m (Smac2D asks for >= half the largest cross-section);
 # speeds for ~0.3 m/s; AMCL limited to the sim LiDAR (12 m). route_server and docking_server keep the bringup defaults: navigation_launch.py always starts them.
 # amcl.initial_pose = the spawn pose of the simulator in the world frame (the map frame is the world frame).
+# amcl.alpha1..4 = 0.01 (default 0.2): notes/nav2_stack_resultados.md D-1.1; sim loc_err_p95 0.161 -> 0.063 m, real bags eco01/eco03 position p95 7-13 m -> 0.10-0.16 m. Needs an honest initial covariance (>= 0.5 m / 0.26 rad), else a 1 m offset is not recovered.
 # Initial values, tuned in the evaluation (notes/nav2_sim_resultados_*.md). use_sim_time comes from the launch (SetParameter).
 amcl:
   ros__parameters:
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
+    alpha1: 0.01
+    alpha2: 0.01
+    alpha3: 0.01
+    alpha4: 0.01
     alpha5: 0.2
     base_frame_id: base_footprint
     beam_skip_distance: 0.5
