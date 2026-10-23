@@ -33,6 +33,18 @@ def planner_ids(n):
     return list(f.result().values[0].string_array_value)
 
 
+def declared_params(n, out_dir):
+    """Writes the parameters planner_server really declares; an overlay key that is not there is silently ignored by ROS 2, so look for typos in this file."""
+    from rcl_interfaces.srv import ListParameters
+    c = n.create_client(ListParameters, "/planner_server/list_parameters")
+    c.wait_for_service(timeout_sec=10.0)
+    f = c.call_async(ListParameters.Request())
+    rclpy.spin_until_future_complete(n, f, timeout_sec=10.0)
+    names = sorted(f.result().result.names)
+    open(os.path.join(out_dir, "declared_params.txt"), "w").write("\n".join(names) + "\n")
+    print(f"planner_server declares {len(names)} parameters (declared_params.txt)", flush=True)
+
+
 def main(scenario, out_dir, reps=1):
     rclpy.init(args=sys.argv)
     n = rclpy.create_node("plan_bench")
@@ -40,6 +52,7 @@ def main(scenario, out_dir, reps=1):
     client = ActionClient(n, ComputePathToPose, "compute_path_to_pose")
     client.wait_for_server()
     ids = os.environ.get("PLANNERS", "").split(",") if os.environ.get("PLANNERS") else planner_ids(n)
+    declared_params(n, out_dir)
     trials = json.load(open(scenario))["trials"]
     rows = []
     for pid in ids:
