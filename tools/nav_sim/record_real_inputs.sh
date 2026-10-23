@@ -1,6 +1,6 @@
 #!/bin/bash
 # Records the fixed inputs of the AMCL-only replays (/scan, /tf, /Odometry of FAST-LIO2) for further real datasets, with the stack of run_bench_a.sh at 1x. Inside the sim image; mounts: tools at /tools,
-# bags at /bags (CustomMsg bags in /bags/custom), nav_data at /data, inputs written to /inputs/<dataset>/inputs, logs to the out dir.
+# bags at /bags (CustomMsg bags in /bags/custom), nav_data at /data, inputs written to /inputs/<dataset>_v2/inputs (SUFFIX), logs to the out dir.
 # usage: record_real_inputs.sh <out dir>      env: DATASETS ("hospital02 zona01 seat01 zona05 zona06")
 set -eo pipefail
 out=${1:?out dir}
@@ -12,8 +12,11 @@ i=0
 for k in ${DATASETS:-hospital02 zona01 seat01 zona05 zona06}; do
   i=$((i + 1))   # one ROS domain per dataset: a stray node of the previous run (planar_odom survives the launch kill) would republish the TF and /scan of the next one
   echo "== $(date +%H:%M:%S) $k" | tee -a "$out/progress.log"
+  # ros2 bag record refuses to write into an existing bag directory (and run_bench_a.sh then goes on without recording): one fresh directory per recording
+  [ -e "/inputs/${k}${SUFFIX:-_v2}" ] && { echo "/inputs/${k}${SUFFIX:-_v2} exists: set SUFFIX" | tee -a "$out/progress.log"; continue; }
   ROS_DOMAIN_ID=$((80 + i)) RECORD=1 PLAY_RATE=1.0 DIST=0 DYAW=0 INIT_STD=0.1 INIT_YAW_STD=5 \
-    "$nb/run_bench_a.sh" "/bags/custom/${BAG[$k]}" "/data/${SET[$k]}/final.yaml" "/data/${SET[$k]}/alidarState.txt" 0.53 "/inputs/$k" > "$out/$k.log" 2>&1 \
+    "$nb/run_bench_a.sh" "/bags/custom/${BAG[$k]}" "/data/${SET[$k]}/final.yaml" "/data/${SET[$k]}/alidarState.txt" 0.53 "/inputs/${k}${SUFFIX:-_v2}" > "$out/$k.log" 2>&1 \
     || echo "record $k failed" | tee -a "$out/progress.log"
+  [ -s "/inputs/${k}${SUFFIX:-_v2}/inputs/inputs_0.mcap" ] || echo "record $k: NO bag written" | tee -a "$out/progress.log"
 done
 echo done
