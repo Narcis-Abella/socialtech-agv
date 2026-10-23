@@ -1,0 +1,127 @@
+{
+ "name": "dense_rows",
+ "map": "map.yaml",
+ "world": "world.sdf",
+ "trials": [
+  {
+   "id": "fwd0",
+   "start": [
+    2.0,
+    -4.8,
+    0.0
+   ],
+   "goal": [
+    34.0,
+    -4.8,
+    0.0
+   ],
+   "shortest": 32.0,
+   "reachable": true
+  },
+  {
+   "id": "fwd1",
+   "start": [
+    2.0,
+    -1.6,
+    0.0
+   ],
+   "goal": [
+    34.0,
+    -1.6,
+    0.0
+   ],
+   "shortest": 32.0,
+   "reachable": true
+  },
+  {
+   "id": "fwd2",
+   "start": [
+    2.0,
+    1.6,
+    0.0
+   ],
+   "goal": [
+    34.0,
+    1.6,
+    0.0
+   ],
+   "shortest": 32.0,
+   "reachable": true
+  },
+  {
+   "id": "fwd3",
+   "start": [
+    2.0,
+    4.8,
+    0.0
+   ],
+   "goal": [
+    34.0,
+    4.8,
+    0.0
+   ],
+   "shortest": 32.0,
+   "reachable": true
+  },
+  {
+   "id": "back0",
+   "start": [
+    34.0,
+    -4.8,
+    3.141592653589793
+   ],
+   "goal": [
+    2.0,
+    -4.8,
+    3.141592653589793
+   ],
+   "shortest": 32.0,
+   "reachable": true
+  },
+  {
+   "id": "back1",
+   "start": [
+    34.0,
+    -1.6,
+    3.141592653589793
+   ],
+   "goal": [
+    2.0,
+    -1.6,
+    3.141592653589793
+   ],
+   "shortest": 32.0,
+   "reachable": true
+  },
+  {
+   "id": "back2",
+   "start": [
+    34.0,
+    1.6,
+    3.141592653589793
+   ],
+   "goal": [
+    2.0,
+    1.6,
+    3.141592653589793
+   ],
+   "shortest": 32.0,
+   "reachable": true
+  },
+  {
+   "id": "back3",
+   "start": [
+    34.0,
+    4.8,
+    3.141592653589793
+   ],
+   "goal": [
+    2.0,
+    4.8,
+    3.141592653589793
+   ],
+   "shortest": 32.0,
+   "reachable": true
+  }
+ ]
+}

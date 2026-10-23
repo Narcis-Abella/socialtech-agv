@@ -122,6 +122,17 @@ def test_rows_hall_has_identical_periodic_blocks_and_reachable_lanes():
         assert not occ[r, c]
 
 
+def test_dense_rows_hall_is_as_occupied_as_the_real_maps_and_lanes_are_reachable():
+    spec = w.dense_rows_spec()
+    occ, origin = w.rasterize(spec)
+    h, wd = occ.shape
+    inner = occ[int(1.0 / spec["res"]):-int(1.0 / spec["res"]), int(1.0 / spec["res"]):-int(1.0 / spec["res"])]
+    share = inner.mean()
+    assert 0.12 <= share <= 0.18, share                                     # eco_-1 maps: 14-15 % of the area around the robot
+    trials = w.scenario(spec)
+    assert len(trials) >= 6 and all(t["reachable"] for t in trials) and all(t["shortest"] > 25 for t in trials)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

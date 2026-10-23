@@ -140,8 +140,19 @@ def rows_spec():
     return {"name": "rows", "res": 0.05, "bounds": [-1.0, -9.0, 37.0, 9.0], "seed": [2.0, -6.0], "boxes": boxes, "trials": trials}
 
 
+def dense_rows_spec():
+    """The rows hall made as occupied as the real eco_-1 maps (14-15 % of the area near the robot, against 3-5 % in the other worlds): 5 rows x 9 columns of 1.6 x 1.0 m blocks, pitch 3.6 m in x and
+    3.2 m in y, 2.2 m aisles between rows. Trials run end to end along the four aisles, both ways."""
+    boxes = [box("n", 18.0, 8.05, 36.2, 0.1), box("s", 18.0, -8.05, 36.2, 0.1), box("w", -0.05, 0.0, 0.1, 16.2), box("e", 36.05, 0.0, 0.1, 16.2)]
+    boxes += [box(f"blk{i}{j}", 5.0 + 3.6 * i, 3.2 * (j - 2), 1.6, 1.0, sz=1.5) for i in range(9) for j in range(5)]
+    aisles = [-4.8, -1.6, 1.6, 4.8]
+    trials = [{"id": f"fwd{k}", "start": [2.0, y, 0.0], "goal": [34.0, y, 0.0]} for k, y in enumerate(aisles)]
+    trials += [{"id": f"back{k}", "start": [34.0, y, math.pi], "goal": [2.0, y, math.pi]} for k, y in enumerate(aisles)]
+    return {"name": "dense_rows", "res": 0.05, "bounds": [-1.0, -9.0, 37.0, 9.0], "seed": [2.0, -4.8], "boxes": boxes, "trials": trials}
+
+
 ALL = {"doors": doors_spec, "corridor_gap12": lambda: corridor_spec(1.2, "corridor_gap12"), "corridor_gap09": lambda: corridor_spec(0.9, "corridor_gap09"),
-       "corridor_blocked": lambda: corridor_spec(0.0, "corridor_blocked"), "turn_l": turn_spec, "rows": rows_spec}
+       "corridor_blocked": lambda: corridor_spec(0.0, "corridor_blocked"), "turn_l": turn_spec, "rows": rows_spec, "dense_rows": dense_rows_spec}
 
 
 if __name__ == "__main__":
