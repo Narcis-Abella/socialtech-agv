@@ -19,7 +19,7 @@ DEFAULT_MAP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps", "
 FOOTPRINT = (0.70, 0.58)
 HZ = 50.0                              # sampling rate of trials.py rows
 COMPARED = ["duration", "path_len", "spl", "final_err_xy", "recoveries", "jerk_lin_rms", "jerk_lin_p95", "acc_lin_p95", "jerk_ang_rms", "acc_ang_p95", "vx_reversals",
-            "xtrack_p95", "loc_err_p95", "clearance_min", "idle_frac"]
+            "xtrack_p95", "loc_err_p95", "converge_s", "clearance_min", "idle_frac"]
 
 
 def load_trials(run_dir):
@@ -67,8 +67,10 @@ def trial_metrics(rec, ctx):
     if len(plan) > 1:
         xt = m.cross_track(plan, gt[::5])
         out["xtrack_rms"], out["xtrack_p95"], out["xtrack_max"] = m.rms(xt), m.p95(xt), float(xt.max())
-    err = np.hypot(*(est - gt).T)
-    err = err[np.isfinite(err)]
+    full = np.hypot(*(est - gt).T)
+    bad = ~(full < 0.3)                       # NaN (no transform yet) counts as not converged
+    out["converge_s"] = None if bad[-1] else (0.0 if not bad.any() else float(t[np.flatnonzero(bad)[-1] + 1] - t[0]))   # seconds until the estimate is within 0.3 m of the truth for good
+    err = full[np.isfinite(full)]
     out["loc_err_median"] = float(np.median(err)) if err.size else math.nan
     out["loc_err_p95"], out["loc_err_max"] = (m.p95(err), float(err.max())) if err.size else (math.nan, math.nan)
     cl = np.array([m.footprint_clearance(ctx["dist"], ctx["origin"], ctx["res"], x, y, yaw, *ctx["footprint"])
@@ -99,7 +101,7 @@ def compare(base, cand, metric_names, seed=0):
     out = {"_success": {"pairs": len(pairs), "only_base": only_b, "only_cand": only_c, "p": stats.mcnemar_exact(only_b, only_c)}}
     both = [(b, c) for b, c in pairs if b["reached"] and c["reached"]]
     for name in metric_names:
-        usable = [(b[name], c[name]) for b, c in both if name in b and name in c and b[name] == b[name] and c[name] == c[name]]
+        usable = [(b[name], c[name]) for b, c in both if b.get(name) is not None and c.get(name) is not None and b[name] == b[name] and c[name] == c[name]]
         if len(usable) < 2:
             out[name] = {"n_pairs": len(usable)}
             continue

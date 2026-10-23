@@ -61,6 +61,31 @@ def test_oscillating_command_is_counted():
     assert r["vx_reversals"] > 5 and r["jerk_lin_rms"] > 1.0
 
 
+def test_convergence_time_is_when_the_estimate_error_drops_and_stays_below_the_threshold():
+    tr = straight_trial(est_offset=0.0)
+    for row in tr["rows"]:
+        row[COLS.index("est_x")] = row[COLS.index("gt_x")] + max(0.0, 1.0 - 0.1 * row[0])      # error 1.0 m decaying 0.1 m/s: below 0.3 m at t = 7 s
+    r = a.trial_metrics(tr, ctx())
+    assert abs(r["converge_s"] - 7.0) < 0.1
+    never = straight_trial(est_offset=0.8)
+    assert a.trial_metrics(never, ctx())["converge_s"] is None
+    good = straight_trial(est_offset=0.05)
+    assert a.trial_metrics(good, ctx())["converge_s"] == 0.0                                      # converged from the start
+    dip = straight_trial(est_offset=0.0)
+    for row in dip["rows"]:
+        row[COLS.index("est_x")] = row[COLS.index("gt_x")] + (0.05 if row[0] < 3.0 else 0.0) + (0.6 if 3.0 <= row[0] < 4.0 else 0.0)   # good, then a 1 s excursion, then good again
+    assert abs(a.trial_metrics(dip, ctx())["converge_s"] - 4.0) < 0.1                             # the excursion resets the clock
+    nan_start = straight_trial(est_offset=0.0)
+    for row in nan_start["rows"]:
+        if row[0] < 2.0:
+            row[COLS.index("est_x")] = float("nan")                                               # no transform yet is not "converged"
+    assert abs(a.trial_metrics(nan_start, ctx())["converge_s"] - 2.0) < 0.1
+    nan_always = straight_trial(est_offset=0.0)
+    for row in nan_always["rows"]:
+        row[COLS.index("est_x")] = float("nan")
+    assert a.trial_metrics(nan_always, ctx())["converge_s"] is None
+
+
 def test_idle_fraction_ignores_the_ground_truth_update_rate():
     tr = straight_trial()
     for i, row in enumerate(tr["rows"]):
@@ -119,6 +144,14 @@ def test_select_keeps_the_first_n_pair_ids_of_every_repetition():
     sel = a.select(rows, 3)
     assert sorted({r["id"] for r in sel}) == ["p00", "p01", "p02"] and len(sel) == 6
     assert a.select(rows, None) == rows and len(a.select(rows, 99)) == 10
+
+
+def test_compare_skips_pairs_without_a_convergence_time():
+    base = [{"id": f"p{i}", "tag": "r0", "reached": True, "converge_s": 10.0 + i} for i in range(5)]
+    cand = [{**r, "converge_s": r["converge_s"] - 4.0} for r in base]
+    cand[1]["converge_s"] = None                                                                    # never converged in one pair
+    d = a.compare(base, cand, ["converge_s"], seed=0)["converge_s"]
+    assert d["n_pairs"] == 4 and abs(d["diff"] + 4.0) < 1e-9
 
 
 def test_compare_pairs_by_id_and_tag():

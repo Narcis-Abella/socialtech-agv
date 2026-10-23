@@ -3,6 +3,7 @@ import math
 
 import numpy as np
 
+import initpose
 import scenarios as sc
 
 RES = 0.05
@@ -27,6 +28,17 @@ def test_load_map_classifies_like_map_server(tmp_path_factory=None):
     assert mp["res"] == 0.05 and mp["origin"] == (1.0, 2.0) and mp["occ"].shape == (2, 3)
     assert mp["occ"].tolist() == [[False, False, True], [False, False, False]]
     assert mp["blocked"].tolist() == [[False, True, True], [False, False, True]]    # unknown counts as blocked for planning
+
+
+def test_init_offset_is_deterministic_rotates_direction_and_alternates_yaw():
+    offs = [initpose.init_offset(k, 0.5, 15.0) for k in range(6)]
+    assert offs == [initpose.init_offset(k, 0.5, 15.0) for k in range(6)]
+    for dx, dy, dyaw in offs:
+        assert abs(math.hypot(dx, dy) - 0.5) < 1e-9 and abs(abs(dyaw) - math.radians(15.0)) < 1e-9
+    assert offs[0][2] > 0 > offs[1][2]                                              # yaw alternates in sign
+    angles = [math.degrees(math.atan2(dy, dx)) % 360 for dx, dy, _ in offs]
+    assert [round(x) for x in angles] == [0, 60, 120, 180, 240, 300]               # the direction turns 60 deg per trial
+    assert initpose.init_offset(3, 0.0, 0.0) == (0.0, 0.0, 0.0) or all(abs(v) < 1e-12 for v in initpose.init_offset(3, 0.0, 0.0))
 
 
 def test_to_cell_and_back():

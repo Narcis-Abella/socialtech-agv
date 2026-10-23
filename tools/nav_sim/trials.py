@@ -1,7 +1,7 @@
 """Runs the trials of a scenario file against Nav2 in the simulation and records raw series for offline analysis (metrics.py).
 usage (inside the sim image, with the simulation and Nav2 running): trials.py <scenario.json> <out dir> [reps] --ros-args -p use_sim_time:=true
 Each trial: put the robot at `start` (Gazebo set_pose), reset AMCL and the costmaps, wait until the estimate is within 0.3 m of the ground truth, send the goal, record until the result.
-env: INIT_SIGMA_XY (0.1 m), INIT_SIGMA_YAW (0.1 rad) of the /initialpose covariance; TRIAL_TIMEOUT (240 s of simulation time); ROBOT_NAME (tracer_robot); WORLD (loyola)."""
+env: INIT_SIGMA_XY (0.1 m), INIT_SIGMA_YAW (0.1 rad) of the /initialpose covariance; INIT_OFFSET_M / INIT_OFFSET_DEG (0, 0): the pose given to AMCL is the true start moved by that much (direction turns 60 deg per trial, yaw sign alternates) to test convergence; SETTLE_TIMEOUT (15 s) how long to wait for the estimate to be within 0.3 m before sending the goal; TRIAL_TIMEOUT (240 s of simulation time); ROBOT_NAME (tracer_robot); WORLD (loyola)."""
 import json
 import math
 import os
@@ -17,6 +17,8 @@ from nav_msgs.msg import Path
 from rclpy.action import ActionClient
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
+
+from initpose import init_offset
 
 HZ = 50.0
 
@@ -41,7 +43,7 @@ class Runner:
         TransformListener(self.tf, node)
         self.gt = None
         self.cmd = {"cmd_vel_nav": (0.0, 0.0), "cmd_vel_smoothed": (0.0, 0.0), "cmd_vel": (0.0, 0.0)}
-        self.recording, self.rows, self.plans = False, [], []
+        self.recording, self.rows, self.plans, self.k = False, [], [], 0
         node.create_subscription(PoseStamped, "/gt/pose", self.on_gt, 10)
         for name in self.cmd:
             node.create_subscription(Twist, "/" + name, lambda m, k=name: self.cmd.__setitem__(k, (m.linear.x, m.angular.z)), 10)
@@ -80,7 +82,7 @@ class Runner:
         while self.now() < end:
             rclpy.spin_once(self.n, timeout_sec=0.02)
 
-    def reset(self, start):
+    def reset(self, start, offset=(0.0, 0.0, 0.0)):
         x, y, yaw = start
         z, w = yaw_to_quat(yaw)
         req = f'name: "{os.environ.get("ROBOT_NAME", "tracer_robot")}" position {{x: {x} y: {y} z: 0.15}} orientation {{z: {z} w: {w}}}'
@@ -89,8 +91,8 @@ class Runner:
         self.spin_for(2.0)
         m = PoseWithCovarianceStamped()
         m.header.frame_id, m.header.stamp = "map", self.n.get_clock().now().to_msg()
-        m.pose.pose.position.x, m.pose.pose.position.y = x, y
-        m.pose.pose.orientation.z, m.pose.pose.orientation.w = z, w
+        m.pose.pose.position.x, m.pose.pose.position.y = x + offset[0], y + offset[1]
+        m.pose.pose.orientation.z, m.pose.pose.orientation.w = yaw_to_quat(yaw + offset[2])
         sxy, syaw = float(os.environ.get("INIT_SIGMA_XY", 0.1)), float(os.environ.get("INIT_SIGMA_YAW", 0.1))
         m.pose.covariance[0] = m.pose.covariance[7] = sxy ** 2
         m.pose.covariance[35] = syaw ** 2
@@ -99,7 +101,7 @@ class Runner:
         for c in self.clear:
             if c.wait_for_service(timeout_sec=2.0):
                 rclpy.spin_until_future_complete(self.n, c.call_async(ClearEntireCostmap.Request()), timeout_sec=3.0)
-        t_end, good_since, err = self.now() + 15.0, None, math.nan
+        t_end, good_since, err = self.now() + float(os.environ.get("SETTLE_TIMEOUT", 15)), None, math.nan
         while self.now() < t_end:
             rclpy.spin_once(self.n, timeout_sec=0.05)
             est = self.estimate()
@@ -114,7 +116,9 @@ class Runner:
         return err
 
     def run_trial(self, trial, tag):
-        init_err = self.reset(trial["start"])
+        offset = init_offset(self.k, float(os.environ.get("INIT_OFFSET_M", 0)), float(os.environ.get("INIT_OFFSET_DEG", 0)))
+        self.k += 1
+        init_err = self.reset(trial["start"], offset)
         goal = NavigateToPose.Goal()
         p = PoseStamped()
         p.header.frame_id, p.header.stamp = "map", self.n.get_clock().now().to_msg()
@@ -144,7 +148,7 @@ class Runner:
         t1 = self.now()
         self.recording = False
         self.spin_for(1.0)
-        rec = {"id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "shortest": trial.get("shortest"), "init_err": init_err,
+        rec = {"id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
                "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
                "recoveries": feedback[-1][1] if feedback else 0, "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
