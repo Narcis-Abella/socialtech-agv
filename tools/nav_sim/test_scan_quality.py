@@ -39,7 +39,7 @@ def test_distance_to_the_map_is_small_for_exact_ranges_and_equals_the_error_for_
                 true[i] = r
                 break
     d0 = q.endpoint_map_distance(true, -math.pi, 2 * math.pi / 360, (3.0, 1.0, 0.0), dist, RES, (0.0, 0.0))
-    assert np.median(d0[1]) < 0.03 and np.percentile(d0[1], 95) < 0.06
+    assert np.median(d0[1]) < 0.03 and np.max(d0[1]) < 0.06                         # the max: the pillar subtends only ~4 % of the beams, a percentile would not see a flipped row
     short = q.endpoint_map_distance(true - 0.4, -math.pi, 2 * math.pi / 360, (3.0, 1.0, 0.0), dist, RES, (0.0, 0.0))
     assert abs(np.median(short[1]) - 0.4) < 0.06                                    # 0.4 m too short: it lands 0.4 m inside the free space
 
