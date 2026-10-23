@@ -106,6 +106,18 @@ def test_aggregate_uses_distributions():
     assert g["duration"]["median"] == 14.0 and g["duration"]["n"] == 6          # only reached trials count for times
 
 
+def test_an_aborted_trial_with_almost_no_rows_still_has_every_summary_key():
+    tr = straight_trial(status="aborted")
+    tr["rows"] = tr["rows"][:2]                                    # Nav2 refused the goal at once (e.g. START_OCCUPIED): nothing was recorded
+    r = a.trial_metrics(tr, ctx())
+    assert not r["reached"] and r["spl"] == 0.0 and r["collisions"] == 0
+    assert r["converge_s"] is None and r["stuck_start"] is False
+    full = a.trial_metrics(straight_trial(), ctx())
+    assert {"converge_s", "stuck_start"} <= set(r) and {"converge_s", "stuck_start"} <= set(full)
+    rows = [a.trial_metrics(tr, ctx()), full]
+    assert a.aggregate(rows)["n"] == 2 and a.failure_table(rows) == {"aborted": 1}
+
+
 def test_a_robot_that_never_moved_is_flagged_as_stuck_at_the_start():
     tr = straight_trial(status="aborted")
     for row in tr["rows"]:

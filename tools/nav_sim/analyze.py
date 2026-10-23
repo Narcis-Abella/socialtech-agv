@@ -44,7 +44,7 @@ def trial_metrics(rec, ctx):
     out = {"id": rec["id"], "tag": rec["tag"], "status": rec["status"], "error_code": rec["error_code"], "duration": rec["duration"], "recoveries": rec["recoveries"],
            "init_err": rec["init_err"], "success": rec["status"] == "succeeded"}
     if len(rows) < 3:
-        return {**out, "reached": False, "spl": 0.0, "collisions": 0}
+        return {**out, "reached": False, "spl": 0.0, "collisions": 0, "converge_s": None, "stuck_start": False}
     t, gt = rows[:, col["t"]], rows[:, [col["gt_x"], col["gt_y"]]]
     est = rows[:, [col["est_x"], col["est_y"]]]
     out["path_len"] = m.path_length(gt)
