@@ -44,6 +44,7 @@ class Runner:
         self.gt = None
         self.cmd = {"cmd_vel_nav": (0.0, 0.0), "cmd_vel_smoothed": (0.0, 0.0), "cmd_vel": (0.0, 0.0)}
         self.recording, self.rows, self.plans, self.k = False, [], [], 0
+        self.plan_log = []   # per plan: [t, poses, distance est->plan, distance gt->plan, distance est->first pose, plan stamp]
         node.create_subscription(PoseStamped, "/gt/pose", self.on_gt, 10)
         for name in self.cmd:
             node.create_subscription(Twist, "/" + name, lambda m, k=name: self.cmd.__setitem__(k, (m.linear.x, m.angular.z)), 10)
@@ -67,7 +68,12 @@ class Runner:
 
     def on_plan(self, m):
         if self.recording:
-            self.plans.append((self.now(), path_xy(m)))
+            xy = path_xy(m)
+            self.plans.append((self.now(), xy))
+            est, gt = self.estimate(), self.gt
+            near = lambda p: min(math.hypot(x - p[0], y - p[1]) for x, y in xy) if p and xy else math.nan
+            self.plan_log.append([round(self.now(), 3), len(xy), round(near(est), 3), round(near(gt), 3),
+                                  round(math.hypot(xy[0][0] - est[0], xy[0][1] - est[1]), 3) if est and xy else math.nan, round(m.header.stamp.sec + m.header.stamp.nanosec * 1e-9, 3)])
 
     def estimate(self):
         try:
@@ -134,7 +140,7 @@ class Runner:
         p.pose.orientation.z, p.pose.orientation.w = yaw_to_quat(trial["goal"][2])
         goal.pose = p
         feedback = []
-        self.rows, self.plans, self.recording = [], [], True
+        self.rows, self.plans, self.plan_log, self.recording = [], [], [], True
         t0 = self.now()
         sent = self.client.send_goal_async(goal, feedback_callback=lambda f: feedback.append(
             [round(self.now(), 3), f.feedback.number_of_recoveries, round(f.feedback.distance_remaining, 3)]))
@@ -160,6 +166,7 @@ class Runner:
                "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
                "recoveries": feedback[-1][1] if feedback else 0, "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
+               "plan_log": self.plan_log,
                "plan_times": [round(t, 3) for t, _ in self.plans],
                "cols": ["t", "gt_x", "gt_y", "gt_yaw", "est_x", "est_y", "est_yaw", "nav_vx", "nav_wz", "sm_vx", "sm_wz", "cmd_vx", "cmd_wz", "odom_x", "odom_y", "odom_yaw"], "rows": self.rows}
         json.dump(rec, open(os.path.join(self.out, f"trial_{tag}_{trial['id']}.json"), "w"))
