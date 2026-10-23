@@ -44,6 +44,21 @@ def test_windows_follow_path_length_not_time():
     assert abs(np.median(r["dist"]) - 1.0) < 0.02
 
 
+def test_trials_mode_reads_odom_columns_and_skips_old_series(capsys=None):
+    import io, json, os, tempfile, contextlib
+    t, xy, th = path()
+    cols = ["t", "gt_x", "gt_y", "gt_yaw", "odom_x", "odom_y", "odom_yaw"]
+    rows = np.c_[t, xy, th, xy * 1.05, th].tolist()
+    with tempfile.TemporaryDirectory() as d:
+        json.dump({"cols": cols, "rows": rows}, open(os.path.join(d, "trial_r0_p00.json"), "w"))
+        json.dump({"cols": cols[:4], "rows": [r[:4] for r in rows]}, open(os.path.join(d, "trial_r0_p01.json"), "w"))   # series without odometry
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            oe.main_trials(d, [1.0])
+    line = buf.getvalue().strip().splitlines()[-1].split()
+    assert abs(float(line[4]) - 0.05) < 5e-3, line          # along med = the 5 % scale error
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

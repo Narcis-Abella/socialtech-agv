@@ -13,7 +13,7 @@ from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from nav2_msgs.srv import ClearEntireCostmap
-from nav_msgs.msg import Path
+from nav_msgs.msg import Odometry, Path
 from rclpy.action import ActionClient
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -48,6 +48,8 @@ class Runner:
         for name in self.cmd:
             node.create_subscription(Twist, "/" + name, lambda m, k=name: self.cmd.__setitem__(k, (m.linear.x, m.angular.z)), 10)
         node.create_subscription(Path, "/plan", self.on_plan, 10)
+        self.odom = (math.nan,) * 3
+        node.create_subscription(Odometry, "/odom", self.on_odom, 10)
         self.init_pub = node.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
         self.clear = [node.create_client(ClearEntireCostmap, s) for s in ("/local_costmap/clear_entirely_local_costmap", "/global_costmap/clear_entirely_global_costmap")]
         node.create_timer(1.0 / HZ, self.sample)
@@ -58,6 +60,10 @@ class Runner:
     def on_gt(self, m):
         o = m.pose.orientation
         self.gt = (m.pose.position.x, m.pose.position.y, quat_to_yaw(o.z, o.w))
+
+    def on_odom(self, m):
+        o = m.pose.pose.orientation
+        self.odom = (m.pose.pose.position.x, m.pose.pose.position.y, quat_to_yaw(o.z, o.w))
 
     def on_plan(self, m):
         if self.recording:
@@ -75,7 +81,7 @@ class Runner:
             return
         est = self.estimate() or (math.nan,) * 3
         self.rows.append([round(self.now(), 4), *[round(v, 4) for v in self.gt], *[round(v, 4) for v in est],
-                          *[round(v, 4) for k in self.cmd for v in self.cmd[k]]])
+                          *[round(v, 4) for k in self.cmd for v in self.cmd[k]], *[round(v, 4) for v in self.odom]])
 
     def spin_for(self, seconds):
         end = self.now() + seconds
@@ -153,7 +159,7 @@ class Runner:
                "recoveries": feedback[-1][1] if feedback else 0, "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
                "plan_times": [round(t, 3) for t, _ in self.plans],
-               "cols": ["t", "gt_x", "gt_y", "gt_yaw", "est_x", "est_y", "est_yaw", "nav_vx", "nav_wz", "sm_vx", "sm_wz", "cmd_vx", "cmd_wz"], "rows": self.rows}
+               "cols": ["t", "gt_x", "gt_y", "gt_yaw", "est_x", "est_y", "est_yaw", "nav_vx", "nav_wz", "sm_vx", "sm_wz", "cmd_vx", "cmd_wz", "odom_x", "odom_y", "odom_yaw"], "rows": self.rows}
         json.dump(rec, open(os.path.join(self.out, f"trial_{tag}_{trial['id']}.json"), "w"))
         print(f"{tag} {trial['id']}: {status} t={t1 - t0:.1f}s init_err={init_err:.2f} recoveries={rec['recoveries']} code={code}", flush=True)
         return rec

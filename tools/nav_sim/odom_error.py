@@ -1,6 +1,7 @@
 """Relative error of an odometry against a reference trajectory, per window of path length d, in the body frame of the window start.
 Invariant to the (unknown) rigid transform between the two world frames. Used to calibrate the sim odometry noise from FAST-LIO2 vs Voxel-SLAM.
   python3 -B odom_error.py <bag dir with /Odometry> <alidarState.txt> [d ...]   (needs ROS for the bag)
+  python3 -B odom_error.py trials <run out dir> [d ...]   sim odometry (/odom) vs ground truth from trials.py series
 Planar approximation: heading = yaw of the pose, motion = xy; the tilt of the FAST-LIO2 world frame is ignored (< 1 deg)."""
 import math
 import os
@@ -77,5 +78,40 @@ def main(bag, ref_path, ds):
         print(f"{d:6.1f} {len(r['dist']):8d} {np.median(r['frac']):9.4f} {np.percentile(r['frac'], 95):9.4f} {np.median(r['along']):10.4f} {rms(r['along']):10.4f} {rms(r['lateral']):8.4f} {rms(r['yaw_per_m']):10.4f} {np.percentile(np.abs(r['yaw_per_m']), 95):10.4f}")
 
 
+def report(r_by_d, ds, header):
+    print(header)
+    print(f"{'d (m)':>6s} {'windows':>8s} {'frac med':>9s} {'frac p95':>9s} {'along med':>10s} {'along rms':>10s} {'lat rms':>8s} {'yaw/m rms':>10s} {'yaw/m p95':>10s}")
+    rms = lambda a: float(np.sqrt(np.mean(a * a)))
+    for d in ds:
+        r = {k: np.concatenate([x[k] for x in r_by_d[d]]) for k in ("dist", "along", "lateral", "frac", "yaw_per_m")} if r_by_d[d] else None
+        if r is None or len(r["dist"]) < 20:
+            continue
+        print(f"{d:6.1f} {len(r['dist']):8d} {np.median(r['frac']):9.4f} {np.percentile(r['frac'], 95):9.4f} {np.median(r['along']):10.4f} {rms(r['along']):10.4f} {rms(r['lateral']):8.4f} {rms(r['yaw_per_m']):10.4f} {np.percentile(np.abs(r['yaw_per_m']), 95):10.4f}")
+
+
+def main_trials(out_dir, ds):
+    """Sim odometry (/odom, columns odom_*) against the ground truth (gt_*) over the recorded trials of a run; same windows as the real bags."""
+    import glob
+    import json
+    by_d = {d: [] for d in ds}
+    for f in sorted(glob.glob(os.path.join(out_dir, "trial_*.json"))):
+        rec = json.load(open(f))
+        col = {c: i for i, c in enumerate(rec["cols"])}
+        if "odom_x" not in col or len(rec["rows"]) < 10:
+            continue
+        a = np.array(rec["rows"], float)
+        a = a[~np.isnan(a[:, col["odom_x"]])]
+        gxy, gyaw = a[:, [col["gt_x"], col["gt_y"]]], np.unwrap(a[:, col["gt_yaw"]])
+        oxy, oyaw = a[:, [col["odom_x"], col["odom_y"]]], np.unwrap(a[:, col["odom_yaw"]])
+        for d in ds:
+            r = window_errors(oxy, oyaw, gxy, gyaw, d)
+            if len(r["dist"]):
+                by_d[d].append(r)
+    report(by_d, ds, f"sim odometry vs ground truth, {out_dir}")
+
+
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], [float(x) for x in sys.argv[3:]] or [0.5, 1.0, 2.0, 5.0, 10.0])
+    if sys.argv[1] == "trials":
+        main_trials(sys.argv[2], [float(x) for x in sys.argv[3:]] or [0.5, 1.0, 2.0, 5.0, 10.0])
+    else:
+        main(sys.argv[1], sys.argv[2], [float(x) for x in sys.argv[3:]] or [0.5, 1.0, 2.0, 5.0, 10.0])
