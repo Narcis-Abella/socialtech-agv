@@ -4,6 +4,7 @@
 # speeds for ~0.3 m/s; AMCL limited to the sim LiDAR (12 m). route_server and docking_server keep the bringup defaults: navigation_launch.py always starts them.
 # amcl.initial_pose = the spawn pose of the simulator in the world frame (the map frame is the world frame).
 # amcl.alpha1..4 = 0.01 (default 0.2): notes/nav2_stack_resultados.md D-1.1; sim loc_err_p95 0.161 -> 0.063 m, real bags eco01/eco03 position p95 7-13 m -> 0.10-0.16 m. Needs an honest initial covariance (>= 0.5 m / 0.26 rad), else a 1 m offset is not recovered.
+# amcl.update_min_d/a = 0.05 (default 0.25 m / 0.2 rad): D-1.2; RP1 reached 1/16 -> 14/16 (AMCL jumps 11/16 -> 0/16), RP2 11/16 -> 14/16, no regression in F2/SC7b nor in 7 real recordings; AMCL CPU +13-20 % in the sim (AGX), not measured on the NX.
 # Initial values, tuned in the evaluation (notes/nav2_sim_resultados_*.md). use_sim_time comes from the launch (SetParameter).
 amcl:
   ros__parameters:
@@ -37,8 +38,8 @@ amcl:
     sigma_hit: 0.2
     tf_broadcast: true
     transform_tolerance: 1.0
-    update_min_a: 0.2
-    update_min_d: 0.25
+    update_min_a: 0.05
+    update_min_d: 0.05
     z_hit: 0.5
     z_max: 0.05
     z_rand: 0.5
