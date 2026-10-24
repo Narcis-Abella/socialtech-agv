@@ -1,6 +1,6 @@
 """CPU and RAM of the processes of a bench run, read from /proc (the image has no psutil).
   cost_sampler.py sample <out.csv> [--every 1.0]   sample until killed; CSV columns t, name, cpu_pct (of ONE core), rss_mb
-  cost_sampler.py summarize <out.csv>              mean / p95 CPU and peak RSS per process, and the total of all of them"""
+  cost_sampler.py summarize <out.csv>              mean / p95 CPU and peak RSS per name (processes sharing a name are added up), and the total of all of them"""
 import argparse
 import os
 import time
@@ -34,18 +34,23 @@ def rss_mb(status):
 
 
 def summarize(rows):
-    """rows: (t, name, cpu_pct, rss_mb). Per process, and TOTAL = the sum of all processes at each sample time."""
-    by, tot = {}, {}
+    """rows: (t, name, cpu_pct, rss_mb). Per name: the processes sharing it are ADDED at each sample time (e.g. the `gz sim` launcher and server), then mean / p95 over time and the peak RSS;
+    procs = the most processes seen at one time. TOTAL = the sum of all processes at each sample time."""
+    per, tot = {}, {}
     for t, name, cpu, rss in rows:
-        by.setdefault(name, []).append((cpu, rss))
-        a = tot.setdefault(t, [0.0, 0.0])
+        a = per.setdefault(name, {}).setdefault(t, [0.0, 0.0, 0])
         a[0] += cpu
         a[1] += rss
+        a[2] += 1
+        b = tot.setdefault(t, [0.0, 0.0, 0])
+        b[0] += cpu
+        b[1] += rss
+        b[2] += 1
 
-    def stats(pairs):
-        c = [p[0] for p in pairs]
-        return {"cpu_mean": float(np.mean(c)), "cpu_p95": float(np.percentile(c, 95)), "rss_peak_mb": float(max(p[1] for p in pairs))}
-    out = {n: stats(v) for n, v in by.items()}
+    def stats(series):
+        c = [p[0] for p in series]
+        return {"cpu_mean": float(np.mean(c)), "cpu_p95": float(np.percentile(c, 95)), "rss_peak_mb": float(max(p[1] for p in series)), "procs": max(p[2] for p in series)}
+    out = {n: stats(list(v.values())) for n, v in per.items()}
     out["TOTAL"] = stats(list(tot.values()))
     return out
 
@@ -97,6 +102,6 @@ if __name__ == "__main__":
         sample(a.out, a.every)
     else:
         rows = [(float(t), n, float(c), float(r)) for t, n, c, r in (l.strip().split(",") for l in open(a.csv).read().splitlines()[1:])]
-        print(f"{'process':<26}{'cpu_mean%':>10}{'cpu_p95%':>10}{'rss_peak_MB':>13}   (cpu in % of ONE core)")
+        print(f"{'process':<26}{'cpu_mean%':>10}{'cpu_p95%':>10}{'rss_peak_MB':>13}{'procs':>7}   (cpu in % of ONE core; processes sharing a name are added up)")
         for n, v in sorted(summarize(rows).items()):
-            print(f"{n:<26}{v['cpu_mean']:>10.1f}{v['cpu_p95']:>10.1f}{v['rss_peak_mb']:>13.0f}")
+            print(f"{n:<26}{v['cpu_mean']:>10.1f}{v['cpu_p95']:>10.1f}{v['rss_peak_mb']:>13.0f}{v['procs']:>7d}")

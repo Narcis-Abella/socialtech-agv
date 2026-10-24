@@ -30,6 +30,14 @@ def test_summary_gives_mean_p95_cpu_and_peak_rss_per_process_and_the_total():
     assert s["TOTAL"]["cpu_mean"] == 135.0 and s["TOTAL"]["rss_peak_mb"] == 410.0, s  # cpu in % of ONE core; total = sum per sample time
 
 
+def test_processes_sharing_a_name_are_added_up_per_sample_time_not_averaged():
+    # `gz sim` matches the launcher (idle) and the server (busy) at every sample: the row must be the sum (what the machine pays), with the number of processes
+    rows = [(float(t), "sim_gz", cpu, rss) for t in range(0, 4) for cpu, rss in ((1.0, 50.0), (140.0, 1000.0))] + [(float(t), "amcl", 10.0, 40.0) for t in range(0, 4)]
+    s = cs.summarize(rows)
+    assert s["sim_gz"]["cpu_mean"] == 141.0 and s["sim_gz"]["rss_peak_mb"] == 1050.0 and s["sim_gz"]["procs"] == 2, s
+    assert s["amcl"]["procs"] == 1 and s["TOTAL"]["cpu_mean"] == 151.0 and s["TOTAL"]["rss_peak_mb"] == 1090.0, s
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
