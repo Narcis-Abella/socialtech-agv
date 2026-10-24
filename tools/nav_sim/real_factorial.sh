@@ -2,7 +2,7 @@
 # Factorial on the recorded real inputs: which AMCL term makes the default lose the pose (same inputs as real_sweeps.sh, condition track only).
 # real_sweeps.sh header: AMCL variants on the recorded real inputs (FAST-LIO2 odometry + scan of the eco_-1_01 and eco_-1_03 bags, on their own maps, scored against the Voxel-SLAM trajectory of the same bag),
 # the same variants as the simulator study, under four initial-pose conditions. Inside the sim image; mounts: tools at /tools, ~/nav_out at /navout (recorded inputs), ~/nav_data at /data, output at /out.
-# usage: real_factorial.sh <out dir>      env: PAR (4)  RATE (5)  BAGS ("eco01 eco03")  COND_LIST ("name DIST DYAW INIT_STD INIT_YAW_STD;...", default: track)
+# usage: real_factorial.sh <out dir>      env: COST=1 (CPU/RAM per config in each run dir; use PAR=1 RATE=1 WIN_DUR=100)  PAR (4)  RATE (5)  BAGS ("eco01 eco03")  COND_LIST ("name DIST DYAW INIT_STD INIT_YAW_STD;...", default: track)
 set -eo pipefail
 out=${1:?out dir}
 nb=/tools/nav_bench
