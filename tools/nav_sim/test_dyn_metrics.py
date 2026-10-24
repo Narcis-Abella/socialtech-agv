@@ -79,6 +79,38 @@ def test_a_trial_whose_obstacle_never_started_is_flagged_as_not_an_encounter():
     assert dm.trial_metrics(trial([0.0, 1.0, 2.0], obstacle=(4.0, 0.0)))["started"] is True
 
 
+def test_a_contact_while_the_robot_drives_into_the_obstacle_is_active():
+    r = dm.trial_metrics(trial([0.0, 1.0, 2.0, 3.0, 3.6], obstacle=(4.0, 0.0)))        # 10 samples per second, the robot moves 1 m per sample: 10 m/s, absurd but unmistakably moving
+    assert r["contact"] and r["contact_v"] > dm.V_STOP and r["active_contact"] is True and r["contact_t"] > 0
+
+
+def test_a_contact_while_the_robot_stands_still_is_passive_and_is_not_counted_against_it():
+    # the robot is parked at x = 3.0 (front face at 3.3); the obstacle walks into it: from the sixth sample it sits at x = 3.5 (back face 3.25)
+    t = trial([3.0] * 12, obstacle=(9.0, 0.0), vx=0.0)
+    t["dyn_log"] = [[0.1 * i, "b_walker", 9.0 - 0.5 * i, 0.0, 0.0] for i in range(12)]    # 9.0, 8.5 ... 3.5 at i = 11
+    r = dm.trial_metrics(t)
+    assert r["contact"] and r["active_contact"] is False and r["contact_v"] < dm.V_STOP, r
+
+
+def test_a_robot_that_turns_in_place_when_it_is_hit_still_counts_as_moving():
+    t = trial([3.0] * 12, obstacle=(9.0, 0.0), vx=0.0)
+    for i, row in enumerate(t["rows"]):
+        row[3] = 0.4 * i                                                               # gt_yaw grows 4 rad/s
+    t["dyn_log"] = [[0.1 * i, "b_walker", 9.0 - 0.5 * i, 0.0, 0.0] for i in range(12)]
+    r = dm.trial_metrics(t)
+    assert r["contact"] and r["contact_w"] > dm.W_STOP and r["active_contact"] is True, r
+
+
+def test_the_speed_that_counts_is_the_one_at_the_first_contact_not_after_the_robot_has_stopped_against_it():
+    r = dm.trial_metrics(trial([0.0, 1.0, 2.0, 3.0, 3.6, 3.6, 3.6, 3.6, 3.6], obstacle=(4.0, 0.0)))     # drives in, then stands overlapping
+    assert r["active_contact"] is True and abs(r["contact_t"] - 0.4) < 1e-9, r
+
+
+def test_no_contact_means_no_active_contact():
+    r = dm.trial_metrics(trial([0.0, 0.5, 1.0], obstacle=(9.0, 0.0)))
+    assert not r["contact"] and r["active_contact"] is False and r["contact_t"] is None
+
+
 def test_summarize_a_run_dir_reads_every_trial_file():
     with tempfile.TemporaryDirectory() as d:
         for k, xs in enumerate(([0.0, 3.9, 4.05], [0.0, 1.0, 2.0])):

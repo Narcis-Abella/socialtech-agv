@@ -1,7 +1,7 @@
 """Safety and outcome of trials with moving obstacles (trials.py JSON with "dyn" / "dyn_log"), from the ground truth of both.
 usage: dyn_metrics.py <run dir> [<run dir> ...]    prints one line per trial and the totals.
 gap_body = closest approach (m) between the robot's physical body (BODY, from the simulated model) and the obstacle; gap_footprint the same against Nav2's footprint (FOOTPRINT, the planning/collision-monitor shape).
-Both assume the robot's ground-truth pose is the centre of the rectangle. contact = gap_body == 0. started = every obstacle was released. reached = Nav2 succeeded and the ground-truth pose ends within GOAL_TOL of the goal."""
+Both assume the robot's ground-truth pose is the centre of the rectangle. contact = gap_body == 0; active_contact = a contact with the robot moving (>= V_STOP m/s or W_STOP rad/s at the first one). started = every obstacle was released. reached = Nav2 succeeded and the ground-truth pose ends within GOAL_TOL of the goal."""
 import glob
 import json
 import math
@@ -11,6 +11,7 @@ import sys
 import dyn
 
 BODY, FOOTPRINT, GOAL_TOL, NEAR = (0.60, 0.40), (0.70, 0.58), 0.25, 3.0   # m
+V_STOP, W_STOP, WIN = 0.05, 0.1, 0.1   # the robot counts as stopped below 0.05 m/s and 0.1 rad/s (ground truth, over the 0.1 s before the contact)
 
 
 def trial_metrics(rec):
@@ -21,8 +22,9 @@ def trial_metrics(rec):
     for t, model, x, y, yaw in rec.get("dyn_log", []):
         log.setdefault(model, []).append((t, x, y, yaw))
     gap_b = gap_f = None
+    onset = None
     idx = {m: 0 for m in log}
-    for r in rows:
+    for k, r in enumerate(rows):
         t, x, y, yaw = r[col["t"]], r[col["gt_x"]], r[col["gt_y"]], r[col["gt_yaw"]]
         for m, entries in log.items():
             while idx[m] + 1 < len(entries) and entries[idx[m] + 1][0] <= t:      # latest command sent at or before t
@@ -35,6 +37,8 @@ def trial_metrics(rec):
             o = (ox, oy, oyaw, size[m][0], size[m][1])
             b, f = dyn.rect_distance((x, y, yaw, *BODY), o), dyn.rect_distance((x, y, yaw, *FOOTPRINT), o)
             gap_b = b if gap_b is None else min(gap_b, b)
+            if b <= 0.0 and onset is None:
+                onset = k
             gap_f = f if gap_f is None else min(gap_f, f)
     if gap_b is None and log:
         gap_b = gap_f = NEAR                                                         # never within NEAR: report the bound, not a false zero
@@ -46,11 +50,23 @@ def trial_metrics(rec):
         v = abs(r[col["cmd_vx"]])
         moving = moving or v > 0.02
         wait += dt if moving and v < 0.02 else 0.0
+    contact_t = contact_v = contact_w = None
+    if onset is not None:   # robot speed at the first contact, from the ground-truth poses of the 0.1 s before it
+        j = max((i for i in range(onset + 1) if rows[i][col["t"]] <= rows[onset][col["t"]] - WIN), default=0)
+        dtc = rows[onset][col["t"]] - rows[j][col["t"]]
+        contact_t = rows[onset][col["t"]]
+        if dtc > 0:
+            contact_v = math.hypot(rows[onset][col["gt_x"]] - rows[j][col["gt_x"]], rows[onset][col["gt_y"]] - rows[j][col["gt_y"]]) / dtc
+            dyaw = rows[onset][col["gt_yaw"]] - rows[j][col["gt_yaw"]]
+            contact_w = abs(math.atan2(math.sin(dyaw), math.cos(dyaw))) / dtc
+        else:
+            contact_v = contact_w = 0.0
     last = rows[-1] if rows else None
     reached = bool(rec["status"] == "succeeded" and last and math.hypot(last[col["gt_x"]] - rec["goal"][0], last[col["gt_y"]] - rec["goal"][1]) <= GOAL_TOL)
     return {"id": rec["id"], "tag": rec.get("tag"), "status": rec["status"], "reached": reached, "duration": rec["duration"], "recoveries": rec.get("recoveries", 0),
             "gap_body": gap_b, "gap_footprint": gap_f, "contact": gap_b is not None and gap_b <= 0.0, "wait_s": wait,
-            "started": not rec.get("dyn_unstarted")}   # False: the obstacle was never released (the robot missed the trigger circle), the trial is not an encounter
+            "started": not rec.get("dyn_unstarted"), "contact_t": contact_t, "contact_v": contact_v, "contact_w": contact_w,
+            "active_contact": onset is not None and (contact_v >= V_STOP or contact_w >= W_STOP)}   # contact = the robot hits something; a contact with the robot already stopped is something hitting the robot (not counted against it)   # False: the obstacle was never released (the robot missed the trigger circle), the trial is not an encounter
 
 
 def load_run(d):
