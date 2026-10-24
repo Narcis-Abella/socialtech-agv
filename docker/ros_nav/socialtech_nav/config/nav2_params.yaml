@@ -5,6 +5,7 @@
 # amcl.initial_pose = the spawn pose of the simulator in the world frame (the map frame is the world frame).
 # amcl.alpha1..4 = 0.01 (default 0.2): notes/nav2_stack_resultados.md D-1.1; sim loc_err_p95 0.161 -> 0.063 m, real bags eco01/eco03 position p95 7-13 m -> 0.10-0.16 m. Needs an honest initial covariance (>= 0.5 m / 0.26 rad), else a 1 m offset is not recovered.
 # amcl.update_min_d/a = 0.05 (default 0.25 m / 0.2 rad): D-1.2; RP1 reached 1/16 -> 14/16 (AMCL jumps 11/16 -> 0/16), RP2 11/16 -> 14/16, no regression in F2/SC7b nor in 7 real recordings; AMCL CPU +13-20 % in the sim (AGX), not measured on the NX.
+# amcl.sigma_hit = 0.1 (default 0.2): D-1.3, PROVISIONAL, to verify on the real robot. For: 4 real recordings, position p95 -1.7 cm [-2.4, -1.2] vs the Voxel-SLAM trajectory of the same run as the map (not an independent truth, so partly circular). Against: sim F2/SC7b/RP1/RP2 loc_err_p95 +1 to +12 cm, no navigation gain (the sim map and LiDAR are exact, so the sim cannot confirm or refute it); watch symmetric corridors.
 # Initial values, tuned in the evaluation (notes/nav2_sim_resultados_*.md). use_sim_time comes from the launch (SetParameter).
 amcl:
   ros__parameters:
@@ -35,7 +36,7 @@ amcl:
     resample_interval: 1
     robot_model_type: nav2_amcl::DifferentialMotionModel
     save_pose_rate: 0.5
-    sigma_hit: 0.2
+    sigma_hit: 0.1
     tf_broadcast: true
     transform_tolerance: 1.0
     update_min_a: 0.05
