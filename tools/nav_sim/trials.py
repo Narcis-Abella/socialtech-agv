@@ -182,6 +182,7 @@ class Runner:
                "recoveries": feedback[-1][1] if feedback else 0, "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
                "plan_log": self.plan_log,
+               "plan_all": [[round(t, 3), xy[::10]] for t, xy in self.plans],   # every plan, thinned, to see which route the planner chose each time (flip_metrics.py)
                "plan_times": [round(t, 3) for t, _ in self.plans],
                "cols": ["t", "gt_x", "gt_y", "gt_yaw", "est_x", "est_y", "est_yaw", "nav_vx", "nav_wz", "sm_vx", "sm_wz", "cmd_vx", "cmd_wz", "odom_x", "odom_y", "odom_yaw"], "rows": self.rows}
         json.dump(rec, open(os.path.join(self.out, f"trial_{tag}_{trial['id']}.json"), "w"))

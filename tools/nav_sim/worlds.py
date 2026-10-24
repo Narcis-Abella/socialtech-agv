@@ -170,8 +170,18 @@ def dyn_hall_spec():
     return {"name": "dyn_hall", "res": 0.05, "bounds": [-1.0, -7.0, 25.0, 7.0], "seed": [2.0, 0.0], "boxes": boxes, "trials": trials}
 
 
+def flip_spec():
+    """A 24 x 14 m hall split by a wall at x = 12 with a 1.2 m door at y = 0 (short route, 20 m) and a 2 m gap at the north end (long route, ~23.7 m). flip_free = nothing in the way (control);
+    flip_door = an unmapped person-sized box appears in the doorway when the robot starts, so the short route is blocked and the long one is free: does the planner commit to one or alternate?"""
+    boxes = [box("n", 12.0, 7.05, 24.2, 0.1), box("s", 12.0, -7.05, 24.2, 0.1), box("w", -0.05, 0.0, 0.1, 14.2), box("e", 24.05, 0.0, 0.1, 14.2),
+             box("wallS", 12.0, -3.8, 0.2, 6.4), box("wallN", 12.0, 2.8, 0.2, 4.4), box("walker", 12.0, -30.0, 0.5, 0.5, sz=1.7, mapped=False)]
+    base = {"start": [2.0, 0.0, 0.0], "goal": [22.0, 0.0, 0.0]}
+    trials = [{"id": "flip_free", **base}, {"id": "flip_door", **base, "dyn": [walker([[12.0, 0.0]], 0.0, [2.0, 0.0, 1.5])]}]
+    return {"name": "flip", "res": 0.05, "bounds": [-1.0, -8.0, 25.0, 8.0], "seed": [2.0, 0.0], "boxes": boxes, "trials": trials}
+
+
 ALL = {"doors": doors_spec, "corridor_gap12": lambda: corridor_spec(1.2, "corridor_gap12"), "corridor_gap09": lambda: corridor_spec(0.9, "corridor_gap09"),
-       "corridor_blocked": lambda: corridor_spec(0.0, "corridor_blocked"), "turn_l": turn_spec, "rows": rows_spec, "dense_rows": dense_rows_spec, "dyn_hall": dyn_hall_spec}
+       "corridor_blocked": lambda: corridor_spec(0.0, "corridor_blocked"), "turn_l": turn_spec, "rows": rows_spec, "dense_rows": dense_rows_spec, "dyn_hall": dyn_hall_spec, "flip": flip_spec}
 
 
 if __name__ == "__main__":

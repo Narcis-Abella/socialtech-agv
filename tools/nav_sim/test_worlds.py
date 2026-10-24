@@ -149,6 +149,19 @@ def test_dyn_hall_walkers_are_unmapped_models_of_the_world_parked_outside_the_wa
     assert {"b_walker"} <= {m.get("name") for m in ET.fromstring(w.sdf(spec)).iter("model")}
 
 
+def test_flip_world_has_a_short_route_through_a_door_and_a_longer_free_one_around_the_wall():
+    spec = w.flip_spec()
+    trials = {t["id"]: t for t in w.scenario(spec)}                                                                  # with the reference shortest length
+    assert set(trials) == {"flip_free", "flip_door"} and "dyn" not in trials["flip_free"] and trials["flip_door"]["dyn"][0]["path"] == [[12.0, 0.0]]
+    occ, origin = w.rasterize(spec)
+    res = spec["res"]
+    cell = lambda x, y: (occ.shape[0] - 1 - int((y - spec["bounds"][1]) / res), int((x - spec["bounds"][0]) / res))
+    assert not occ[cell(12.0, 0.0)] and not occ[cell(12.0, 6.0)] and occ[cell(12.0, 3.0)] and occ[cell(12.0, -3.0)]      # door and north gap are open, the wall is not
+    s = trials["flip_free"]["shortest"]
+    long_len = 2 * (10.0 ** 2 + 6.0 ** 2) ** 0.5
+    assert 19.5 < s < 20.5 and long_len > s * 1.1                                                                      # short route ~20 m through the door; the way round is more than 10 % longer
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
