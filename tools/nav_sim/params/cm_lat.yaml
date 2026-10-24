@@ -1,0 +1,7 @@
+# Overlay (params_merge.py): a second Collision Monitor polygon, wider than the robot, that halves the speed when more than min_points scan points are inside it. The packaged
+# FootprintApproach only projects the robot's own velocity (1.2 s), so a person who steps in from the side at 1 m/s is inside the footprint (9 cm wider than the physical body) before the
+# robot can brake. Zone in base_footprint, metres: 1.0 ahead, 0.3 behind, 0.8 to each side (the footprint half-width is 0.29: 0.5 m margin). Parameter names from nav2_collision_monitor polygon.cpp (jazzy).
+collision_monitor:
+  ros__parameters:
+    polygons: [FootprintApproach, LateralSlowdown]
+    LateralSlowdown: {type: polygon, points: "[[1.0, 0.8], [1.0, -0.8], [-0.3, -0.8], [-0.3, 0.8]]", action_type: slowdown, slowdown_ratio: 0.5, min_points: 6, visualize: false, enabled: true}
