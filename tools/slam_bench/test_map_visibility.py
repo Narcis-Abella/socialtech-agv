@@ -238,6 +238,31 @@ def test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag():
         mv.bag_scans = read_bag
 
 
+def pgm_width(path):
+    return int(Path(path).read_bytes()[:40].split()[1])
+
+
+def test_res_sets_the_cell_size_and_the_default_speck_size_follows_the_cell_area():
+    assert mv.default_min_component(0.05) == 10 and mv.default_min_component(0.025) == 40       # the same physical size in smaller cells
+    scans, traj = drive(planes(pillar=True))
+    P, n, Q = world_cloud(scans, PHANTOM)
+    poses = np.c_[np.arange(len(traj)) * 0.1, traj, np.tile([0, 0, 0, 1.0], (len(traj), 1))]
+    read_bag, mv.bag_scans = mv.bag_scans, lambda bag, poses, topic: scans
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            pm.write_ply(tmp / "world.ply", P)
+            np.savetxt(tmp / "poses.txt", poses)
+            args = ["bag", str(tmp / "poses.txt"), str(tmp / "world.ply")]
+            mv.main(args + [str(tmp / "a")])
+            mv.main(args + [str(tmp / "d"), "--res", "0.025", "--ply-out", str(tmp / "d.ply")])
+            assert "resolution: 0.025" in (tmp / "d.yaml").read_text() and "resolution: 0.05" in (tmp / "a.yaml").read_text()
+            assert abs(pgm_width(tmp / "d.pgm") - 2 * pgm_width(tmp / "a.pgm")) <= 2         # half the cell, twice the cells per side
+            assert len(pm.read_ply(tmp / "d.ply")) > 1000
+    finally:
+        mv.bag_scans = read_bag
+
+
 LIVOX = {"livox_ros_driver2/msg/CustomPoint": "uint32 offset_time\nfloat32 x\nfloat32 y\nfloat32 z\nuint8 reflectivity\nuint8 tag\nuint8 line\n",
          "livox_ros_driver2/msg/CustomMsg": "std_msgs/Header header\nuint64 timebase\nuint32 point_num\nuint8 lidar_id\nuint8[3] rsvd\nCustomPoint[] points\n"}
 
@@ -311,6 +336,7 @@ if __name__ == "__main__":
     test_a_higher_ceil_keeps_the_points_between_the_default_ceiling_and_it()
     test_the_ghost_band_goes_up_to_ceil()
     test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag()
+    test_res_sets_the_cell_size_and_the_default_speck_size_follows_the_cell_area()
     test_custom_points_reads_the_cdr_bytes_whatever_the_frame_id_and_the_padding()
     test_bag_scans_gives_the_same_scans_from_a_custommsg_bag_and_a_pointcloud2_bag()
     print("ok")

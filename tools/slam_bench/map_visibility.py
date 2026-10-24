@@ -1,6 +1,6 @@
 """2D map of a SLAM cloud cleaned with the raw scans: drops points beams pass through, and frees unknown cells beams crossed.
 
-  map_visibility.py <bag> <poses.txt> <world.ply> <out_prefix> [--topic /livox/lidar] [--ceil 1.80] [--min-ratio 0.10] [--min-component 10] [--no-fill] [--ply-out cloud.ply]
+  map_visibility.py <bag> <poses.txt> <world.ply> <out_prefix> [--topic /livox/lidar] [--ceil 1.80] [--min-ratio 0.10] [--res 0.05] [--min-component 10] [--no-fill] [--ply-out cloud.ply]
 
 Needs numpy + scipy (+ rosbags to read the bag). Inputs: the ROS 2 bag of the mapping run (sensor_msgs/PointCloud2 or livox_ros_driver2/CustomMsg), the SLAM poses (t x y z qx qy qz qw, the IMU pose at the END of each
 scan, as Voxel-SLAM's alidarState.txt) and the SLAM cloud in the same world (x y z PLY). The cloud is levelled and aligned like ply_to_map does; the bag is read twice.
@@ -34,6 +34,11 @@ NEAR, FILL_MARGIN = 8.0, 0.05           # m: unknown cells this close to the pat
 N_PASS, MIN_HEIGHTS, MAX_HIT_RATIO = 3, 2, 0.02
 MAX_GAP = 0.5                           # s, poses further apart than this are not interpolated
 SCAN_MID = 0.05                         # s after the header stamp: the pose used for a 10 Hz Livox scan
+
+
+def default_min_component(res):
+    """MIN_COMPONENT is counted in 5 cm cells: the same physical speck size in cells of another size (area scales with res squared)."""
+    return max(1, round(MIN_COMPONENT * (0.05 / res) ** 2))
 
 
 def ghost_voxels(hit, passed, min_ratio=MIN_RATIO):
@@ -203,7 +208,8 @@ def main(argv):
     ap.add_argument("--topic", default="/livox/lidar")
     ap.add_argument("--ceil", type=float, default=pm.OBST_HI, help="m above the floor; points higher are dropped (30 for an outdoor map), as in ply_to_map")
     ap.add_argument("--min-ratio", type=float, default=MIN_RATIO, help="hit ratio under which a voxel of 10 cm is a ghost (0 = skip the step)")
-    ap.add_argument("--min-component", type=int, default=MIN_COMPONENT, help="cells: occupied islands smaller than this are freed (0 = off)")
+    ap.add_argument("--res", type=float, default=0.05, help="m, cell size of the map (the cloud must be at least this dense: vs_to_ply voxel <= res)")
+    ap.add_argument("--min-component", type=int, default=None, help="cells: occupied islands smaller than this are freed (0 = off; default: the size of 10 cells of 5 cm, in cells of --res)")
     ap.add_argument("--no-fill", action="store_true", help="skip freeing the unknown cells the beams crossed")
     ap.add_argument("--ply-out", help="also save the cloud the map shows (obstacle band, over occupied cells, in the map's frame), to inspect it")
     a = ap.parse_args(argv)
@@ -213,10 +219,10 @@ def main(argv):
     except ValueError as e:
         sys.exit(f"error: {e}")
     poses = np.loadtxt(a.poses, usecols=range(8))
-    grid, origin, Qk = build_map(P, Q, info["T"], lambda: bag_scans(a.bag, poses, a.topic), poses[:, 1:4], min_ratio=a.min_ratio, min_component=a.min_component, fill=not a.no_fill, ceil=a.ceil)
-    pm.write_map(a.out_prefix, grid, 0.05, origin, info["T"])
+    grid, origin, Qk = build_map(P, Q, info["T"], lambda: bag_scans(a.bag, poses, a.topic), poses[:, 1:4], res=a.res, min_ratio=a.min_ratio, min_component=default_min_component(a.res) if a.min_component is None else a.min_component, fill=not a.no_fill, ceil=a.ceil)
+    pm.write_map(a.out_prefix, grid, a.res, origin, info["T"])
     if a.ply_out:
-        pm.write_ply(a.ply_out, occupied_points(Qk, grid, origin, ceil=a.ceil))
+        pm.write_ply(a.ply_out, occupied_points(Qk, grid, origin, res=a.res, ceil=a.ceil))
     print(f"{grid.shape[1]}x{grid.shape[0]} cells: {(grid == pm.OCC).mean():.1%} occupied, {(grid == pm.FREE).mean():.1%} free, {(grid == pm.UNK).mean():.1%} unknown")
 
 
