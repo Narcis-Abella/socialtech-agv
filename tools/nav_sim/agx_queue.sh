@@ -6,7 +6,7 @@
 # spec file: blocks separated by a blank line. First line "trials <name> <scenario.json under tools/> [reps]" (run_trials.sh) or "real <name> <script under nav_sim/>" (real_factorial.sh, record_real_inputs.sh ...);
 # the next lines are KEY=VALUE for the container (as the env of agx_run.sh / agx_real.sh; a value may hold spaces and semicolons). Lines starting with # are ignored.
 # Container env values are taken literally (docker --env-file): write BAGS=a b c without quotes.
-# env: AFTER=<remote dir of another queue> (wait for its QUEUE-DONE first), DRY=1 (build the files, send nothing), IMAGE (socialtech:sim-main), SIM_REPO (~/Documents/GitHub/hospital-agv-sim, committed), RUN_TIMEOUT (7200 s per job)
+# env: AFTER=<remote dir of another queue> (wait for its QUEUE-DONE first), DRY=1 (build the files, send nothing), IMAGE (socialtech:sim-nav2), SIM_REPO (~/Documents/GitHub/hospital-agv-sim, committed), RUN_TIMEOUT (7200 s per job)
 set -eo pipefail
 KEY=~/.nvsdkm/.ssh/id_rsa_sdkm; HOST=jetson@socialtech-agx-1
 ssh_() { ssh -i "$KEY" -o ConnectTimeout=10 "$HOST" "$@"; }
@@ -34,9 +34,9 @@ submit)
     mkdir -p "$tmp/$name"; echo "$block" | tail -n +2 | grep -v '^#' | grep . > "$tmp/$name/user.env" || true
     case "$kind" in
       trials) { echo "SIM_SRC=/simsrc"; echo "ROS_DOMAIN_ID=53"; cat "$tmp/$name/user.env"; echo "SIM_COMMIT=$hash"; echo "REPO_COMMIT=$(git -C "$repo" rev-parse --short HEAD)$([ -n "$(git -C "$repo" status --porcelain)" ] && echo -dirty)"; } > "$tmp/$name/env.list"
-        cmd="timeout ${RUN_TIMEOUT:-7200} docker run --rm --name nav2run --network host --env-file $name/env.list -e DDS_IFACE=lo -v \$PWD/tools:/tools:ro -v \$PWD/$name/out:/out -v \$HOME/sim_src/hospital-agv-sim_$hash:/simsrc:ro ${IMAGE:-socialtech:sim-main} /tools/nav_sim/run_trials.sh /tools/$arg /out ${reps:-1}";;
+        cmd="timeout ${RUN_TIMEOUT:-7200} docker run --rm --name nav2run --network host --env-file $name/env.list -e DDS_IFACE=lo -v \$PWD/tools:/tools:ro -v \$PWD/$name/out:/out -v \$HOME/sim_src/hospital-agv-sim_$hash:/simsrc:ro ${IMAGE:-socialtech:sim-nav2} /tools/nav_sim/run_trials.sh /tools/$arg /out ${reps:-1}";;
       real) cp "$tmp/$name/user.env" "$tmp/$name/env.list"
-        cmd="timeout ${RUN_TIMEOUT:-7200} docker run --rm --name nav2run --network host --env-file $name/env.list -v \$PWD/tools:/tools:ro -v \$PWD/$name/out:/out -v \$HOME/nav_out:/navout:ro -v \$HOME/nav_data:/data:ro -v \$HOME/rosbags:/bags:ro -v \$HOME/nav_inputs:/inputs ${IMAGE:-socialtech:sim-main} /tools/nav_sim/$arg /out";;
+        cmd="timeout ${RUN_TIMEOUT:-7200} docker run --rm --name nav2run --network host --env-file $name/env.list -v \$PWD/tools:/tools:ro -v \$PWD/$name/out:/out -v \$HOME/nav_out:/navout:ro -v \$HOME/nav_data:/data:ro -v \$HOME/rosbags:/bags:ro -v \$HOME/nav_inputs:/inputs ${IMAGE:-socialtech:sim-nav2} /tools/nav_sim/$arg /out";;
       *) echo "unknown job kind: $kind" >&2; exit 1;;
     esac
     {
