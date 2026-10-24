@@ -1,6 +1,6 @@
 """Paired comparison of two sets of moving-obstacle runs (dyn_metrics.load_run per seed), paired by (seed, trial id).
 usage: dyn_compare.py <base run dirs, comma-separated> <candidate run dirs, comma-separated>   (same number of dirs, same order of seeds)
-reached / contact: (pairs only the base, pairs only the candidate) succeeded / avoided the contact, exact McNemar p. gap_body, duration, wait: paired mean difference candidate - base with a bootstrap 95 % CI;
+reached / contact: (pairs only the base, pairs only the candidate) succeeded / avoided the contact (contact = the robot was moving when it touched: dyn_metrics active_contact), exact McNemar p. gap_body, duration, wait: paired mean difference candidate - base with a bootstrap 95 % CI;
 duration only over pairs both reached."""
 import sys
 
@@ -25,7 +25,7 @@ def compare(base, cand):
     pairs = [(b, c) for b, c in allp if b["started"] and c["started"]]   # a trial where either obstacle never started is not an encounter
     res = {"n": len(pairs), "not_started": len(allp) - len(pairs)}
     res["reached"] = stats.discordant([b["reached"] for b, _ in pairs], [c["reached"] for _, c in pairs])
-    res["contact"] = stats.discordant([not b["contact"] for b, _ in pairs], [not c["contact"] for _, c in pairs])
+    res["contact"] = stats.discordant([not b["active_contact"] for b, _ in pairs], [not c["active_contact"] for _, c in pairs])   # active: a contact with the robot already stopped is not the robot hitting something
     for k, p in (("reached", res["reached"]), ("contact", res["contact"])):
         res[k + "_p"] = stats.mcnemar_exact(*p)
     for key in ("gap_body", "wait_s"):
@@ -34,7 +34,7 @@ def compare(base, cand):
     both = [(b["duration"], c["duration"]) for b, c in pairs if b["reached"] and c["reached"]]
     res["n_duration"] = len(both)
     res["duration"] = stats.paired_bootstrap_ci(np.array([x for x, _ in both]), np.array([y for _, y in both])) if both else (float("nan"),) * 3
-    res["totals"] = {"reached": (sum(b["reached"] for b, _ in pairs), sum(c["reached"] for _, c in pairs)), "contact": (sum(b["contact"] for b, _ in pairs), sum(c["contact"] for _, c in pairs))}
+    res["totals"] = {"reached": (sum(b["reached"] for b, _ in pairs), sum(c["reached"] for _, c in pairs)), "contact": (sum(b["active_contact"] for b, _ in pairs), sum(c["active_contact"] for _, c in pairs))}
     return res
 
 
