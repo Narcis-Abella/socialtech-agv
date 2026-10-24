@@ -151,8 +151,27 @@ def dense_rows_spec():
     return {"name": "dense_rows", "res": 0.05, "bounds": [-1.0, -9.0, 37.0, 9.0], "seed": [2.0, -4.8], "boxes": boxes, "trials": trials}
 
 
+def walker(path, speed, trigger, parked=(12.0, -30.0)):
+    """One moving obstacle of a trial (dyn.py): the 0.5 x 0.5 x 1.7 m model "b_walker" waits at `parked`, outside the walls, and walks `path` at `speed` m/s once the robot enters `trigger` = [x, y, r]."""
+    return {"model": "b_walker", "path": path, "speed": speed, "trigger": trigger, "size": [0.5, 0.5, 1.7], "parked": list(parked)}
+
+
+def dyn_hall_spec():
+    """A 24 x 12 m empty hall; every trial drives 20 m along y = 0 (x 2 -> 22) with one unmapped moving obstacle (a person-sized box, 1.0 m/s unless said otherwise):
+    block = standing in the lane at x = 12 | cross_n/cross_s{k} = crosses the lane at x = 11 from the north / south, released when the robot reaches x = 5..9 (sweeps who gets there first)
+    | head{k} = walks toward the robot along y = 0, +0.3, -0.3 | overtake = walks 0.4 m/s ahead along the lane (slower than the robot)."""
+    boxes = [box("n", 12.0, 6.05, 24.2, 0.1), box("s", 12.0, -6.05, 24.2, 0.1), box("w", -0.05, 0.0, 0.1, 12.2), box("e", 24.05, 0.0, 0.1, 12.2), box("walker", 12.0, -30.0, 0.5, 0.5, sz=1.7, mapped=False)]
+    base = {"start": [2.0, 0.0, 0.0], "goal": [22.0, 0.0, 0.0]}
+    trials = [{"id": "block", **base, "dyn": [walker([[12.0, 0.0]], 0.0, [2.0, 0.0, 1.5])]}]
+    for tag, y0, y1 in (("n", 5.0, -5.0), ("s", -5.0, 5.0)):
+        trials += [{"id": f"cross_{tag}{k}", **base, "dyn": [walker([[11.0, y0], [11.0, y1]], 1.0, [float(xt), 0.0, 0.3])]} for k, xt in enumerate((5, 6, 7, 8, 9))]
+    trials += [{"id": f"head{k}", **base, "dyn": [walker([[22.0, y], [3.0, y]], 1.0, [2.0, 0.0, 1.5])]} for k, y in enumerate((0.0, 0.3, -0.3))]
+    trials += [{"id": "overtake", **base, "dyn": [walker([[6.0, 0.0], [22.0, 0.0]], 0.4, [2.0, 0.0, 1.5])]}]
+    return {"name": "dyn_hall", "res": 0.05, "bounds": [-1.0, -7.0, 25.0, 7.0], "seed": [2.0, 0.0], "boxes": boxes, "trials": trials}
+
+
 ALL = {"doors": doors_spec, "corridor_gap12": lambda: corridor_spec(1.2, "corridor_gap12"), "corridor_gap09": lambda: corridor_spec(0.9, "corridor_gap09"),
-       "corridor_blocked": lambda: corridor_spec(0.0, "corridor_blocked"), "turn_l": turn_spec, "rows": rows_spec, "dense_rows": dense_rows_spec}
+       "corridor_blocked": lambda: corridor_spec(0.0, "corridor_blocked"), "turn_l": turn_spec, "rows": rows_spec, "dense_rows": dense_rows_spec, "dyn_hall": dyn_hall_spec}
 
 
 if __name__ == "__main__":

@@ -1,0 +1,11 @@
+# Overlay (params_merge.py): an obstacle layer in the GLOBAL costmap, so the planner sees what is not in the map (people, carts, a box in a hall). The packaged file has static_layer + inflation_layer only:
+# the global plan goes through anything unmapped and the controller can only stop in front of it. Same scan source as the local obstacle layer; ranges are the planner's horizon, not the controller's.
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      plugins: [static_layer, obstacle_layer, inflation_layer]
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        observation_sources: scan
+        scan: {topic: /scan, max_obstacle_height: 2.0, clearing: true, marking: true, data_type: LaserScan, raytrace_max_range: 6.0, raytrace_min_range: 0.0, obstacle_max_range: 5.0, obstacle_min_range: 0.0}

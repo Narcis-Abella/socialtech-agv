@@ -18,6 +18,7 @@ from rclpy.action import ActionClient
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
 
+import dyn
 from initpose import init_offset
 
 HZ = 50.0
@@ -44,6 +45,7 @@ class Runner:
         self.gt = None
         self.cmd = {"cmd_vel_nav": (0.0, 0.0), "cmd_vel_smoothed": (0.0, 0.0), "cmd_vel": (0.0, 0.0)}
         self.recording, self.rows, self.plans, self.k = False, [], [], 0
+        self.mover = None   # dyn.Mover, created by the first trial that has moving obstacles
         self.plan_log = []   # per plan: [t, poses, distance est->plan, distance gt->plan, distance est->first pose, plan stamp]
         node.create_subscription(PoseStamped, "/gt/pose", self.on_gt, 10)
         for name in self.cmd:
@@ -133,6 +135,12 @@ class Runner:
         self.k += 1
         est = self.estimate()
         init_err = (math.hypot(est[0] - self.gt[0], est[1] - self.gt[1]) if est else math.nan) if chained else self.reset(trial["start"], offset)
+        walkers = trial.get("dyn", [])
+        if walkers:
+            self.mover = self.mover or dyn.Mover(os.environ.get("WORLD", "loyola"), self.now)
+            self.mover.park(walkers)
+            self.mover.log.clear()
+        waiting = list(walkers)
         goal = NavigateToPose.Goal()
         p = PoseStamped()
         p.header.frame_id, p.header.stamp = "map", self.n.get_clock().now().to_msg()
@@ -152,6 +160,9 @@ class Runner:
             limit = float(os.environ.get("TRIAL_TIMEOUT", 240))
             while not result.done() and self.now() - t0 < limit:
                 rclpy.spin_once(self.n, timeout_sec=0.02)
+                for d in [d for d in waiting if dyn.triggered(self.gt, d["trigger"])]:
+                    waiting.remove(d)
+                    self.mover.start(d)
             if result.done():
                 r = result.result()
                 status = {GoalStatus.STATUS_SUCCEEDED: "succeeded", GoalStatus.STATUS_ABORTED: "aborted", GoalStatus.STATUS_CANCELED: "canceled"}.get(r.status, str(r.status))
@@ -161,8 +172,12 @@ class Runner:
                 rclpy.spin_until_future_complete(self.n, handle.cancel_goal_async(), timeout_sec=5.0)
         t1 = self.now()
         self.recording = False
+        dyn_log = list(self.mover.log) if walkers else []
+        if walkers:
+            self.mover.park(walkers)
         self.spin_for(1.0)
-        rec = {"id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
+        rec = {"dyn": walkers, "dyn_log": dyn_log, "dyn_unstarted": [d["model"] for d in waiting],
+"id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
                "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
                "recoveries": feedback[-1][1] if feedback else 0, "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
@@ -186,6 +201,8 @@ def main(scenario, out_dir, reps=1):
     for k in range(int(reps)):
         for t in trials:
             r.run_trial(t, f"r{k}")
+    if r.mover:
+        r.mover.close()
     rclpy.shutdown()
 
 

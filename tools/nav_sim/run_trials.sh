@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs a scenario file against Nav2 in the simulation, inside the `sim` image on the board. usage: run_trials.sh <scenario.json> <out dir> [reps]
-#   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (nav2_params.yaml instead of the packaged one), MERGE (overlay yaml merged into it first, may add plugin blocks), SET (comma-separated path=value overrides of it, e.g. "amcl.ros__parameters.alpha1=0.05,amcl.ros__parameters.alpha2=0.05"), MAP (map yaml instead of the packaged loyola.yaml), SIM_SRC (hospital-agv-sim checkout to build),
+#   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (nav2_params.yaml instead of the packaged one), MERGE (overlay yamls, space-separated, merged into it first in order, may add plugin blocks), SET (comma-separated path=value overrides of it, e.g. "amcl.ros__parameters.alpha1=0.05,amcl.ros__parameters.alpha2=0.05"), MAP (map yaml instead of the packaged loyola.yaml), SIM_SRC (hospital-agv-sim checkout to build),
 #   SIM_ARGS (extra simulation.launch.py arguments: world:=, spawn_x:=, noise_seed:=, odom_source:= ...), ROS_DOMAIN_ID (53), SIM_WAIT (45 s), NAV_TIMEOUT (180 s), plus RUNNER (nav_sim/trials.py; nav_sim/plan_bench.py for the planner benchmark) and the env of the runner
 set -eo pipefail
 scenario=${1:?scenario.json}; out=${2:?out dir}; reps=${3:-1}
@@ -17,8 +17,12 @@ ros2 launch hospital-agv-sim simulation.launch.py headless:=true $SIM_ARGS > "$o
 sleep "${SIM_WAIT:-45}"
 params=${PARAMS:-$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml}
 if [ -n "$MERGE" ]; then   # overlay that may add plugin blocks (params_merge.py), applied before SET
-  python3 /tools/nav_sim/params_merge.py "$params" "$MERGE" "$out/params_merged.yaml"
-  params=$out/params_merged.yaml
+  i=0
+  for f in $MERGE; do   # several overlays, space-separated, applied in order
+    i=$((i + 1))
+    python3 /tools/nav_sim/params_merge.py "$params" "$f" "$out/params_merged$i.yaml"
+    params=$out/params_merged$i.yaml
+  done
 fi
 if [ -n "$SET" ]; then   # parameter variant: comma-separated path=value pairs applied to the base file (params_variant.py keeps types and refuses unknown keys)
   python3 /tools/nav_sim/params_variant.py "$params" "$out/params_variant.yaml" ${SET//,/ }

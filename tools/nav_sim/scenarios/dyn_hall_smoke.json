@@ -1,0 +1,138 @@
+{
+ "name": "dyn_hall_smoke",
+ "map": "map.yaml",
+ "world": "world.sdf",
+ "trials": [
+  {
+   "id": "block",
+   "start": [
+    2.0,
+    0.0,
+    0.0
+   ],
+   "goal": [
+    22.0,
+    0.0,
+    0.0
+   ],
+   "dyn": [
+    {
+     "model": "b_walker",
+     "path": [
+      [
+       12.0,
+       0.0
+      ]
+     ],
+     "speed": 0.0,
+     "trigger": [
+      2.0,
+      0.0,
+      1.5
+     ],
+     "size": [
+      0.5,
+      0.5,
+      1.7
+     ],
+     "parked": [
+      12.0,
+      -30.0
+     ]
+    }
+   ],
+   "shortest": 20.0,
+   "reachable": true
+  },
+  {
+   "id": "cross_n3",
+   "start": [
+    2.0,
+    0.0,
+    0.0
+   ],
+   "goal": [
+    22.0,
+    0.0,
+    0.0
+   ],
+   "dyn": [
+    {
+     "model": "b_walker",
+     "path": [
+      [
+       11.0,
+       5.0
+      ],
+      [
+       11.0,
+       -5.0
+      ]
+     ],
+     "speed": 1.0,
+     "trigger": [
+      8.0,
+      0.0,
+      0.3
+     ],
+     "size": [
+      0.5,
+      0.5,
+      1.7
+     ],
+     "parked": [
+      12.0,
+      -30.0
+     ]
+    }
+   ],
+   "shortest": 20.0,
+   "reachable": true
+  },
+  {
+   "id": "head0",
+   "start": [
+    2.0,
+    0.0,
+    0.0
+   ],
+   "goal": [
+    22.0,
+    0.0,
+    0.0
+   ],
+   "dyn": [
+    {
+     "model": "b_walker",
+     "path": [
+      [
+       22.0,
+       0.0
+      ],
+      [
+       3.0,
+       0.0
+      ]
+     ],
+     "speed": 1.0,
+     "trigger": [
+      2.0,
+      0.0,
+      1.5
+     ],
+     "size": [
+      0.5,
+      0.5,
+      1.7
+     ],
+     "parked": [
+      12.0,
+      -30.0
+     ]
+    }
+   ],
+   "shortest": 20.0,
+   "reachable": true
+  }
+ ]
+}

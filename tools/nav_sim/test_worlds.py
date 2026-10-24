@@ -133,6 +133,22 @@ def test_dense_rows_hall_is_as_occupied_as_the_real_maps_and_lanes_are_reachable
     assert len(trials) >= 6 and all(t["reachable"] for t in trials) and all(t["shortest"] > 25 for t in trials)
 
 
+def test_dyn_hall_walkers_are_unmapped_models_of_the_world_parked_outside_the_walls():
+    spec = w.dyn_hall_spec()
+    by_name = {"b_" + b["name"]: b for b in spec["boxes"]}
+    x0, y0, x1, y1 = spec["bounds"]
+    occ, origin = w.rasterize(spec)
+    assert occ.sum() > 0 and not occ[occ.shape[0] // 2, occ.shape[1] // 2]            # the hall is mapped and its middle is free
+    for t in spec["trials"]:
+        assert len(t["dyn"]) == 1
+        for d in t["dyn"]:
+            b = by_name[d["model"]]                                                     # the model exists in the world
+            assert not b["mapped"] and [b["x"], b["y"]] == d["parked"] and not (x0 < b["x"] < x1 and y0 < b["y"] < y1)
+            assert abs(d["size"][0] - b["sx"]) < 1e-9 and abs(d["size"][2] - b["sz"]) < 1e-9
+            assert len(d["trigger"]) == 3 and d["speed"] >= 0
+    assert {"b_walker"} <= {m.get("name") for m in ET.fromstring(w.sdf(spec)).iter("model")}
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
