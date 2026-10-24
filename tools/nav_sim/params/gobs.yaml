@@ -1,3 +1,4 @@
+# ADOPTED into docker/ros_nav/socialtech_nav/config/nav2_params.yaml on 2026-10-24 (D-2.1); kept so the dyn_gobs / gobs_* series can be reproduced against an image that still packages the old params.
 # Overlay (params_merge.py): an obstacle layer in the GLOBAL costmap, so the planner sees what is not in the map (people, carts, a box in a hall). The packaged file has static_layer + inflation_layer only:
 # the global plan goes through anything unmapped and the controller can only stop in front of it. Same scan source as the local obstacle layer; ranges are the planner's horizon, not the controller's.
 global_costmap:
