@@ -2,8 +2,8 @@
 import dyn_compare as dc
 
 
-def m(i, reached, contact, gap, dur, wait=0.0):
-    return {"id": i, "reached": reached, "contact": contact, "gap_body": gap, "duration": dur, "wait_s": wait}
+def m(i, reached, contact, gap, dur, wait=0.0, started=True):
+    return {"id": i, "reached": reached, "contact": contact, "gap_body": gap, "duration": dur, "wait_s": wait, "started": started}
 
 
 def test_pairs_by_seed_and_trial_id_even_when_the_order_differs():
@@ -39,6 +39,13 @@ def test_seeds_are_separate_pairs():
     cand = [[m("a", True, False, 1, 30)], [m("a", True, False, 1, 30)]]
     r = dc.compare(base, cand)
     assert r["n"] == 2 and r["reached"] == (0, 1)
+
+
+def test_pairs_where_either_obstacle_never_started_are_left_out_and_counted():
+    base = [[m("a", True, False, 1.0, 30), m("b", True, False, 1.0, 30)]]
+    cand = [[m("a", True, False, 1.0, 30), m("b", False, False, None, 120, started=False)]]
+    r = dc.compare(base, cand)
+    assert r["n"] == 1 and r["not_started"] == 1 and r["reached"] == (0, 0)
 
 
 def test_a_missing_trial_is_refused_not_silently_dropped():

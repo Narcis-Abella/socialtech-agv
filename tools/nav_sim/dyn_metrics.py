@@ -1,7 +1,7 @@
 """Safety and outcome of trials with moving obstacles (trials.py JSON with "dyn" / "dyn_log"), from the ground truth of both.
 usage: dyn_metrics.py <run dir> [<run dir> ...]    prints one line per trial and the totals.
 gap_body = closest approach (m) between the robot's physical body (BODY, from the simulated model) and the obstacle; gap_footprint the same against Nav2's footprint (FOOTPRINT, the planning/collision-monitor shape).
-Both assume the robot's ground-truth pose is the centre of the rectangle. contact = gap_body == 0. reached = Nav2 succeeded and the ground-truth pose ends within GOAL_TOL of the goal."""
+Both assume the robot's ground-truth pose is the centre of the rectangle. contact = gap_body == 0. started = every obstacle was released. reached = Nav2 succeeded and the ground-truth pose ends within GOAL_TOL of the goal."""
 import glob
 import json
 import math
@@ -49,7 +49,8 @@ def trial_metrics(rec):
     last = rows[-1] if rows else None
     reached = bool(rec["status"] == "succeeded" and last and math.hypot(last[col["gt_x"]] - rec["goal"][0], last[col["gt_y"]] - rec["goal"][1]) <= GOAL_TOL)
     return {"id": rec["id"], "tag": rec.get("tag"), "status": rec["status"], "reached": reached, "duration": rec["duration"], "recoveries": rec.get("recoveries", 0),
-            "gap_body": gap_b, "gap_footprint": gap_f, "contact": gap_b is not None and gap_b <= 0.0, "wait_s": wait}
+            "gap_body": gap_b, "gap_footprint": gap_f, "contact": gap_b is not None and gap_b <= 0.0, "wait_s": wait,
+            "started": not rec.get("dyn_unstarted")}   # False: the obstacle was never released (the robot missed the trigger circle), the trial is not an encounter
 
 
 def load_run(d):

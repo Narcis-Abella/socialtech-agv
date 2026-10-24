@@ -71,6 +71,14 @@ def test_an_obstacle_that_never_comes_within_three_metres_reports_that_bound():
     assert dm.trial_metrics(trial([0.0, 1.0, 2.0], obstacle=(0.0, 20.0)))["gap_body"] == dm.NEAR
 
 
+def test_a_trial_whose_obstacle_never_started_is_flagged_as_not_an_encounter():
+    t = trial([0.0, 1.0, 2.0], obstacle=(4.0, 0.0))
+    t["dyn_log"], t["dyn_unstarted"] = [], ["b_walker"]
+    r = dm.trial_metrics(t)
+    assert r["started"] is False and r["gap_body"] is None
+    assert dm.trial_metrics(trial([0.0, 1.0, 2.0], obstacle=(4.0, 0.0)))["started"] is True
+
+
 def test_summarize_a_run_dir_reads_every_trial_file():
     with tempfile.TemporaryDirectory() as d:
         for k, xs in enumerate(([0.0, 3.9, 4.05], [0.0, 1.0, 2.0])):

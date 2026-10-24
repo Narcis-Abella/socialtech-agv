@@ -21,8 +21,9 @@ def _pairs(base, cand):
 
 
 def compare(base, cand):
-    pairs = _pairs(base, cand)
-    res = {"n": len(pairs)}
+    allp = _pairs(base, cand)
+    pairs = [(b, c) for b, c in allp if b["started"] and c["started"]]   # a trial where either obstacle never started is not an encounter
+    res = {"n": len(pairs), "not_started": len(allp) - len(pairs)}
     res["reached"] = stats.discordant([b["reached"] for b, _ in pairs], [c["reached"] for _, c in pairs])
     res["contact"] = stats.discordant([not b["contact"] for b, _ in pairs], [not c["contact"] for _, c in pairs])
     for k, p in (("reached", res["reached"]), ("contact", res["contact"])):
@@ -42,7 +43,7 @@ def main(argv):
     cand = [dyn_metrics.load_run(d + "/out") if not d.endswith("/out") else dyn_metrics.load_run(d) for d in argv[1].split(",")]
     r = compare(base, cand)
     f = lambda t: f"{t[0]:+.2f} [{t[1]:+.2f}, {t[2]:+.2f}]"
-    print(f"pairs {r['n']}  reached base {r['totals']['reached'][0]} -> cand {r['totals']['reached'][1]}  only-base/only-cand {r['reached']}  McNemar p={r['reached_p']:.3f}")
+    print(f"pairs {r['n']} (left out, obstacle not released: {r['not_started']})  reached base {r['totals']['reached'][0]} -> cand {r['totals']['reached'][1]}  only-base/only-cand {r['reached']}  McNemar p={r['reached_p']:.3f}")
     print(f"contacts base {r['totals']['contact'][0]} -> cand {r['totals']['contact'][1]}  avoided only-base/only-cand {r['contact']}  McNemar p={r['contact_p']:.3f}")
     print(f"gap_body (m) {f(r['gap_body'])}   wait (s) {f(r['wait_s'])}   duration (s, {r['n_duration']} pairs both reached) {f(r['duration'])}")
 
