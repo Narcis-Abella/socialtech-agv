@@ -29,6 +29,13 @@ def test_inflation_values_below_lethal_are_not_counted():
     assert ghost.wake_cells(cm, st, 20, 10, (0.0, 0.0), 0.05, []) == 0
 
 
+def test_wake_xy_gives_the_cell_centres():
+    cm, st = grid()
+    cm[27] = 100
+    x, y = ghost.wake_xy(cm, st, 20, 10, (1.0, 2.0), 0.05, [])
+    assert list(np.round(x, 3)) == [1.375] and list(np.round(y, 3)) == [2.075]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

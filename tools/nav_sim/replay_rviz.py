@@ -17,6 +17,8 @@ from scipy.spatial import cKDTree
 import analyze as a
 import dyn
 import dyn_metrics as dm
+import gcm_codec
+import ghost
 import metrics as m
 import scenarios as sc
 
@@ -70,6 +72,7 @@ def load_case(spec, ctx, occ):
     rows = np.asarray(rec["rows"], float)
     t, pose = rows[:, col["t"]] - rows[0, col["t"]], rows[:, [col["gt_x"], col["gt_y"], col["gt_yaw"]]]
     w = walker_series(rec, rows[0, col["t"]])
+    extra = {"gcm": [[tf - rows[0, col["t"]], pl] for tf, pl in rec.get("gcm_frames", [])], "gcm_meta": rec.get("gcm_meta")}      # recorded global costmap (REC_GCM=1), times relative to the trial start
     if w is not None:                       # encounter with a moving obstacle: report the closest approach to it instead of the wall clearance
         gaps = []
         for tt, p in zip(t, pose):
@@ -79,14 +82,14 @@ def load_case(spec, ctx, occ):
         k = int(np.argmin(gaps[:, 0]))
         d = dm.trial_metrics(rec)
         return {"label": label, "id": tid, "t": t, "pose": pose, "plan": np.asarray(rec["plan_first"], float), "min_pose": pose[k], "metric": float(gaps[k, 0]), "face": float(gaps[k, 1]), "cell": None,
-                "near": None, "duration": float(rec["duration"]), "status": rec["status"], "walker": w, "dyn": d}
+                "near": None, "duration": float(rec["duration"]), "status": rec["status"], "walker": w, "dyn": d, **extra}
     sub = pose[::5]                         # same sampling as analyze.trial_metrics
     cl = np.array([m.footprint_clearance(ctx["dist"], ctx["origin"], ctx["res"], *p, *ctx["footprint"]) for p in sub])
     away = (np.hypot(*(sub[:, :2] - rec["start"][:2]).T) > 1.0) & (np.hypot(*(sub[:, :2] - rec["goal"][:2]).T) > 1.0)
     i = int(np.flatnonzero(away)[np.argmin(cl[away])]) if away.any() else int(np.argmin(cl))
     gap, cell, near = face_clearance(occ, ctx["origin"], ctx["res"], *sub[i], *ctx["footprint"])
     return {"label": label, "id": tid, "t": t, "pose": pose, "plan": np.asarray(rec["plan_first"], float), "min_pose": sub[i], "metric": float(cl[i]), "face": gap, "cell": cell,
-            "near": near, "duration": float(rec["duration"]), "status": rec["status"]}
+            "near": near, "duration": float(rec["duration"]), "status": rec["status"], **extra}
 
 
 def colours(labels):
@@ -109,6 +112,16 @@ def rviz_config(path, x, y, scale):
       Enabled: true
       Topic: {{Value: /map, Durability Policy: Transient Local, Reliability Policy: Reliable}}
       Color Scheme: map
+    - Class: rviz_default_plugins/Map
+      Name: Global costmap (recorded)
+      Enabled: true
+      Alpha: 0.6
+      Color Scheme: costmap
+      Topic: {{Value: /replay/global_costmap, Reliability Policy: Reliable}}
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Wake cells (what I count, switch off to judge by eye)
+      Enabled: true
+      Topic: {{Value: /replay/wake}}
     - Class: rviz_default_plugins/MarkerArray
       Name: Replay
       Enabled: true
@@ -155,6 +168,7 @@ def main(argv):
     node = rclpy.create_node("replay_rviz")
     latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
     map_pub, mk_pub = node.create_publisher(OccupancyGrid, "/map", latched), node.create_publisher(MarkerArray, "/replay/markers", 10)
+    gcm_pub, wake_pub = node.create_publisher(OccupancyGrid, "/replay/global_costmap", 1), node.create_publisher(MarkerArray, "/replay/wake", 1)
     h, w = mp["occ"].shape
     grid = np.where(mp["occ"], 100, np.where(mp["blocked"], -1, 0)).astype(np.int8)[::-1]      # image row 0 is the top; OccupancyGrid row 0 is y min
     og = OccupancyGrid()
@@ -207,7 +221,9 @@ def main(argv):
             k.scale.z, k.color.r, k.color.g, k.color.b, k.color.a = 0.04, 1.0, 1.0, 0.0, 0.9
             static.append(k)
     pause, t_wall = 2.0, time.time()
-    longest = max(c["t"][-1] for c in cases)
+    longest = max(max(c["t"][-1], c["gcm"][-1][0] if c.get("gcm") else 0.0) for c in cases)
+    cc = next((c for c in cases if c.get("gcm")), None)      # the recorded costmap shown is the first case that has one
+    static_flat, shown = grid.ravel(), [None]
     try:
         while rclpy.ok() and (proc is None or proc.poll() is None):
             ph = ((time.time() - t_wall) * args.speed) % (longest + pause * args.speed)
@@ -221,6 +237,29 @@ def main(argv):
                     o = walker_at(c["walker"], tt)
                     if o:
                         msgs.append(line(10 * n + 8, "walker", rect(*o, *c["walker"][4]), (0.0, 0.0, 0.0), 0.06))
+            if cc is not None:
+                payload = gcm_codec.frame_at(cc["gcm"], ph)
+                if payload is not None and payload is not shown[0]:
+                    shown[0] = payload
+                    meta, data = cc["gcm_meta"], gcm_codec.decode(payload)
+                    g = OccupancyGrid()
+                    g.header.frame_id, g.info.resolution, g.info.width, g.info.height = "map", meta["res"], meta["width"], meta["height"]
+                    g.info.origin.position.x, g.info.origin.position.y, g.info.origin.orientation.w = meta["origin"][0], meta["origin"][1], 1.0
+                    g.data = data.tolist()
+                    gcm_pub.publish(g)
+                    ow = walker_at(cc["walker"], min(ph, cc["t"][-1])) if cc.get("walker") else None
+                    wx, wy = ghost.wake_xy(data, static_flat, meta["width"], meta["height"], meta["origin"], meta["res"], [ow[:2]] if ow else [])
+                    pts = Marker()
+                    pts.header.frame_id, pts.ns, pts.id, pts.type, pts.action = "map", "wake", 0, Marker.SPHERE_LIST, Marker.ADD
+                    pts.scale.x = pts.scale.y = pts.scale.z = 0.09
+                    pts.color.r, pts.color.g, pts.color.b, pts.color.a = 1.0, 0.0, 1.0, 1.0
+                    pts.points = [Point(x=float(x), y=float(y), z=0.12) for x, y in zip(wx, wy)]
+                    lab = Marker()
+                    lab.header.frame_id, lab.ns, lab.id, lab.type, lab.action = "map", "wake", 1, Marker.TEXT_VIEW_FACING, Marker.ADD
+                    lab.pose.position.x, lab.pose.position.y, lab.pose.position.z = float(meta["origin"][0] + meta["width"] * meta["res"] / 2), float(meta["origin"][1] + meta["height"] * meta["res"] - 1.0), 0.5
+                    lab.scale.z, lab.color.r, lab.color.g, lab.color.b, lab.color.a = 0.4, 1.0, 0.4, 1.0, 1.0
+                    lab.text = f"{cc['label']}  t={ph:5.1f} s   wake cells (magenta): {len(wx)}"
+                    wake_pub.publish(MarkerArray(markers=[pts, lab]))
             mk_pub.publish(MarkerArray(markers=msgs))
             rclpy.spin_once(node, timeout_sec=0.05)
     except KeyboardInterrupt:
