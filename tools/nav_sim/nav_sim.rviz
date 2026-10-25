@@ -24,7 +24,7 @@ Visualization Manager:
         Value: /map
     - Class: rviz_default_plugins/Map
       Name: Global costmap
-      Enabled: false
+      Enabled: true
       Alpha: 0.35
       Color Scheme: costmap
       Draw Behind: true
