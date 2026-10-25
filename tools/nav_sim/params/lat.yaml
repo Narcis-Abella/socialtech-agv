@@ -1,0 +1,10 @@
+# Overlay (params_merge.py): shorter path from "the lidar sees it" to "the plan avoids it". Packaged: global costmap updates and publishes at 1 Hz and the default BT replans at 1 Hz
+# (RateController hz="1.0" in navigate_to_pose_w_replanning_and_recovery.xml), so a new obstacle can take 1-2 s to change the plan (0.7-1.4 m at 0.7 m/s). Here: costmap 5 Hz, replanning 3 Hz.
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 5.0
+bt_navigator:
+  ros__parameters:
+    default_nav_to_pose_bt_xml: /tools/nav_sim/bt/replan3.xml
