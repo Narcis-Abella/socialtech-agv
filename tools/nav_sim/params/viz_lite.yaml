@@ -1,0 +1,6 @@
+# Overlay (params_merge.py) for live viewing over a slow or relayed link: the global costmap is a 145 kB message (520 x 280 cells) published in full; at 2 Hz it needs ~290 kB/s and, fragmented in ~115 packets over a relay, never completes at the viewer ("No map received" in rviz2).
+# Only the PUBLICATION rate drops (0.5 Hz, ~72 kB/s): the costmap still updates at 2 Hz internally and the planner reads the internal costmap, so navigation does not change.
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      publish_frequency: 0.5
