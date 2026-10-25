@@ -149,35 +149,48 @@ class Runner:
             p.pose.orientation.z, p.pose.orientation.w = yaw_to_quat(g[2])
             return p
         via = trial.get("via")
-        if via:
-            goal, client = NavigateThroughPoses.Goal(), self.through
-            goal.poses = [stamped(g) for g in [*via, trial["goal"]]]
-        else:
-            goal, client = NavigateToPose.Goal(), self.client
-            goal.pose = stamped(trial["goal"])
-        feedback = []
+        dwell = float(os.environ.get("DWELL", -1))      # DWELL=<s>: visit the stops of a mission one NavigateToPose at a time and wait <s> at each (NavigateThroughPoses only passes near them)
+        chain = bool(via) and dwell >= 0
+        feedback, stops, status, code, msg, recoveries = [], [], "rejected", -1, "", 0
         self.rows, self.plans, self.plan_log, self.recording = [], [], [], True
         t0 = self.now()
-        sent = client.send_goal_async(goal, feedback_callback=lambda f: feedback.append(
-            [round(self.now(), 3), f.feedback.number_of_recoveries, round(f.feedback.distance_remaining, 3)]))
-        rclpy.spin_until_future_complete(self.n, sent)
-        handle = sent.result()
-        status, code, msg = "rejected", -1, ""
-        if handle.accepted:
-            result = handle.get_result_async()
-            limit = float(os.environ.get("TRIAL_TIMEOUT", 240))
-            while not result.done() and self.now() - t0 < limit:
-                rclpy.spin_once(self.n, timeout_sec=0.02)
-                for d in [d for d in waiting if dyn.triggered(self.gt, d["trigger"])]:
-                    waiting.remove(d)
-                    self.mover.start(d)
-            if result.done():
-                r = result.result()
-                status = {GoalStatus.STATUS_SUCCEEDED: "succeeded", GoalStatus.STATUS_ABORTED: "aborted", GoalStatus.STATUS_CANCELED: "canceled"}.get(r.status, str(r.status))
-                code, msg = int(getattr(r.result, "error_code", -1)), str(getattr(r.result, "error_msg", ""))
+        limit = float(os.environ.get("TRIAL_TIMEOUT", 240))
+        legs = [*via, trial["goal"]] if chain else [None]
+        for i, leg in enumerate(legs):
+            if via and not chain:
+                goal, client = NavigateThroughPoses.Goal(), self.through
+                goal.poses = [stamped(g) for g in [*via, trial["goal"]]]
             else:
-                status = "timeout"
-                rclpy.spin_until_future_complete(self.n, handle.cancel_goal_async(), timeout_sec=5.0)
+                goal, client = NavigateToPose.Goal(), self.client
+                goal.pose = stamped(leg or trial["goal"])
+            n_fb = len(feedback)
+            sent = client.send_goal_async(goal, feedback_callback=lambda f: feedback.append(
+                [round(self.now(), 3), f.feedback.number_of_recoveries, round(f.feedback.distance_remaining, 3)]))
+            rclpy.spin_until_future_complete(self.n, sent)
+            handle = sent.result()
+            status, code, msg = "rejected", -1, ""
+            if handle.accepted:
+                result = handle.get_result_async()
+                while not result.done() and self.now() - t0 < limit:
+                    rclpy.spin_once(self.n, timeout_sec=0.02)
+                    for d in [d for d in waiting if dyn.triggered(self.gt, d["trigger"])]:
+                        waiting.remove(d)
+                        self.mover.start(d)
+                if result.done():
+                    r = result.result()
+                    status = {GoalStatus.STATUS_SUCCEEDED: "succeeded", GoalStatus.STATUS_ABORTED: "aborted", GoalStatus.STATUS_CANCELED: "canceled"}.get(r.status, str(r.status))
+                    code, msg = int(getattr(r.result, "error_code", -1)), str(getattr(r.result, "error_msg", ""))
+                else:
+                    status = "timeout"
+                    rclpy.spin_until_future_complete(self.n, handle.cancel_goal_async(), timeout_sec=5.0)
+            recoveries += feedback[-1][1] if len(feedback) > n_fb else 0
+            if chain:
+                g = leg if leg else trial["goal"]
+                stops.append({"i": i, "status": status, "err_xy": round(math.hypot(self.gt[0] - g[0], self.gt[1] - g[1]), 3), "t": round(self.now() - t0, 3)})
+                if status == "succeeded" and i < len(legs) - 1:
+                    self.spin_for(dwell)
+            if status != "succeeded":
+                break
         t1 = self.now()
         self.recording = False
         dyn_log = list(self.mover.log) if walkers else []
@@ -187,7 +200,7 @@ class Runner:
         rec = {"dyn": walkers, "dyn_log": dyn_log, "dyn_unstarted": [d["model"] for d in waiting],
 "id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "via": via or [], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
                "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
-               "recoveries": feedback[-1][1] if feedback else 0, "feedback": feedback, "n_plans": len(self.plans),
+               "recoveries": recoveries, "stops": stops, "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
                "plan_log": self.plan_log,
                "plan_all": [[round(t, 3), xy[::10]] for t, xy in self.plans],   # every plan, thinned, to see which route the planner chose each time (flip_metrics.py)
