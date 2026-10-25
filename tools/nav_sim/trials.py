@@ -11,7 +11,7 @@ import sys
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
-from nav2_msgs.action import NavigateToPose
+from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
 from nav2_msgs.srv import ClearEntireCostmap
 from nav_msgs.msg import Odometry, Path
 from rclpy.action import ActionClient
@@ -40,6 +40,7 @@ class Runner:
     def __init__(self, node, out_dir):
         self.n, self.out = node, out_dir
         self.client = ActionClient(node, NavigateToPose, "navigate_to_pose")
+        self.through = ActionClient(node, NavigateThroughPoses, "navigate_through_poses")   # trials with a "via" list (make_mission.py)
         self.tf = Buffer()
         TransformListener(self.tf, node)
         self.gt = None
@@ -141,16 +142,23 @@ class Runner:
             self.mover.park(walkers)
             self.mover.log.clear()
         waiting = list(walkers)
-        goal = NavigateToPose.Goal()
-        p = PoseStamped()
-        p.header.frame_id, p.header.stamp = "map", self.n.get_clock().now().to_msg()
-        p.pose.position.x, p.pose.position.y = trial["goal"][0], trial["goal"][1]
-        p.pose.orientation.z, p.pose.orientation.w = yaw_to_quat(trial["goal"][2])
-        goal.pose = p
+        def stamped(g):
+            p = PoseStamped()
+            p.header.frame_id, p.header.stamp = "map", self.n.get_clock().now().to_msg()
+            p.pose.position.x, p.pose.position.y = g[0], g[1]
+            p.pose.orientation.z, p.pose.orientation.w = yaw_to_quat(g[2])
+            return p
+        via = trial.get("via")
+        if via:
+            goal, client = NavigateThroughPoses.Goal(), self.through
+            goal.poses = [stamped(g) for g in [*via, trial["goal"]]]
+        else:
+            goal, client = NavigateToPose.Goal(), self.client
+            goal.pose = stamped(trial["goal"])
         feedback = []
         self.rows, self.plans, self.plan_log, self.recording = [], [], [], True
         t0 = self.now()
-        sent = self.client.send_goal_async(goal, feedback_callback=lambda f: feedback.append(
+        sent = client.send_goal_async(goal, feedback_callback=lambda f: feedback.append(
             [round(self.now(), 3), f.feedback.number_of_recoveries, round(f.feedback.distance_remaining, 3)]))
         rclpy.spin_until_future_complete(self.n, sent)
         handle = sent.result()
@@ -177,7 +185,7 @@ class Runner:
             self.mover.park(walkers)
         self.spin_for(1.0)
         rec = {"dyn": walkers, "dyn_log": dyn_log, "dyn_unstarted": [d["model"] for d in waiting],
-"id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
+"id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "via": via or [], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
                "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
                "recoveries": feedback[-1][1] if feedback else 0, "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
@@ -195,8 +203,8 @@ def main(scenario, out_dir, reps=1):
     node = rclpy.create_node("trials")
     os.makedirs(out_dir, exist_ok=True)
     r = Runner(node, out_dir)
-    r.client.wait_for_server()
     trials = json.load(open(scenario))["trials"]
+    (r.through if any(t.get("via") for t in trials) else r.client).wait_for_server()
     while r.gt is None:
         rclpy.spin_once(node, timeout_sec=0.1)
     for k in range(int(reps)):

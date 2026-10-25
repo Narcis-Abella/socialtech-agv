@@ -17,6 +17,7 @@ import stats
 
 DEFAULT_MAP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps", "loyola_gt.yaml")      # registered to the simulated world
 FOOTPRINT = (0.70, 0.58)
+STOP_TOL = 0.5                        # a via pose counts as visited within this distance (NavigateThroughPoses does not stop on it)
 HZ = 50.0                              # sampling rate of trials.py rows
 COMPARED = ["duration", "path_len", "spl", "final_err_xy", "recoveries", "jerk_lin_rms", "jerk_lin_p95", "acc_lin_p95", "jerk_ang_rms", "acc_ang_p95", "vx_reversals",
             "xtrack_p95", "loc_err_p95", "converge_s", "clearance_min", "clearance_mid", "idle_frac"]
@@ -80,6 +81,8 @@ def trial_metrics(rec, ctx):
     away = (np.hypot(*(poses[:, :2] - rec["start"][:2]).T) > 1.0) & (np.hypot(*(poses[:, :2] - rec["goal"][:2]).T) > 1.0)
     out["clearance_mid"] = float(cl[away].min()) if away.any() else out["clearance_min"]     # start and goal poses are given by the scenario, not chosen by the planner
     out["collisions"] = int(np.sum(cl <= 0.0))
+    if rec.get("via"):      # multi-stop mission (make_mission.py): share of the intermediate stops the robot passed within STOP_TOL
+        out["stops_reached"] = float(np.mean([np.hypot(*(gt - np.asarray(v[:2])).T).min() <= STOP_TOL for v in rec["via"]]))
     return out
 
 

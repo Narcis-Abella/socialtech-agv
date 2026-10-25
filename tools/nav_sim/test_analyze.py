@@ -113,6 +113,13 @@ def test_clearance_mid_ignores_the_first_and_last_metre_where_the_start_and_goal
     assert r["clearance_min"] < 0.2 and r["clearance_mid"] > 0.3
 
 
+def test_stops_reached_counts_the_via_poses_the_robot_came_within_half_a_metre_of():
+    tr = straight_trial()
+    tr["via"] = [[3.0, 1.0, 0.0], [3.0, 4.0, 0.0]]                 # the first is on the path, the second 3 m off it
+    assert a.trial_metrics(tr, ctx())["stops_reached"] == 0.5
+    assert "stops_reached" not in a.trial_metrics(straight_trial(), ctx())
+
+
 def test_an_aborted_trial_with_almost_no_rows_still_has_every_summary_key():
     tr = straight_trial(status="aborted")
     tr["rows"] = tr["rows"][:2]                                    # Nav2 refused the goal at once (e.g. START_OCCUPIED): nothing was recorded
