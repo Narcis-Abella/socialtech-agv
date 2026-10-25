@@ -21,7 +21,7 @@ import metrics as m
 import scenarios as sc
 
 COLORS = [(0.9, 0.2, 0.2), (0.2, 0.7, 0.3), (0.2, 0.4, 0.95), (1.0, 0.0, 0.0), (0.0, 0.3, 1.0), (1.0, 0.6, 0.0)]
-BY_LABEL = {"base": COLORS[0], "infl70": COLORS[1], "la5": COLORS[2], "cd08m": COLORS[3], "vm": COLORS[4], "cml": COLORS[4], "cml2": COLORS[5]}      # a variant keeps its colour in every window; other labels take the next free one
+BY_LABEL = {"base": COLORS[0], "infl70": COLORS[1], "la5": COLORS[2], "cd08m": COLORS[3], "vm": COLORS[4], "cml": COLORS[4], "cml2": COLORS[5], "actual": COLORS[1], "nueva": COLORS[3]}      # a variant keeps its colour in every window; other labels take the next free one
 STEP = 0.01     # footprint sampling for the independent distance
 
 
