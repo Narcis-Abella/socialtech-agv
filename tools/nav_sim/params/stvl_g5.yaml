@@ -1,0 +1,18 @@
+# Overlay (params_merge.py): the GLOBAL costmap's ObstacleLayer replaced by the spatio-temporal voxel layer (ros-jazzy-spatio-temporal-voxel-layer 2.5.5), voxels decay 5 s after their last observation (linear decay_model 0)
+# and are cleared faster inside the sensor frustum (decay_acceleration). Parameter names from spatio_temporal_voxel_layer.cpp (jazzy). The local costmap keeps its ObstacleLayer. Needs the sim-stvl image.
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      plugins: [static_layer, stvl_layer, inflation_layer]
+      stvl_layer:
+        plugin: spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer
+        enabled: true
+        voxel_decay: 5.0
+        decay_model: 0
+        voxel_size: 0.05
+        combination_method: 1
+        mark_threshold: 0
+        update_footprint_enabled: true
+        observation_sources: scan
+        scan: {data_type: LaserScan, topic: /scan, marking: true, clearing: true, min_obstacle_height: 0.0, max_obstacle_height: 2.0, obstacle_range: 10.0, min_z: 0.0, max_z: 12.0,
+          model_type: 1, horizontal_fov_angle: 6.283, vertical_fov_angle: 0.1, vertical_fov_padding: 0.05, decay_acceleration: 1.0, filter: passthrough, clear_after_reading: true, expected_update_rate: 0.0, observation_persistence: 0.0}

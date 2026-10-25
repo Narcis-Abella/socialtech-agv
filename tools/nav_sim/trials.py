@@ -22,6 +22,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker
 
 import dyn
+import ghost
 import legend
 from initpose import init_offset
 
@@ -63,7 +64,8 @@ class Runner:
         self.static_map, self.gcm, self.ghost = None, None, [None, None]
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
         node.create_subscription(OccupancyGrid, "/map", lambda m: setattr(self, "static_map", m), latched)
-        node.create_subscription(OccupancyGrid, "/global_costmap/costmap", lambda m: setattr(self, "gcm", m), 1)
+        node.create_subscription(OccupancyGrid, "/global_costmap/costmap", self.on_gcm, 1)
+        self.ghost_series, self.tail_watch = [], False      # [t, wake cells] at every global costmap publication while a trial (or its tail) is watched
         self.legend_pub = node.create_publisher(Marker, "/legend", latched)   # rviz2 Marker display: what the job runs, and which trial
         self.total = 0
         node.create_timer(1.0 / HZ, self.sample)
@@ -101,6 +103,22 @@ class Runner:
         est = self.estimate() or (math.nan,) * 3
         self.rows.append([round(self.now(), 4), *[round(v, 4) for v in self.gt], *[round(v, 4) for v in est],
                           *[round(v, 4) for k in self.cmd for v in self.cmd[k]], *[round(v, 4) for v in self.odom]])
+
+    def walker_xy(self):
+        """Current ground-truth position of every moving obstacle (last command sent to the simulator)."""
+        if self.mover is None:
+            return []
+        last = {}
+        for e in reversed(self.mover.log[-400:]):
+            last.setdefault(e[1], (e[2], e[3]))
+        return list(last.values())
+
+    def on_gcm(self, m):
+        self.gcm = m
+        a = self.static_map
+        if (self.recording or self.tail_watch) and a is not None and (a.info.width, a.info.height) == (m.info.width, m.info.height):
+            n = ghost.wake_cells(m.data, a.data, m.info.width, m.info.height, (m.info.origin.position.x, m.info.origin.position.y), m.info.resolution, self.walker_xy())
+            self.ghost_series.append([round(self.now(), 2), n])
 
     def publish_legend(self, trial_id):
         m = self.static_map
@@ -194,6 +212,7 @@ class Runner:
         chain = bool(via) and dwell >= 0
         feedback, stops, status, code, msg, recoveries = [], [], "rejected", -1, "", 0
         self.rows, self.plans, self.plan_log, self.recording = [], [], [], True
+        self.ghost_series = []
         t0 = self.now()
         limit = float(os.environ.get("TRIAL_TIMEOUT", 240))
         legs = [*via, trial["goal"]] if chain else [None]
@@ -234,6 +253,11 @@ class Runner:
                 break
         t1 = self.now()
         self.recording = False
+        tail = float(os.environ.get("TAIL_S", 0))      # TAIL_S: keep watching the global costmap that many seconds after the trial ends (does the wake of the obstacle clear?)
+        if tail > 0:
+            self.tail_watch = True
+            self.spin_for(tail)
+            self.tail_watch = False
         dyn_log = list(self.mover.log) if walkers else []
         if walkers:
             self.mover.park(walkers)
@@ -241,7 +265,7 @@ class Runner:
         rec = {"dyn": walkers, "dyn_log": dyn_log, "dyn_unstarted": [d["model"] for d in waiting],
 "id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "via": via or [], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
                "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
-               "recoveries": recoveries, "stops": stops, "ghost_cells": self.ghost if not chained else [None, self.ghost_cells()], "feedback": feedback, "n_plans": len(self.plans),
+               "recoveries": recoveries, "stops": stops, "ghost_series": self.ghost_series, "ghost_cells": self.ghost if not chained else [None, self.ghost_cells()], "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
                "plan_log": self.plan_log,
                "plan_all": [[round(t, 3), xy[::10]] for t, xy in self.plans],   # every plan, thinned, to see which route the planner chose each time (flip_metrics.py)
