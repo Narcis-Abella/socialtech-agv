@@ -73,7 +73,8 @@ def load_case(spec, ctx, occ):
     rows = np.asarray(rec["rows"], float)
     t, pose = rows[:, col["t"]] - rows[0, col["t"]], rows[:, [col["gt_x"], col["gt_y"], col["gt_yaw"]]]
     w = walker_series(rec, rows[0, col["t"]])
-    extra = {"gcm": [[tf - rows[0, col["t"]], pl] for tf, pl in rec.get("gcm_frames", [])], "gcm_meta": rec.get("gcm_meta"), "cm": [[tc - rows[0, col["t"]], ac, pc] for tc, ac, pc in rec.get("cm_log", [])]}      # recorded global costmap (REC_GCM=1), times relative to the trial start
+    extra = {"gcm": [[tf - rows[0, col["t"]], pl] for tf, pl in rec.get("gcm_frames", [])], "gcm_meta": rec.get("gcm_meta"), "cm": [[tc - rows[0, col["t"]], ac, pc] for tc, ac, pc in rec.get("cm_log", [])],
+             "plans": [(tp - rows[0, col["t"]], np.asarray(xy, float)) for tp, xy in rec.get("plan_all", [])]}      # recorded global costmap (REC_GCM=1), times relative to the trial start
     if w is not None:                       # encounter with a moving obstacle: report the closest approach to it instead of the wall clearance
         gaps = []
         for tt, p in zip(t, pose):
@@ -156,6 +157,7 @@ def main(argv):
     ap.add_argument("--speed", type=float, default=4.0)
     ap.add_argument("--sequence", action="store_true", help="play the cases one after another (each with its own recorded costmap) instead of overlaying them")
     ap.add_argument("--zone", action="append", help="front,back,half_width[,polygon name] of a Collision Monitor zone to draw on the robot (metres); repeat for several. Red when that polygon is in command (cm_log), yellow when the approach is, grey otherwise")
+    ap.add_argument("--plans", action="store_true", help="draw the plan the planner has published at each instant (bold) and the 4 before it (faint), from plan_all, with its index and length")
     ap.add_argument("--no-rviz", action="store_true", help="publish only (rviz2 started elsewhere, or a test)")
     args = ap.parse_args(argv)
     mp = sc.load_map(args.map)
@@ -276,6 +278,15 @@ def main(argv):
                         zp = [(x + cy * u - sy * v, y + sy * u + cy * v) for u, v in ((zf, zw), (zf, -zw), (zb, -zw), (zb, zw), (zf, zw))]
                         msgs.append(line(10 * n + 9, f"zone{zi}", zp, col, 0.05 if mine else 0.02, 1.0 if mine else 0.5))
                     msgs.append(text(10 * n + 9, "zonetext", x, y - max(float(z.split(",")[2]) for z in args.zone) - 0.5, f"Collision Monitor: {['nothing', 'STOP', 'SLOWDOWN', 'APPROACH', 'LIMIT'][act]} {who}", (1.0, 0.1, 0.1) if act == 2 else ((1.0, 0.85, 0.0) if act else (0.5, 0.6, 0.5)), 0.3))
+                if args.plans and c.get("plans"):
+                    k = sum(1 for tp, _ in c["plans"] if tp <= tt) - 1      # latest plan published at or before tt
+                    for j in range(max(0, k - 4), k + 1):
+                        xy = c["plans"][j][1]
+                        msgs.append(line(100 + 10 * n + (k - j), "liveplan", xy, (1.0, 0.5, 0.0) if j == k else rgb, 0.08 if j == k else 0.02, 1.0 if j == k else 0.3))
+                    if k >= 0:
+                        xy = c["plans"][k][1]
+                        ln = float(np.hypot(*np.diff(xy, axis=0).T).sum())
+                        msgs.append(text(950 + n, "plantext", x, y + 1.0, f"plan {k + 1}/{len(c['plans'])}  {ln:.1f} m  from t={c['plans'][k][0]:.1f} s", (1.0, 0.5, 0.0), 0.4))
                 if c.get("walker"):
                     o = walker_at(c["walker"], tt)
                     if o:
