@@ -41,6 +41,11 @@ def test_speed_limit_is_floored_and_absent_without_an_obstacle():
     assert sg.speed_limit(math.inf, 1.0, 0.15, 0.05) is None
 
 
+def test_nearest_in_lane_returns_the_cell_that_sets_the_free_distance():
+    assert sg.nearest_in_lane(pts((1.0, 0.0), (0.8, 0.2), (0.8, 0.9)), 0.4, 0.35, 1.5) == (0.8, 0.2)
+    assert sg.nearest_in_lane(pts((1.0, 0.9)), 0.4, 0.35, 1.5) is None
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

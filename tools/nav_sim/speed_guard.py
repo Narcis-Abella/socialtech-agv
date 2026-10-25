@@ -7,14 +7,21 @@ import math
 import numpy as np
 
 
-def free_distance(points, half_width, front, horizon):
-    """Distance (m) from the robot front to the nearest cell in the lane |y| <= half_width, x up to `horizon` from the front. points: (N, 2) robot frame, x forward, y left.
-    A cell in the lane that is already closer than the front counts as 0.0; inf when the lane is clear."""
+def nearest_in_lane(points, half_width, front, horizon):
+    """The (x, y) of the nearest cell in the lane, or None."""
     p = np.asarray(points, float).reshape(-1, 2)
     inlane = (np.abs(p[:, 1]) <= half_width) & (p[:, 0] >= 0.0) & (p[:, 0] <= front + horizon)
     if not inlane.any():
-        return math.inf
-    return max(0.0, float(p[inlane, 0].min()) - front)
+        return None
+    q = p[inlane][np.argmin(p[inlane, 0])]
+    return float(q[0]), float(q[1])
+
+
+def free_distance(points, half_width, front, horizon):
+    """Distance (m) from the robot front to the nearest cell in the lane |y| <= half_width, x up to `horizon` from the front. points: (N, 2) robot frame, x forward, y left.
+    A cell in the lane that is already closer than the front counts as 0.0; inf when the lane is clear."""
+    q = nearest_in_lane(points, half_width, front, horizon)
+    return math.inf if q is None else max(0.0, q[0] - front)
 
 
 def speed_limit(d_free, decel, margin, v_min):
@@ -28,7 +35,9 @@ def main(argv):
     import rclpy
     from nav2_msgs.msg import SpeedLimit
     from nav_msgs.msg import OccupancyGrid
+    from geometry_msgs.msg import Point
     from rclpy.time import Time
+    from visualization_msgs.msg import Marker, MarkerArray
     from tf2_ros import Buffer, TransformException, TransformListener
     rclpy.init(args=argv)
     node = rclpy.create_node("speed_guard")
@@ -36,6 +45,7 @@ def main(argv):
     tf = Buffer()
     TransformListener(tf, node)
     pub = node.create_publisher(SpeedLimit, "speed_limit", 10)
+    mk_pub = node.create_publisher(MarkerArray, "speed_guard/markers", 1)     # rviz2: the lane it watches, the cell that sets the limit, the limit
     state = {"grid": None, "cells": None, "last": None, "t": 0.0}
 
     def on_grid(m):
@@ -61,6 +71,27 @@ def main(argv):
         d = free_distance(robot, P["half_width"] + P["lane_margin"], P["front"], P["horizon"])
         v = speed_limit(d, P["decel"], P["margin"], P["v_min"])
         v = 0.0 if v is None else round(v, 2)                  # 0.0 = NO_SPEED_LIMIT
+        hw, lo, hi = P["half_width"] + P["lane_margin"], P["front"], P["front"] + P["horizon"]
+        lane = Marker()
+        lane.header.frame_id, lane.ns, lane.id, lane.type, lane.action = P["frame"], "lane", 0, Marker.LINE_STRIP, Marker.ADD
+        lane.scale.x = 0.04
+        lane.color.r, lane.color.g, lane.color.b, lane.color.a = (0.2, 0.9, 0.2, 0.9) if v == 0.0 else (1.0, 0.3, 0.0, 1.0)      # green: no limit; orange: limiting
+        lane.points = [Point(x=x, y=y, z=0.05) for x, y in ((lo, hw), (hi, hw), (hi, -hw), (lo, -hw), (lo, hw))]
+        txt = Marker()
+        txt.header.frame_id, txt.ns, txt.id, txt.type, txt.action = P["frame"], "limit", 1, Marker.TEXT_VIEW_FACING, Marker.ADD
+        txt.pose.position.x, txt.pose.position.z, txt.scale.z = 0.0, 0.9, 0.22
+        txt.color.r, txt.color.g, txt.color.b, txt.color.a = 1.0, 1.0, 1.0, 1.0
+        txt.text = "sin limite" if v == 0.0 else f"limite {v:.2f} m/s | libre {d:.2f} m"
+        out = [lane, txt]
+        q = nearest_in_lane(robot, hw, P["front"], P["horizon"])
+        if q is not None:
+            dot = Marker()
+            dot.header.frame_id, dot.ns, dot.id, dot.type, dot.action = P["frame"], "cell", 2, Marker.SPHERE, Marker.ADD
+            dot.pose.position.x, dot.pose.position.y, dot.pose.position.z = q[0], q[1], 0.1
+            dot.scale.x = dot.scale.y = dot.scale.z = 0.14
+            dot.color.r, dot.color.g, dot.color.b, dot.color.a = 1.0, 0.0, 0.0, 1.0
+            out.append(dot)
+        mk_pub.publish(MarkerArray(markers=out))
         now = node.get_clock().now().nanoseconds / 1e9
         if v != state["last"] or now - state["t"] > 1.0:       # on change, and a heartbeat every second
             m = SpeedLimit()
