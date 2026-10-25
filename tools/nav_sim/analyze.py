@@ -19,7 +19,7 @@ DEFAULT_MAP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps", "
 FOOTPRINT = (0.70, 0.58)
 HZ = 50.0                              # sampling rate of trials.py rows
 COMPARED = ["duration", "path_len", "spl", "final_err_xy", "recoveries", "jerk_lin_rms", "jerk_lin_p95", "acc_lin_p95", "jerk_ang_rms", "acc_ang_p95", "vx_reversals",
-            "xtrack_p95", "loc_err_p95", "converge_s", "clearance_min", "idle_frac"]
+            "xtrack_p95", "loc_err_p95", "converge_s", "clearance_min", "clearance_mid", "idle_frac"]
 
 
 def load_trials(run_dir):
@@ -73,10 +73,12 @@ def trial_metrics(rec, ctx):
     err = full[np.isfinite(full)]
     out["loc_err_median"] = float(np.median(err)) if err.size else math.nan
     out["loc_err_p95"], out["loc_err_max"] = (m.p95(err), float(err.max())) if err.size else (math.nan, math.nan)
-    cl = np.array([m.footprint_clearance(ctx["dist"], ctx["origin"], ctx["res"], x, y, yaw, *ctx["footprint"])
-                   for x, y, yaw in rows[::5][:, [col["gt_x"], col["gt_y"], col["gt_yaw"]]]])
+    poses = rows[::5][:, [col["gt_x"], col["gt_y"], col["gt_yaw"]]]
+    cl = np.array([m.footprint_clearance(ctx["dist"], ctx["origin"], ctx["res"], x, y, yaw, *ctx["footprint"]) for x, y, yaw in poses])
     cl = np.minimum(cl, 5.0)        # beyond 5 m it is "far": keeps inf out of the statistics
     out["clearance_min"], out["clearance_p5"] = float(cl.min()), float(np.percentile(cl, 5))
+    away = (np.hypot(*(poses[:, :2] - rec["start"][:2]).T) > 1.0) & (np.hypot(*(poses[:, :2] - rec["goal"][:2]).T) > 1.0)
+    out["clearance_mid"] = float(cl[away].min()) if away.any() else out["clearance_min"]     # start and goal poses are given by the scenario, not chosen by the planner
     out["collisions"] = int(np.sum(cl <= 0.0))
     return out
 
@@ -87,7 +89,7 @@ def aggregate(rows):
     lo, hi = stats.wilson(k, n)
     ok = [r for r in rows if r["reached"]]
     g = {"n": n, "successes": k, "success_lo": lo, "success_hi": hi}
-    for key in ("duration", "spl", "path_len", "final_err_xy", "jerk_lin_rms", "jerk_ang_rms", "acc_lin_p95", "xtrack_p95", "loc_err_p95", "clearance_min", "vx_reversals", "recoveries", "idle_frac"):
+    for key in ("duration", "spl", "path_len", "final_err_xy", "jerk_lin_rms", "jerk_ang_rms", "acc_lin_p95", "xtrack_p95", "loc_err_p95", "clearance_min", "clearance_mid", "vx_reversals", "recoveries", "idle_frac"):
         g[key] = stats.summary([r[key] for r in ok if key in r and r[key] == r[key]])
     g["collision_trials"] = sum(r.get("collisions", 0) > 0 for r in rows)
     return g

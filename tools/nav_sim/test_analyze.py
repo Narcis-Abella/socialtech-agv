@@ -106,6 +106,13 @@ def test_aggregate_uses_distributions():
     assert g["duration"]["median"] == 14.0 and g["duration"]["n"] == 6          # only reached trials count for times
 
 
+def test_clearance_mid_ignores_the_first_and_last_metre_where_the_start_and_goal_poses_are_given():
+    occ = np.zeros((60, 200), bool)
+    occ[28:33, 16:25] = True                                       # a block beside the start pose only (about 0.1 m from the footprint at the start, x 0.8-1.25)
+    r = a.trial_metrics(straight_trial(), ctx(occ))
+    assert r["clearance_min"] < 0.2 and r["clearance_mid"] > 0.3
+
+
 def test_an_aborted_trial_with_almost_no_rows_still_has_every_summary_key():
     tr = straight_trial(status="aborted")
     tr["rows"] = tr["rows"][:2]                                    # Nav2 refused the goal at once (e.g. START_OCCUPIED): nothing was recorded
