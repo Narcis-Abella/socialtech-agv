@@ -1,0 +1,5 @@
+# Overlay (params_merge.py) applied after fast.yaml: velocity_smoother limits, gentle start/stop (production file's linear limits, angular 1.5).
+velocity_smoother:
+  ros__parameters:
+    max_accel: [0.5, 0.0, 1.5]
+    max_decel: [-1.0, 0.0, -1.5]
