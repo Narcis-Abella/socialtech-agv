@@ -11,6 +11,11 @@ def test_without_a_legend_the_trial_is_still_shown():
     assert legend.legend_lines(None, "block", 1, 5)[-1] == "trial block  (1/5)"
 
 
+def test_the_wake_count_is_a_last_line_only_when_given():
+    assert legend.legend_lines("a", "x", 1, 2, wake=7)[-1] == "estela en el costmap global: 7 celdas"
+    assert legend.legend_lines("a", "x", 1, 2) == ["a", "trial x  (1/2)"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

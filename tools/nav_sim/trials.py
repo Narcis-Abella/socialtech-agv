@@ -119,10 +119,15 @@ class Runner:
         if (self.recording or self.tail_watch) and a is not None and (a.info.width, a.info.height) == (m.info.width, m.info.height):
             n = ghost.wake_cells(m.data, a.data, m.info.width, m.info.height, (m.info.origin.position.x, m.info.origin.position.y), m.info.resolution, self.walker_xy())
             self.ghost_series.append([round(self.now(), 2), n])
+            self.last_wake = n
+            self.publish_legend()
 
-    def publish_legend(self, trial_id):
+    def publish_legend(self, trial_id=None):
+        if trial_id is not None:
+            self.trial_id, self.last_wake = trial_id, None
+        trial_id = getattr(self, "trial_id", None)
         m = self.static_map
-        if m is None:
+        if m is None or trial_id is None:
             return
         k = Marker()
         w, h = m.info.width * m.info.resolution, m.info.height * m.info.resolution
@@ -130,7 +135,7 @@ class Runner:
         k.pose.position.x, k.pose.position.y, k.pose.position.z = m.info.origin.position.x + w / 2, m.info.origin.position.y + h - 1.6, 0.5
         k.scale.z = max(0.35, 0.025 * w)
         k.color.r, k.color.g, k.color.b, k.color.a = 1.0, 0.9, 0.1, 1.0
-        k.text = "\n".join(legend.legend_lines(os.environ.get("LEGEND"), trial_id, self.k, self.total))
+        k.text = "\n".join(legend.legend_lines(os.environ.get("LEGEND"), trial_id, self.k, self.total, self.last_wake))
         self.legend_pub.publish(k)
 
     def ghost_cells(self):
