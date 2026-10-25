@@ -66,6 +66,7 @@ def main(argv):
             m = SpeedLimit()
             m.percentage, m.speed_limit = False, float(v)
             pub.publish(m)
+            node.get_logger().info(f"t={now:.2f} d_free={'inf' if math.isinf(d) else round(d, 2)} limit={v}")      # one line per change: lets a run be checked against the controller output
             state["last"], state["t"] = v, now
 
     node.create_timer(1.0 / P["hz"], tick)
