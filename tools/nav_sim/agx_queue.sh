@@ -6,7 +6,7 @@
 # spec file: blocks separated by a blank line. First line "trials <name> <scenario.json under tools/> [reps]" (run_trials.sh) or "real <name> <script under nav_sim/>" (real_factorial.sh, record_real_inputs.sh ...);
 # the next lines are KEY=VALUE for the container (as the env of agx_run.sh / agx_real.sh; a value may hold spaces and semicolons). Lines starting with # are ignored.
 # Container env values are taken literally (docker --env-file): write BAGS=a b c without quotes.
-# env: AFTER=<remote dir of another queue> (wait for its QUEUE-DONE first), DRY=1 (build the files, send nothing), IMAGE (socialtech:sim-nav2), SIM_REPO (~/Documents/GitHub/hospital-agv-sim, committed), RUN_TIMEOUT (7200 s per job)
+# env: AFTER=<remote dir of another queue> (wait for its QUEUE-DONE first), FAST=1 (do not wait for the board load to settle between jobs: for runs that do not measure CPU or timing), DRY=1 (build the files, send nothing), IMAGE (socialtech:sim-nav2), SIM_REPO (~/Documents/GitHub/hospital-agv-sim, committed), RUN_TIMEOUT (7200 s per job)
 set -eo pipefail
 KEY=~/.nvsdkm/.ssh/id_rsa_sdkm; HOST=jetson@socialtech-agx-1
 ssh_() { ssh -i "$KEY" -o ConnectTimeout=10 "$HOST" "$@"; }
@@ -41,7 +41,8 @@ submit)
     esac
     {
       echo "mkdir -p $name/out"
-      echo "until [ \"\$(docker ps -q | wc -l)\" = 0 ] && awk -v l=\"\$(cut -d' ' -f1 /proc/loadavg)\" 'BEGIN{exit !(l < 2)}'; do sleep 20; done"
+      if [ -n "$FAST" ]; then echo "until [ \"\$(docker ps -q | wc -l)\" = 0 ]; do sleep 5; done"   # FAST=1: navigation runs, no CPU or timing measurement: do not wait for the load to settle (about 2 min per job)
+      else echo "until [ \"\$(docker ps -q | wc -l)\" = 0 ] && awk -v l=\"\$(cut -d' ' -f1 /proc/loadavg)\" 'BEGIN{exit !(l < 2)}'; do sleep 20; done"; fi
       echo "echo \"\$(date +%H:%M:%S) started $name\" >> progress.log"
       echo "$cmd > $name/run.log 2>&1; echo rc=\$? >> $name/run.log"
       echo "echo \"\$(date +%H:%M:%S) finished $name \$(grep -h '^rc=' $name/run.log)\" >> progress.log"
