@@ -6,7 +6,7 @@
 # spec file: blocks separated by a blank line. First line "trials <name> <scenario.json under tools/> [reps]" (run_trials.sh) or "real <name> <script under nav_sim/>" (real_factorial.sh, record_real_inputs.sh ...);
 # the next lines are KEY=VALUE for the container (as the env of agx_run.sh / agx_real.sh; a value may hold spaces and semicolons). Lines starting with # are ignored.
 # Container env values are taken literally (docker --env-file): write BAGS=a b c without quotes.
-# env: AFTER=<remote dir of another queue> (wait for its QUEUE-DONE first), FAST=1 (do not wait for the board load to settle between jobs: for runs that do not measure CPU or timing), DRY=1 (build the files, send nothing), IMAGE (socialtech:sim-nav2), SIM_REPO (~/Documents/GitHub/hospital-agv-sim, committed), RUN_TIMEOUT (7200 s per job)
+# env: AFTER=<remote dir of another queue> (wait for its QUEUE-DONE first), LIVE=<laptop LAN IP> (DDS on the board wifi with that peer, so rviz2 on the laptop sees the running job: PEER=<board IP> rviz_laptop.sh; LIVE_IFACE wlP1p1s0), FAST=1 (do not wait for the board load to settle between jobs: for runs that do not measure CPU or timing), DRY=1 (build the files, send nothing), IMAGE (socialtech:sim-nav2), SIM_REPO (~/Documents/GitHub/hospital-agv-sim, committed), RUN_TIMEOUT (7200 s per job)
 set -eo pipefail
 KEY=~/.nvsdkm/.ssh/id_rsa_sdkm; HOST=jetson@socialtech-agx-1
 ssh_() { ssh -i "$KEY" -o ConnectTimeout=10 "$HOST" "$@"; }
@@ -23,6 +23,7 @@ submit)
   ssh_ "mkdir -p $remote ~/sim_src/hospital-agv-sim_$hash ~/nav_inputs"
   tar -C "$repo" -c tools | send "tar -x -C $remote"
   ssh_ "[ -f ~/sim_src/hospital-agv-sim_$hash/package.xml ]" || git -C "$sim" archive HEAD | send "tar -x -C ~/sim_src/hospital-agv-sim_$hash"
+  ddsif=lo; [ -z "$LIVE" ] || ddsif=${LIVE_IFACE:-wlP1p1s0}
   tmp=$(mktemp -d); n=0; : > "$tmp/queue.sh"
   echo '#!/bin/bash' >> "$tmp/queue.sh"
   echo "cd \$(dirname \"\$0\")" >> "$tmp/queue.sh"
@@ -33,8 +34,8 @@ submit)
     n=$((n + 1)); kind=$(echo "$block" | head -1 | cut -d' ' -f1); name=$(echo "$block" | head -1 | cut -d' ' -f2); arg=$(echo "$block" | head -1 | cut -d' ' -f3); reps=$(echo "$block" | head -1 | cut -d' ' -f4)
     mkdir -p "$tmp/$name"; echo "$block" | tail -n +2 | grep -v '^#' | grep . > "$tmp/$name/user.env" || true
     case "$kind" in
-      trials) { echo "SIM_SRC=/simsrc"; echo "ROS_DOMAIN_ID=53"; cat "$tmp/$name/user.env"; echo "SIM_COMMIT=$hash"; echo "REPO_COMMIT=$(git -C "$repo" rev-parse --short HEAD)$([ -n "$(git -C "$repo" status --porcelain)" ] && echo -dirty)"; } > "$tmp/$name/env.list"
-        cmd="timeout ${RUN_TIMEOUT:-7200} docker run --rm --name nav2run --network host --env-file $name/env.list -e DDS_IFACE=lo -v \$PWD/tools:/tools:ro -v \$PWD/$name/out:/out -v \$HOME/sim_src/hospital-agv-sim_$hash:/simsrc:ro ${IMAGE:-socialtech:sim-nav2} /tools/nav_sim/run_trials.sh /tools/$arg /out ${reps:-1}";;
+      trials) { echo "SIM_SRC=/simsrc"; echo "ROS_DOMAIN_ID=53"; [ -n "$LIVE" ] && echo "CYCLONEDDS_URI=<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"${LIVE_IFACE:-wlP1p1s0}\"/></Interfaces></General><Discovery><Peers><Peer address=\"$LIVE\"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>"; cat "$tmp/$name/user.env"; echo "SIM_COMMIT=$hash"; echo "REPO_COMMIT=$(git -C "$repo" rev-parse --short HEAD)$([ -n "$(git -C "$repo" status --porcelain)" ] && echo -dirty)"; } > "$tmp/$name/env.list"
+        cmd="timeout ${RUN_TIMEOUT:-7200} docker run --rm --name nav2run --network host --env-file $name/env.list -e DDS_IFACE=$ddsif -v \$PWD/tools:/tools:ro -v \$PWD/$name/out:/out -v \$HOME/sim_src/hospital-agv-sim_$hash:/simsrc:ro ${IMAGE:-socialtech:sim-nav2} /tools/nav_sim/run_trials.sh /tools/$arg /out ${reps:-1}";;
       real) cp "$tmp/$name/user.env" "$tmp/$name/env.list"
         cmd="timeout ${RUN_TIMEOUT:-7200} docker run --rm --name nav2run --network host --env-file $name/env.list -v \$PWD/tools:/tools:ro -v \$PWD/$name/out:/out -v \$HOME/nav_out:/navout:ro -v \$HOME/nav_data:/data:ro -v \$HOME/rosbags:/bags:ro -v \$HOME/nav_inputs:/inputs ${IMAGE:-socialtech:sim-nav2} /tools/nav_sim/$arg /out";;
       *) echo "unknown job kind: $kind" >&2; exit 1;;
