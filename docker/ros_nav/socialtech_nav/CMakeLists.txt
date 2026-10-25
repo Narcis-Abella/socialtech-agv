@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
 project(socialtech_nav)
 find_package(ament_cmake REQUIRED)
-install(DIRECTORY config launch maps DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY behavior_trees config launch maps DESTINATION share/${PROJECT_NAME})
 ament_package()
