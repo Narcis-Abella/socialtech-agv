@@ -1,0 +1,13 @@
+# Overlay (params_merge.py): rays without a return (range inf) count as free space up to the sensor's maximum, in both obstacle layers. Packaged (inf_is_valid false): the layer DISCARDS them, so a sector with no wall within the lidar range
+# (119 deg of 360 from the middle of dyn_hall: the two ends of the hall) is never raytraced and whatever was marked there stays forever. With true: obstacle_layer.cpp laserScanValidInfCallback sets inf to range_max - epsilon,
+# so the ray clears up to raytrace_max_range and, being beyond obstacle_max_range, marks nothing at its end.
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      obstacle_layer:
+        scan: {inf_is_valid: true}
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      obstacle_layer:
+        scan: {inf_is_valid: true}

@@ -12,6 +12,7 @@ import tempfile
 import time
 
 import numpy as np
+from scipy import ndimage
 from scipy.spatial import cKDTree
 
 import analyze as a
@@ -119,7 +120,7 @@ def rviz_config(path, x, y, scale):
       Color Scheme: costmap
       Topic: {{Value: /replay/global_costmap, Reliability Policy: Reliable}}
     - Class: rviz_default_plugins/MarkerArray
-      Name: Wake cells (what I count, switch off to judge by eye)
+      Name: Unexplained lethal cells (my count, switch off to judge by eye)
       Enabled: true
       Topic: {{Value: /replay/wake}}
     - Class: rviz_default_plugins/MarkerArray
@@ -224,6 +225,7 @@ def main(argv):
     longest = max(max(c["t"][-1], c["gcm"][-1][0] if c.get("gcm") else 0.0) for c in cases)
     cc = next((c for c in cases if c.get("gcm")), None)      # the recorded costmap shown is the first case that has one
     static_flat, shown = grid.ravel(), [None]
+    dwall = (ndimage.distance_transform_edt(~mp["occ"]) * mp["res"])[::-1].ravel()      # metres to the nearest wall cell, in OccupancyGrid layout: marks scattered by lidar noise right next to a wall are not a wake
     try:
         while rclpy.ok() and (proc is None or proc.poll() is None):
             ph = ((time.time() - t_wall) * args.speed) % (longest + pause * args.speed)
@@ -249,6 +251,8 @@ def main(argv):
                     gcm_pub.publish(g)
                     ow = walker_at(cc["walker"], min(ph, cc["t"][-1])) if cc.get("walker") else None
                     wx, wy = ghost.wake_xy(data, static_flat, meta["width"], meta["height"], meta["origin"], meta["res"], [ow[:2]] if ow else [])
+                    near_wall = dwall[np.floor((wy - meta["origin"][1]) / meta["res"]).astype(int) * meta["width"] + np.floor((wx - meta["origin"][0]) / meta["res"]).astype(int)] <= 0.6
+                    wx, wy = wx[~near_wall], wy[~near_wall]
                     pts = Marker()
                     pts.header.frame_id, pts.ns, pts.id, pts.type, pts.action = "map", "wake", 0, Marker.SPHERE_LIST, Marker.ADD
                     pts.scale.x = pts.scale.y = pts.scale.z = 0.09
@@ -258,7 +262,7 @@ def main(argv):
                     lab.header.frame_id, lab.ns, lab.id, lab.type, lab.action = "map", "wake", 1, Marker.TEXT_VIEW_FACING, Marker.ADD
                     lab.pose.position.x, lab.pose.position.y, lab.pose.position.z = float(meta["origin"][0] + meta["width"] * meta["res"] / 2), float(meta["origin"][1] + meta["height"] * meta["res"] - 1.0), 0.5
                     lab.scale.z, lab.color.r, lab.color.g, lab.color.b, lab.color.a = 0.4, 1.0, 0.4, 1.0, 1.0
-                    lab.text = f"{cc['label']}  t={ph:5.1f} s   wake cells (magenta): {len(wx)}"
+                    lab.text = f"{cc['label']}  t={ph:5.1f} s   lethal cells with no wall or walker to explain them (magenta): {len(wx)}"
                     wake_pub.publish(MarkerArray(markers=[pts, lab]))
             mk_pub.publish(MarkerArray(markers=msgs))
             rclpy.spin_once(node, timeout_sec=0.05)
