@@ -1,0 +1,9 @@
+# footprint_padding 0.05 m on both costmaps (more clearance margin for planner and controller)
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      footprint_padding: 0.05
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      footprint_padding: 0.05
