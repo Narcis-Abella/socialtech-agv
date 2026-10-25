@@ -1,0 +1,4 @@
+# Overlay: the legacy approach time (2.0 s instead of the packaged 1.2 s), on top of cm_legacy.yaml.
+collision_monitor:
+  ros__parameters:
+    FootprintApproach: {time_before_collision: 2.0}
