@@ -82,7 +82,7 @@ controller_server:
     # max_angular_accel: rotateToHeading clamps the command to (measured w +- max_angular_accel * dt) (controller_server passes the /odom twist). The real Tracer reports ~73 % of a low angular command, so the command
     # stalls at a * dt / (1 - 0.73): 1.0 rad/s^2 at 20 Hz gave 0.18 rad/s (122 deg in 13 s on the robot, 2026-10-07). Reaching rotate_to_heading_angular_vel needs a >= 0.9 * 0.27 / 0.05 = 4.9; 5.0 was used on the robot.
     # The real ramp is still limited by velocity_smoother max_accel. The simulated base follows the command exactly, so the sim does not show this stall.
-    FollowPath: {plugin: 'nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController', desired_linear_vel: 0.3, lookahead_dist: 0.6,
+    FollowPath: {plugin: 'nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController', desired_linear_vel: 0.4, lookahead_dist: 0.6,
       min_lookahead_dist: 0.3, max_lookahead_dist: 0.9, use_velocity_scaled_lookahead_dist: true, use_regulated_linear_velocity_scaling: true,
       use_cost_regulated_linear_velocity_scaling: true, use_rotate_to_heading: true, rotate_to_heading_angular_vel: 0.9, max_angular_accel: 5.0,
       allow_reversing: false}
@@ -186,8 +186,8 @@ velocity_smoother:
     stamp_smoothed_velocity_with_smoothing_time: false
     scale_velocities: false
     feedback: OPEN_LOOP
-    max_velocity: [0.35, 0.0, 1.0]
-    min_velocity: [-0.2, 0.0, -1.0]
+    max_velocity: [0.5, 0.0, 1.2]
+    min_velocity: [-0.2, 0.0, -1.2]
     max_accel: [0.5, 0.0, 1.5]
     max_decel: [-1.0, 0.0, -1.5]
     odom_topic: odom
