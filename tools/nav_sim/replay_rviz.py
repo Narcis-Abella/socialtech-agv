@@ -15,11 +15,13 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 import analyze as a
+import dyn
+import dyn_metrics as dm
 import metrics as m
 import scenarios as sc
 
-COLORS = [(0.9, 0.2, 0.2), (0.2, 0.7, 0.3), (0.2, 0.4, 0.95), (1.0, 0.0, 0.0), (0.0, 0.3, 1.0)]
-BY_LABEL = {"base": COLORS[0], "infl70": COLORS[1], "la5": COLORS[2], "cd08m": COLORS[3], "vm": COLORS[4]}      # a variant keeps its colour in every window; other labels take the next free one
+COLORS = [(0.9, 0.2, 0.2), (0.2, 0.7, 0.3), (0.2, 0.4, 0.95), (1.0, 0.0, 0.0), (0.0, 0.3, 1.0), (1.0, 0.6, 0.0)]
+BY_LABEL = {"base": COLORS[0], "infl70": COLORS[1], "la5": COLORS[2], "cd08m": COLORS[3], "vm": COLORS[4], "cml": COLORS[4], "cml2": COLORS[5]}      # a variant keeps its colour in every window; other labels take the next free one
 STEP = 0.01     # footprint sampling for the independent distance
 
 
@@ -46,12 +48,38 @@ def face_clearance(occ, origin, res, x, y, yaw, length, width):
     return float(d[i, j]), (int(rows[idx[i, j]]), int(cols[idx[i, j]])), (float(px[i]), float(py[i]))
 
 
+def walker_series(rec, t0):
+    """(T, X, Y, YAW, size) of the first moving obstacle of a trial with "dyn_log", times relative to t0; None without one."""
+    log = [e for e in rec.get("dyn_log", []) if e[1] == (rec["dyn"][0]["model"] if rec.get("dyn") else None)]
+    if not log:
+        return None
+    arr = np.asarray([[e[0] - t0, e[2], e[3], e[4]] for e in log], float)
+    return arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3], tuple(rec["dyn"][0]["size"][:2])
+
+
+def walker_at(w, t):
+    """Walker pose (x, y, yaw) at time t from the last command sent at or before t; None before it starts moving."""
+    i = int(np.searchsorted(w[0], t, side="right")) - 1
+    return None if i < 0 else (w[1][i], w[2][i], w[3][i])
+
+
 def load_case(spec, ctx, occ):
     label, run, tid = spec.split(":")
     rec = next(r for r in a.load_trials(run) if r["id"] == tid)
     col = {c: i for i, c in enumerate(rec["cols"])}
     rows = np.asarray(rec["rows"], float)
     t, pose = rows[:, col["t"]] - rows[0, col["t"]], rows[:, [col["gt_x"], col["gt_y"], col["gt_yaw"]]]
+    w = walker_series(rec, rows[0, col["t"]])
+    if w is not None:                       # encounter with a moving obstacle: report the closest approach to it instead of the wall clearance
+        gaps = []
+        for tt, p in zip(t, pose):
+            o = walker_at(w, tt)
+            gaps.append((dyn.rect_distance((*p, *dm.BODY), (*o, *w[4])), dyn.rect_distance((*p, *dm.FOOTPRINT), (*o, *w[4]))) if o and math.hypot(o[0] - p[0], o[1] - p[1]) < dm.NEAR else (dm.NEAR, dm.NEAR))
+        gaps = np.asarray(gaps)
+        k = int(np.argmin(gaps[:, 0]))
+        d = dm.trial_metrics(rec)
+        return {"label": label, "id": tid, "t": t, "pose": pose, "plan": np.asarray(rec["plan_first"], float), "min_pose": pose[k], "metric": float(gaps[k, 0]), "face": float(gaps[k, 1]), "cell": None,
+                "near": None, "duration": float(rec["duration"]), "status": rec["status"], "walker": w, "dyn": d}
     sub = pose[::5]                         # same sampling as analyze.trial_metrics
     cl = np.array([m.footprint_clearance(ctx["dist"], ctx["origin"], ctx["res"], *p, *ctx["footprint"]) for p in sub])
     away = (np.hypot(*(sub[:, :2] - rec["start"][:2]).T) > 1.0) & (np.hypot(*(sub[:, :2] - rec["goal"][:2]).T) > 1.0)
@@ -113,6 +141,10 @@ def main(argv):
     ctx = a.context(args.map)
     cases = [load_case(c, ctx, mp["occ"]) for c in args.case]
     for c in cases:
+        if c.get("walker"):
+            d = c["dyn"]
+            print(f"{c['label']:10s} {c['id']} {c['status']} {c['duration']:.1f} s  closest approach to the walker: body {c['metric'] * 100:.0f} cm, Nav2 footprint {c['face'] * 100:.0f} cm{'  CONTACT' + (' (robot moving)' if d['active_contact'] else ' (robot stopped)') if d['contact'] else ''}  reached={d['reached']}")
+            continue
         print(f"{c['label']:10s} {c['id']} {c['status']} {c['duration']:.1f} s  min mid-route clearance: metric {c['metric'] * 100:.1f} cm (to cell centre) | independent {c['face'] * 100:.1f} cm (to wall face)")
     import rclpy
     from geometry_msgs.msg import Point
@@ -158,7 +190,12 @@ def main(argv):
         static.append(line(10 * n + 1, "driven", c["pose"][:, :2], rgb, 0.05))
         mx, my, myaw = c["min_pose"]
         static.append(line(10 * n + 2, "minfp", rect(mx, my, myaw, *fp), rgb, 0.04))
-        static.append(text(10 * n + 3, "label", mx, my + 0.6 + 0.35 * n, f"{c['label']} {c['id']}: {c['metric'] * 100:.1f} cm (centre) / {c['face'] * 100:.1f} cm (face)", rgb))
+        if c.get("walker"):
+            d = c["dyn"]
+            static.append(text(10 * n + 3, "label", mx, my + 0.6 + 0.35 * n, f"{c['label']} {c['id']}: gap {c['metric'] * 100:.0f} cm" + (" CONTACT" if d["contact"] else "") + ("" if d["reached"] else " NOT REACHED"), rgb))
+            static.append(line(10 * n + 7, "walkerpath", list(zip(c["walker"][1], c["walker"][2])), rgb, 0.015, 0.5))
+        else:
+            static.append(text(10 * n + 3, "label", mx, my + 0.6 + 0.35 * n, f"{c['label']} {c['id']}: {c['metric'] * 100:.1f} cm (centre) / {c['face'] * 100:.1f} cm (face)", rgb))
         if c["cell"] is not None:
             r, cc = c["cell"]
             wx, wy = mp["origin"][0] + (cc + 0.5) * mp["res"], mp["origin"][1] + (h - 1 - r + 0.5) * mp["res"]
@@ -180,6 +217,10 @@ def main(argv):
                 x, y = np.interp(tt, c["t"], c["pose"][:, 0]), np.interp(tt, c["t"], c["pose"][:, 1])
                 yaw = float(np.interp(tt, c["t"], np.unwrap(c["pose"][:, 2])))
                 msgs.append(line(10 * n + 6, "robot", rect(x, y, yaw, *fp), rgb, 0.03))
+                if c.get("walker"):
+                    o = walker_at(c["walker"], tt)
+                    if o:
+                        msgs.append(line(10 * n + 8, "walker", rect(*o, *c["walker"][4]), (0.0, 0.0, 0.0), 0.06))
             mk_pub.publish(MarkerArray(markers=msgs))
             rclpy.spin_once(node, timeout_sec=0.05)
     except KeyboardInterrupt:
