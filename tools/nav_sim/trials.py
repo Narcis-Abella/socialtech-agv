@@ -22,6 +22,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker
 
 import dyn
+import gcm_codec
 import ghost
 import legend
 from initpose import init_offset
@@ -65,6 +66,7 @@ class Runner:
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
         node.create_subscription(OccupancyGrid, "/map", lambda m: setattr(self, "static_map", m), latched)
         node.create_subscription(OccupancyGrid, "/global_costmap/costmap", self.on_gcm, 1)
+        self.gcm_frames, self.gcm_meta = [], None      # REC_GCM=1: every global costmap publication of the trial, compressed (see gcm_codec.py), to replay it in rviz2
         self.ghost_series, self.tail_watch = [], False      # [t, wake cells] at every global costmap publication while a trial (or its tail) is watched
         self.legend_pub = node.create_publisher(Marker, "/legend", latched)   # rviz2 Marker display: what the job runs, and which trial
         self.total = 0
@@ -119,6 +121,9 @@ class Runner:
         if (self.recording or self.tail_watch) and a is not None and (a.info.width, a.info.height) == (m.info.width, m.info.height):
             n = ghost.wake_cells(m.data, a.data, m.info.width, m.info.height, (m.info.origin.position.x, m.info.origin.position.y), m.info.resolution, self.walker_xy())
             self.ghost_series.append([round(self.now(), 2), n])
+            if os.environ.get("REC_GCM"):
+                self.gcm_meta = {"width": m.info.width, "height": m.info.height, "res": m.info.resolution, "origin": [m.info.origin.position.x, m.info.origin.position.y]}
+                self.gcm_frames.append([round(self.now(), 2), gcm_codec.encode(m.data)])
             self.last_wake = n
             self.publish_legend()
 
@@ -217,7 +222,7 @@ class Runner:
         chain = bool(via) and dwell >= 0
         feedback, stops, status, code, msg, recoveries = [], [], "rejected", -1, "", 0
         self.rows, self.plans, self.plan_log, self.recording = [], [], [], True
-        self.ghost_series = []
+        self.ghost_series, self.gcm_frames = [], []
         t0 = self.now()
         limit = float(os.environ.get("TRIAL_TIMEOUT", 240))
         legs = [*via, trial["goal"]] if chain else [None]
@@ -270,7 +275,7 @@ class Runner:
         rec = {"dyn": walkers, "dyn_log": dyn_log, "dyn_unstarted": [d["model"] for d in waiting],
 "id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "via": via or [], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
                "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
-               "recoveries": recoveries, "stops": stops, "ghost_series": self.ghost_series, "ghost_cells": self.ghost if not chained else [None, self.ghost_cells()], "feedback": feedback, "n_plans": len(self.plans),
+               "recoveries": recoveries, "stops": stops, "ghost_series": self.ghost_series, "gcm_meta": self.gcm_meta, "gcm_frames": self.gcm_frames, "ghost_cells": self.ghost if not chained else [None, self.ghost_cells()], "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
                "plan_log": self.plan_log,
                "plan_all": [[round(t, 3), xy[::10]] for t, xy in self.plans],   # every plan, thinned, to see which route the planner chose each time (flip_metrics.py)
