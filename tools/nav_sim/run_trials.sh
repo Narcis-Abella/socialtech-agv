@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs a scenario file against Nav2 in the simulation, inside the `sim` image on the board. usage: run_trials.sh <scenario.json> <out dir> [reps]
 #   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (nav2_params.yaml instead of the packaged one), MERGE (overlay yamls, space-separated, merged into it first in order, may add plugin blocks), SET (comma-separated path=value overrides of it, e.g. "amcl.ros__parameters.alpha1=0.05,amcl.ros__parameters.alpha2=0.05"), MAP (map yaml instead of the packaged loyola.yaml), SIM_SRC (hospital-agv-sim checkout to build),
-#   SIM_ARGS (extra simulation.launch.py arguments: world:=, spawn_x:=, noise_seed:=, odom_source:= ...), ROS_DOMAIN_ID (53), SIM_WAIT (45 s), NAV_TIMEOUT (180 s), plus RUNNER (nav_sim/trials.py; nav_sim/plan_bench.py for the planner benchmark) and the env of the runner
+#   SIM_ARGS (extra simulation.launch.py arguments: world:=, spawn_x:=, noise_seed:=, odom_source:= ...), ROS_DOMAIN_ID (53), SIM_WAIT (45 s), NAV_TIMEOUT (180 s), EXTRA (command started after Nav2 is active), plus RUNNER (nav_sim/trials.py; nav_sim/plan_bench.py for the planner benchmark) and the env of the runner
 set -eo pipefail
 scenario=${1:?scenario.json}; out=${2:?out dir}; reps=${3:-1}
 source "${ROS_ENV:-/ros_env.sh}"
@@ -34,6 +34,7 @@ if ! timeout "${NAV_TIMEOUT:-180}" bash -c 'until [ "$(ros2 lifecycle get /bt_na
   exit 1
 fi
 sleep 5
+[ -z "$EXTRA" ] || { eval "$EXTRA" > "$out/extra.log" 2>&1 & }   # EXTRA: a command started once Nav2 is active (a helper node under test, e.g. speed_guard.py); the trap at the top stops it
 ros2 param list /controller_server > "$out/declared_controller.txt" 2>&1   # to check that an overlay's keys are parameters of the plugin
 ps -eo pid,args | grep -E 'nav2|opennav|gz|noisy|bridge' | grep -v grep | cut -c1-160 > "$out/ps.txt"
 python3 /tools/nav_bench/cost_sampler.py sample "$out/cost.csv" --every 1.0 &
