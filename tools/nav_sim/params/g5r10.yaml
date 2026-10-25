@@ -1,4 +1,5 @@
-# Overlay (params_merge.py): the fast end of g2r10.yaml: global costmap 5 Hz, marking/raytrace to 10 m, BT replanning 3 Hz.
+# Overlay (params_merge.py): the fast end of g2r10.yaml: global costmap 5 Hz, marking and raytrace up to 10 m, BT replanning at 3 Hz (replan3.xml).
+global_costmap:
   global_costmap:
     ros__parameters:
       update_frequency: 5.0
