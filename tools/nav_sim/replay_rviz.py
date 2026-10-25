@@ -83,14 +83,14 @@ def load_case(spec, ctx, occ):
         k = int(np.argmin(gaps[:, 0]))
         d = dm.trial_metrics(rec)
         return {"label": label, "id": tid, "t": t, "pose": pose, "plan": np.asarray(rec["plan_first"], float), "min_pose": pose[k], "metric": float(gaps[k, 0]), "face": float(gaps[k, 1]), "cell": None,
-                "near": None, "duration": float(rec["duration"]), "status": rec["status"], "walker": w, "dyn": d, **extra}
+                "near": None, "duration": float(rec["duration"]), "status": rec["status"], "walker": w, "dyn": d, "start": rec["start"], "goal": rec["goal"], **extra}
     sub = pose[::5]                         # same sampling as analyze.trial_metrics
     cl = np.array([m.footprint_clearance(ctx["dist"], ctx["origin"], ctx["res"], *p, *ctx["footprint"]) for p in sub])
     away = (np.hypot(*(sub[:, :2] - rec["start"][:2]).T) > 1.0) & (np.hypot(*(sub[:, :2] - rec["goal"][:2]).T) > 1.0)
     i = int(np.flatnonzero(away)[np.argmin(cl[away])]) if away.any() else int(np.argmin(cl))
     gap, cell, near = face_clearance(occ, ctx["origin"], ctx["res"], *sub[i], *ctx["footprint"])
     return {"label": label, "id": tid, "t": t, "pose": pose, "plan": np.asarray(rec["plan_first"], float), "min_pose": sub[i], "metric": float(cl[i]), "face": gap, "cell": cell,
-            "near": near, "duration": float(rec["duration"]), "status": rec["status"], **extra}
+            "near": near, "duration": float(rec["duration"]), "status": rec["status"], "start": rec["start"], "goal": rec["goal"], **extra}
 
 
 def colours(labels):
@@ -211,6 +211,15 @@ def main(argv):
     for n, (c, rgb) in enumerate(zip(cases, colours([c["label"] for c in cases]))):
         static.append(line(10 * n, "plan", c["plan"][:, :2], rgb, 0.02, 0.6))
         static.append(line(10 * n + 1, "driven", c["pose"][:, :2], rgb, 0.05))
+        for gid, (gx, gy), gcol, gtxt in ((10 * n + 5, c["start"][:2], (0.3, 0.8, 1.0), "START"), (10 * n + 6, c["goal"][:2], (1.0, 0.2, 1.0), "GOAL")):
+            g = Marker()
+            g.header.frame_id, g.ns, g.id, g.type, g.action = "map", f"sg{n}", gid, Marker.CYLINDER, Marker.ADD
+            g.pose.position.x, g.pose.position.y, g.pose.position.z, g.pose.orientation.w = float(gx), float(gy), 0.05, 1.0
+            g.scale.x = g.scale.y = 0.5
+            g.scale.z = 0.05
+            g.color.r, g.color.g, g.color.b, g.color.a = *gcol, 0.8
+            static.append(g)
+            static.append(text(gid, f"sgt{n}", gx, gy + 0.5, gtxt, gcol, 0.3))
         mx, my, myaw = c["min_pose"]
         static.append(line(10 * n + 2, "minfp", rect(mx, my, myaw, *fp), rgb, 0.04))
         if c.get("walker"):
