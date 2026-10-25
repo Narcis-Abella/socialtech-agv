@@ -1,0 +1,7 @@
+# Overlay (params_merge.py): local costmap updated and published at 10 Hz (packaged: update 5 Hz, publish 2 Hz, observed ~1.6 Hz on the topic). The speed guard reads the published costmap: at 1.6 Hz its data is up to 0.6 s old,
+# which is ~1 m for a pedestrian walking towards the robot at 1 m/s while the robot drives at 0.6 m/s.
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 10.0
