@@ -20,7 +20,7 @@ FOOTPRINT = (0.70, 0.58)
 STOP_TOL = 0.5                        # a via pose counts as visited within this distance (NavigateThroughPoses does not stop on it)
 HZ = 50.0                              # sampling rate of trials.py rows
 COMPARED = ["duration", "path_len", "spl", "final_err_xy", "recoveries", "jerk_lin_rms", "jerk_lin_p95", "acc_lin_p95", "jerk_ang_rms", "acc_ang_p95", "vx_reversals",
-            "xtrack_p95", "loc_err_p95", "converge_s", "clearance_min", "clearance_mid", "idle_frac"]
+            "xtrack_p95", "loc_err_p95", "converge_s", "clearance_min", "clearance_mid", "idle_frac", "t_first_move"]
 
 
 def load_trials(run_dir):
@@ -58,6 +58,8 @@ def trial_metrics(rec, ctx):
         _, vv = m.resample(t, v, 0.05)
         acc, jerk = m.acc_jerk(np.arange(len(vv)) * 0.05, vv)
         out[f"acc_{key}_p95"], out[f"jerk_{key}_rms"], out[f"jerk_{key}_p95"] = m.p95(np.abs(acc)), m.rms(jerk), m.p95(np.abs(jerk))
+    moved = np.flatnonzero(np.hypot(*(gt - gt[0]).T) > 0.1)
+    out["t_first_move"] = float(t[moved[0]] - t[0]) if moved.size else math.nan      # slow rotate-to-heading shows here
     out["vx_mean"] = float(np.mean(rows[:, col["cmd_vx"]]))
     out["vx_reversals"] = m.sign_reversals(rows[:, col["cmd_vx"]], 0.01)
     out["wz_reversals"] = m.sign_reversals(rows[:, col["cmd_wz"]], 0.02)

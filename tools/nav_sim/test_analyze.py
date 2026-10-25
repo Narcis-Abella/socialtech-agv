@@ -120,6 +120,14 @@ def test_stops_reached_counts_the_via_poses_the_robot_came_within_half_a_metre_o
     assert "stops_reached" not in a.trial_metrics(straight_trial(), ctx())
 
 
+def test_t_first_move_is_the_time_until_the_robot_is_0_1_m_from_where_it_started():
+    tr = straight_trial()
+    for r in tr["rows"]:
+        r[1] = 1.0 if r[0] < 2.0 else r[1]                         # stands still for 2 s (turning in place in a real run), then follows the straight run
+    got = a.trial_metrics(tr, ctx())["t_first_move"]
+    assert 2.0 <= got <= 2.5
+
+
 def test_an_aborted_trial_with_almost_no_rows_still_has_every_summary_key():
     tr = straight_trial(status="aborted")
     tr["rows"] = tr["rows"][:2]                                    # Nav2 refused the goal at once (e.g. START_OCCUPIED): nothing was recorded
