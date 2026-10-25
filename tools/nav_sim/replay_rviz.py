@@ -18,8 +18,8 @@ import analyze as a
 import metrics as m
 import scenarios as sc
 
-COLORS = [(0.9, 0.2, 0.2), (0.2, 0.7, 0.3), (0.2, 0.4, 0.95), (0.9, 0.6, 0.1)]
-BY_LABEL = {"base": COLORS[0], "infl70": COLORS[1], "la5": COLORS[2]}      # a variant keeps its colour in every window; other labels take the next free one
+COLORS = [(0.9, 0.2, 0.2), (0.2, 0.7, 0.3), (0.2, 0.4, 0.95), (1.0, 0.0, 0.0), (0.0, 0.3, 1.0)]
+BY_LABEL = {"base": COLORS[0], "infl70": COLORS[1], "la5": COLORS[2], "cd08m": COLORS[3], "vm": COLORS[4]}      # a variant keeps its colour in every window; other labels take the next free one
 STEP = 0.01     # footprint sampling for the independent distance
 
 
@@ -158,7 +158,7 @@ def main(argv):
         static.append(line(10 * n + 1, "driven", c["pose"][:, :2], rgb, 0.05))
         mx, my, myaw = c["min_pose"]
         static.append(line(10 * n + 2, "minfp", rect(mx, my, myaw, *fp), rgb, 0.04))
-        static.append(text(10 * n + 3, "label", mx, my + 0.6 + 0.35 * n, f"{c['label']}: {c['metric'] * 100:.1f} cm (centre) / {c['face'] * 100:.1f} cm (face)", rgb))
+        static.append(text(10 * n + 3, "label", mx, my + 0.6 + 0.35 * n, f"{c['label']} {c['id']}: {c['metric'] * 100:.1f} cm (centre) / {c['face'] * 100:.1f} cm (face)", rgb))
         if c["cell"] is not None:
             r, cc = c["cell"]
             wx, wy = mp["origin"][0] + (cc + 0.5) * mp["res"], mp["origin"][1] + (h - 1 - r + 0.5) * mp["res"]
