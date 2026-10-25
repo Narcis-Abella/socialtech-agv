@@ -13,6 +13,7 @@ import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
+from nav2_msgs.msg import CollisionMonitorState
 from nav2_msgs.srv import ClearEntireCostmap
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.action import ActionClient
@@ -66,6 +67,8 @@ class Runner:
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
         node.create_subscription(OccupancyGrid, "/map", lambda m: setattr(self, "static_map", m), latched)
         node.create_subscription(OccupancyGrid, "/global_costmap/costmap", self.on_gcm, 1)
+        self.cm_log, self.cm_last = [], None      # [t, action_type, polygon] each time the Collision Monitor changes its mind (0 nothing, 1 stop, 2 slowdown, 3 approach, 4 limit)
+        node.create_subscription(CollisionMonitorState, "/collision_monitor_state", self.on_cm, 10)
         self.gcm_frames, self.gcm_meta = [], None      # REC_GCM=1: every global costmap publication of the trial, compressed (see gcm_codec.py), to replay it in rviz2
         self.ghost_series, self.tail_watch = [], False      # [t, wake cells] at every global costmap publication while a trial (or its tail) is watched
         self.legend_pub = node.create_publisher(Marker, "/legend", latched)   # rviz2 Marker display: what the job runs, and which trial
@@ -105,6 +108,12 @@ class Runner:
         est = self.estimate() or (math.nan,) * 3
         self.rows.append([round(self.now(), 4), *[round(v, 4) for v in self.gt], *[round(v, 4) for v in est],
                           *[round(v, 4) for k in self.cmd for v in self.cmd[k]], *[round(v, 4) for v in self.odom]])
+
+    def on_cm(self, m):
+        key = (m.action_type, m.polygon_name)
+        if (self.recording or self.tail_watch) and key != self.cm_last:
+            self.cm_log.append([round(self.now(), 2), int(m.action_type), m.polygon_name])
+        self.cm_last = key
 
     def walker_xy(self):
         """Current ground-truth position of every moving obstacle (last command sent to the simulator)."""
@@ -222,7 +231,7 @@ class Runner:
         chain = bool(via) and dwell >= 0
         feedback, stops, status, code, msg, recoveries = [], [], "rejected", -1, "", 0
         self.rows, self.plans, self.plan_log, self.recording = [], [], [], True
-        self.ghost_series, self.gcm_frames = [], []
+        self.ghost_series, self.gcm_frames, self.cm_log = [], [], []
         t0 = self.now()
         limit = float(os.environ.get("TRIAL_TIMEOUT", 240))
         legs = [*via, trial["goal"]] if chain else [None]
@@ -275,7 +284,7 @@ class Runner:
         rec = {"dyn": walkers, "dyn_log": dyn_log, "dyn_unstarted": [d["model"] for d in waiting],
 "id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "via": via or [], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
                "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
-               "recoveries": recoveries, "stops": stops, "ghost_series": self.ghost_series, "gcm_meta": self.gcm_meta, "gcm_frames": self.gcm_frames, "ghost_cells": self.ghost if not chained else [None, self.ghost_cells()], "feedback": feedback, "n_plans": len(self.plans),
+               "recoveries": recoveries, "stops": stops, "ghost_series": self.ghost_series, "cm_log": self.cm_log, "gcm_meta": self.gcm_meta, "gcm_frames": self.gcm_frames, "ghost_cells": self.ghost if not chained else [None, self.ghost_cells()], "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
                "plan_log": self.plan_log,
                "plan_all": [[round(t, 3), xy[::10]] for t, xy in self.plans],   # every plan, thinned, to see which route the planner chose each time (flip_metrics.py)

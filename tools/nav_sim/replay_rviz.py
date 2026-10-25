@@ -149,6 +149,7 @@ def main(argv):
     ap.add_argument("--map", required=True)
     ap.add_argument("--case", action="append", required=True, help="label:run out dir:trial id")
     ap.add_argument("--speed", type=float, default=4.0)
+    ap.add_argument("--sequence", action="store_true", help="play the cases one after another (each with its own recorded costmap) instead of overlaying them")
     ap.add_argument("--no-rviz", action="store_true", help="publish only (rviz2 started elsewhere, or a test)")
     args = ap.parse_args(argv)
     mp = sc.load_map(args.map)
@@ -161,6 +162,7 @@ def main(argv):
             continue
         print(f"{c['label']:10s} {c['id']} {c['status']} {c['duration']:.1f} s  min mid-route clearance: metric {c['metric'] * 100:.1f} cm (to cell centre) | independent {c['face'] * 100:.1f} cm (to wall face)")
     import rclpy
+    from builtin_interfaces.msg import Duration
     from geometry_msgs.msg import Point
     from nav_msgs.msg import OccupancyGrid
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -224,13 +226,25 @@ def main(argv):
     pause, t_wall = 2.0, time.time()
     longest = max(max(c["t"][-1], c["gcm"][-1][0] if c.get("gcm") else 0.0) for c in cases)
     cc = next((c for c in cases if c.get("gcm")), None)      # the recorded costmap shown is the first case that has one
-    static_flat, shown = grid.ravel(), [None]
+    static_flat, shown, last_case = grid.ravel(), [None], [None]
+    spans = [max(c["t"][-1], c["gcm"][-1][0] if c.get("gcm") else 0.0) + pause * args.speed for c in cases]      # one pass of each case plus a pause
     dwall = (ndimage.distance_transform_edt(~mp["occ"]) * mp["res"])[::-1].ravel()      # metres to the nearest wall cell, in OccupancyGrid layout: marks scattered by lidar noise right next to a wall are not a wake
     try:
         while rclpy.ok() and (proc is None or proc.poll() is None):
-            ph = ((time.time() - t_wall) * args.speed) % (longest + pause * args.speed)
-            msgs = list(static)
+            if args.sequence:      # one case at a time: its own robot, walker, plan and recorded costmap
+                pos = ((time.time() - t_wall) * args.speed) % sum(spans)
+                cur = next(i for i in range(len(cases)) if pos < sum(spans[:i + 1]))
+                ph = pos - sum(spans[:cur])
+                if cur != last_case[0]:
+                    last_case[0], shown[0], cc = cur, None, (cases[cur] if cases[cur].get("gcm") else None)
+            else:
+                cur, ph = None, ((time.time() - t_wall) * args.speed) % (longest + pause * args.speed)
+            msgs = [m for m in static if cur is None or m.id // 10 == cur]
+            if cur is not None:
+                msgs.append(text(900, "case", float(centre[0]), float(centre[1]) + span / 2 - 1.0, f"case {cur + 1}/{len(cases)}: {cases[cur]['label']} {cases[cur]['id']}", (1.0, 1.0, 1.0), 0.5))
             for n, (c, rgb) in enumerate(zip(cases, colours([c["label"] for c in cases]))):
+                if cur is not None and n != cur:
+                    continue
                 tt = min(ph, c["t"][-1])
                 x, y = np.interp(tt, c["t"], c["pose"][:, 0]), np.interp(tt, c["t"], c["pose"][:, 1])
                 yaw = float(np.interp(tt, c["t"], np.unwrap(c["pose"][:, 2])))
@@ -262,8 +276,11 @@ def main(argv):
                     lab.header.frame_id, lab.ns, lab.id, lab.type, lab.action = "map", "wake", 1, Marker.TEXT_VIEW_FACING, Marker.ADD
                     lab.pose.position.x, lab.pose.position.y, lab.pose.position.z = float(meta["origin"][0] + meta["width"] * meta["res"] / 2), float(meta["origin"][1] + meta["height"] * meta["res"] - 1.0), 0.5
                     lab.scale.z, lab.color.r, lab.color.g, lab.color.b, lab.color.a = 0.4, 1.0, 0.4, 1.0, 1.0
-                    lab.text = f"{cc['label']}  t={ph:5.1f} s   lethal cells with no wall or walker to explain them (magenta): {len(wx)}"
+                    lab.text = f"{cc['label']} {cc['id']}  t={ph:5.1f} s   lethal cells with no wall or walker to explain them (magenta): {len(wx)}"
+                    pts.lifetime = lab.lifetime = Duration(sec=1)
                     wake_pub.publish(MarkerArray(markers=[pts, lab]))
+            for mk in msgs:
+                mk.lifetime = Duration(sec=0, nanosec=500_000_000)      # markers of the case that just ended expire on their own
             mk_pub.publish(MarkerArray(markers=msgs))
             rclpy.spin_once(node, timeout_sec=0.05)
     except KeyboardInterrupt:

@@ -1,0 +1,9 @@
+# Overlay (params_merge.py): ONE lateral slowdown zone, sized from the physics instead of guessed (cm_lat was 0.8 m x0.5, cm_wide 1.5/2.5 m x0.3).
+#   robot 0.6 m/s must be at ~0.25 m/s when a pedestrian walking at up to 1.2 m/s reaches its lane. Slowing 0.6 -> 0.25 at 1.0 m/s2 takes 0.35 s; add 0.15 s of latency:
+#   half-width = 0.29 (robot) + 1.2 * 0.5 = 0.89 -> 0.9 m. Reach: the pedestrian can cross ~1 m ahead of the base centre (0.35 m front + 0.65 m) -> 1.0 m. Ratio 0.4 (0.6 -> 0.24 m/s).
+# Zones do not stack in the Collision Monitor: each triggered polygon computes its velocity from the ORIGINAL command and only replaces the current one if its |v|^2 (x, y, tw) is smaller; the most restrictive wins, STOP ends it
+# (collision_monitor_node.cpp processStopSlowdownLimit, types.hpp Velocity::operator<). Total zones: FootprintApproach (packaged) + this one. NOT for corridors: walls within 0.9 m keep it on.
+collision_monitor:
+  ros__parameters:
+    polygons: [FootprintApproach, LateralSlowdown]
+    LateralSlowdown: {type: polygon, points: "[[1.0, 0.9], [1.0, -0.9], [-0.3, -0.9], [-0.3, 0.9]]", action_type: slowdown, slowdown_ratio: 0.4, min_points: 6, visualize: true, enabled: true}
