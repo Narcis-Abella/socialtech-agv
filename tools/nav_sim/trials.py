@@ -8,13 +8,15 @@ import os
 import subprocess
 import sys
 
+import numpy as np
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
 from nav2_msgs.srv import ClearEntireCostmap
-from nav_msgs.msg import Odometry, Path
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.action import ActionClient
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -56,6 +58,10 @@ class Runner:
         node.create_subscription(Odometry, "/odom", self.on_odom, 10)
         self.init_pub = node.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
         self.clear = [node.create_client(ClearEntireCostmap, s) for s in ("/local_costmap/clear_entirely_local_costmap", "/global_costmap/clear_entirely_global_costmap")]
+        self.static_map, self.gcm, self.ghost = None, None, [None, None]
+        latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
+        node.create_subscription(OccupancyGrid, "/map", lambda m: setattr(self, "static_map", m), latched)
+        node.create_subscription(OccupancyGrid, "/global_costmap/costmap", lambda m: setattr(self, "gcm", m), 1)
         node.create_timer(1.0 / HZ, self.sample)
 
     def now(self):
@@ -91,6 +97,14 @@ class Runner:
         est = self.estimate() or (math.nan,) * 3
         self.rows.append([round(self.now(), 4), *[round(v, 4) for v in self.gt], *[round(v, 4) for v in est],
                           *[round(v, 4) for k in self.cmd for v in self.cmd[k]], *[round(v, 4) for v in self.odom]])
+
+    def ghost_cells(self):
+        """Lethal cells (254) of the global costmap that are free in the static map: obstacles the lidar marked at the wrong place or that nobody cleared. With the moving obstacles parked away,
+        anything above a few cells is contamination from the previous trial or from the AMCL offset. None before both grids have arrived or when their sizes differ."""
+        a, b = self.static_map, self.gcm
+        if a is None or b is None or (a.info.width, a.info.height) != (b.info.width, b.info.height):
+            return None
+        return int(np.count_nonzero((np.asarray(b.data, np.int16) == 254) & (np.asarray(a.data, np.int16) == 0)))
 
     def spin_for(self, seconds):
         end = self.now() + seconds
@@ -128,6 +142,14 @@ class Runner:
                         break
                 else:
                     good_since = None
+        # Clear again once the AMCL has converged: the clear above ran while the estimate was still offset by up to the initial sigma, and the scans that kept arriving were marked at the wrong
+        # place (a ghost wall in the global costmap). The global costmap repaints at its publish rate, so let it do so before the goal is sent.
+        before = self.ghost_cells()
+        for c in self.clear:
+            if c.wait_for_service(timeout_sec=2.0):
+                rclpy.spin_until_future_complete(self.n, c.call_async(ClearEntireCostmap.Request()), timeout_sec=3.0)
+        self.spin_for(float(os.environ.get("CLEAR_SETTLE", 2.0)))
+        self.ghost = [before, self.ghost_cells()]
         return err
 
     def run_trial(self, trial, tag):
@@ -200,7 +222,7 @@ class Runner:
         rec = {"dyn": walkers, "dyn_log": dyn_log, "dyn_unstarted": [d["model"] for d in waiting],
 "id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "via": via or [], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
                "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
-               "recoveries": recoveries, "stops": stops, "feedback": feedback, "n_plans": len(self.plans),
+               "recoveries": recoveries, "stops": stops, "ghost_cells": self.ghost if not chained else [None, self.ghost_cells()], "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
                "plan_log": self.plan_log,
                "plan_all": [[round(t, 3), xy[::10]] for t, xy in self.plans],   # every plan, thinned, to see which route the planner chose each time (flip_metrics.py)
