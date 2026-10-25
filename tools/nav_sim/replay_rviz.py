@@ -73,7 +73,7 @@ def load_case(spec, ctx, occ):
     rows = np.asarray(rec["rows"], float)
     t, pose = rows[:, col["t"]] - rows[0, col["t"]], rows[:, [col["gt_x"], col["gt_y"], col["gt_yaw"]]]
     w = walker_series(rec, rows[0, col["t"]])
-    extra = {"gcm": [[tf - rows[0, col["t"]], pl] for tf, pl in rec.get("gcm_frames", [])], "gcm_meta": rec.get("gcm_meta")}      # recorded global costmap (REC_GCM=1), times relative to the trial start
+    extra = {"gcm": [[tf - rows[0, col["t"]], pl] for tf, pl in rec.get("gcm_frames", [])], "gcm_meta": rec.get("gcm_meta"), "cm": [[tc - rows[0, col["t"]], ac, pc] for tc, ac, pc in rec.get("cm_log", [])]}      # recorded global costmap (REC_GCM=1), times relative to the trial start
     if w is not None:                       # encounter with a moving obstacle: report the closest approach to it instead of the wall clearance
         gaps = []
         for tt, p in zip(t, pose):
@@ -95,7 +95,12 @@ def load_case(spec, ctx, occ):
 
 def colours(labels):
     free = [c for c in COLORS if c not in BY_LABEL.values()] + COLORS
-    return [BY_LABEL.get(l) or free.pop(0) for l in labels]
+    seen, out = {}, []
+    for l in labels:          # one colour per distinct label, however many cases share it
+        if l not in seen:
+            seen[l] = BY_LABEL.get(l) or free.pop(0)
+        out.append(seen[l])
+    return out
 
 
 def rect(x, y, yaw, length, width):
@@ -150,6 +155,7 @@ def main(argv):
     ap.add_argument("--case", action="append", required=True, help="label:run out dir:trial id")
     ap.add_argument("--speed", type=float, default=4.0)
     ap.add_argument("--sequence", action="store_true", help="play the cases one after another (each with its own recorded costmap) instead of overlaying them")
+    ap.add_argument("--zone", help="front,back,half_width of a Collision Monitor zone to draw on the robot (metres), coloured by who is in command (cm_log): red = a slowdown zone, yellow = approach")
     ap.add_argument("--no-rviz", action="store_true", help="publish only (rviz2 started elsewhere, or a test)")
     args = ap.parse_args(argv)
     mp = sc.load_map(args.map)
@@ -249,6 +255,15 @@ def main(argv):
                 x, y = np.interp(tt, c["t"], c["pose"][:, 0]), np.interp(tt, c["t"], c["pose"][:, 1])
                 yaw = float(np.interp(tt, c["t"], np.unwrap(c["pose"][:, 2])))
                 msgs.append(line(10 * n + 6, "robot", rect(x, y, yaw, *fp), rgb, 0.03))
+                if args.zone and c.get("cm") is not None and c["label"].startswith("zona"):
+                    zf, zb, zw = (float(v) for v in args.zone.split(","))
+                    st = next((e for e in reversed(c["cm"]) if e[0] <= tt), None)
+                    act, who = (st[1], st[2]) if st else (0, "")
+                    col = (1.0, 0.1, 0.1) if act == 2 else ((1.0, 0.85, 0.0) if act in (3, 1, 4) else (0.5, 0.6, 0.5))
+                    cy, sy = math.cos(yaw), math.sin(yaw)
+                    zp = [(x + cy * u - sy * v, y + sy * u + cy * v) for u, v in ((zf, zw), (zf, -zw), (zb, -zw), (zb, zw), (zf, zw))]
+                    msgs.append(line(10 * n + 9, "zone", zp, col, 0.05 if act else 0.02, 1.0 if act else 0.5))
+                    msgs.append(text(10 * n + 9, "zonetext", x, y - zw - 0.5, f"Collision Monitor: {['nothing', 'STOP', 'SLOWDOWN', 'APPROACH', 'LIMIT'][act]} {who}", col, 0.3))
                 if c.get("walker"):
                     o = walker_at(c["walker"], tt)
                     if o:

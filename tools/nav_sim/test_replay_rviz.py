@@ -40,6 +40,11 @@ def test_face_clearance_without_obstacles_is_inf():
     assert math.isinf(gap) and cell is None
 
 
+def test_colours_give_one_colour_per_label_even_with_many_cases():
+    c = rr.colours(["a", "b", "a", "b", "a", "b", "a", "b", "a", "b"])
+    assert c[0] == c[2] == c[8] and c[1] == c[3] and c[0] != c[1]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
