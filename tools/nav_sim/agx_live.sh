@@ -9,7 +9,7 @@ ssh_() { ssh -i "$KEY" -o ConnectTimeout=10 "$HOST" "$@"; }
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 case "$1" in
 start)
-  scen=${2:?scenario under tools/}; envf=${3:?env file}; : "${LAPTOP:?set LAPTOP to this laptop's LAN IP}"
+  scen=${2:?scenario under tools/}; envf=${3:?env file}; : "${LAPTOP:?set LAPTOP to the LAN IP of this laptop}"
   sim=${SIM_REPO:-$HOME/Documents/GitHub/hospital-agv-sim}; hash=$(git -C "$sim" rev-parse --short HEAD)
   remote=nav2runs/live_$(date +%y%m%d_%H%M%S)
   ssh_ "mkdir -p $remote/out && [ -f ~/sim_src/hospital-agv-sim_$hash/package.xml ]"
