@@ -1,0 +1,9 @@
+# Overlay (params_merge.py): TWO nested lateral slowdown zones (Narcis, 2026-10-26): outer +-1.0 m x0.7 and inner +-0.5 m x0.4, both 1.0 m ahead and 0.3 m behind the base centre.
+# The inner half-width is chosen to stay just inside a wall at 25 cm from the footprint (0.29 + 0.25 = 0.54 m from the centre), where the static worlds get closest.
+# Zones do not stack: each triggered polygon computes its velocity from the ORIGINAL command and only replaces the current one if |v|^2 is smaller; inside the inner zone the output is 0.4 x command (not 0.7 x 0.4).
+# Total polygons: FootprintApproach (packaged) + ZoneOuter + ZoneInner.
+collision_monitor:
+  ros__parameters:
+    polygons: [FootprintApproach, ZoneOuter, ZoneInner]
+    ZoneOuter: {type: polygon, points: "[[1.0, 1.0], [1.0, -1.0], [-0.3, -1.0], [-0.3, 1.0]]", action_type: slowdown, slowdown_ratio: 0.7, min_points: 6, visualize: true, enabled: true}
+    ZoneInner: {type: polygon, points: "[[1.0, 0.5], [1.0, -0.5], [-0.3, -0.5], [-0.3, 0.5]]", action_type: slowdown, slowdown_ratio: 0.4, min_points: 6, visualize: true, enabled: true}

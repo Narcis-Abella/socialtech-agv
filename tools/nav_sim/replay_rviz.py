@@ -155,7 +155,7 @@ def main(argv):
     ap.add_argument("--case", action="append", required=True, help="label:run out dir:trial id")
     ap.add_argument("--speed", type=float, default=4.0)
     ap.add_argument("--sequence", action="store_true", help="play the cases one after another (each with its own recorded costmap) instead of overlaying them")
-    ap.add_argument("--zone", help="front,back,half_width of a Collision Monitor zone to draw on the robot (metres), coloured by who is in command (cm_log): red = a slowdown zone, yellow = approach")
+    ap.add_argument("--zone", action="append", help="front,back,half_width[,polygon name] of a Collision Monitor zone to draw on the robot (metres); repeat for several. Red when that polygon is in command (cm_log), yellow when the approach is, grey otherwise")
     ap.add_argument("--no-rviz", action="store_true", help="publish only (rviz2 started elsewhere, or a test)")
     args = ap.parse_args(argv)
     mp = sc.load_map(args.map)
@@ -256,14 +256,17 @@ def main(argv):
                 yaw = float(np.interp(tt, c["t"], np.unwrap(c["pose"][:, 2])))
                 msgs.append(line(10 * n + 6, "robot", rect(x, y, yaw, *fp), rgb, 0.03))
                 if args.zone and c.get("cm") is not None and c["label"].startswith("zona"):
-                    zf, zb, zw = (float(v) for v in args.zone.split(","))
                     st = next((e for e in reversed(c["cm"]) if e[0] <= tt), None)
                     act, who = (st[1], st[2]) if st else (0, "")
-                    col = (1.0, 0.1, 0.1) if act == 2 else ((1.0, 0.85, 0.0) if act in (3, 1, 4) else (0.5, 0.6, 0.5))
                     cy, sy = math.cos(yaw), math.sin(yaw)
-                    zp = [(x + cy * u - sy * v, y + sy * u + cy * v) for u, v in ((zf, zw), (zf, -zw), (zb, -zw), (zb, zw), (zf, zw))]
-                    msgs.append(line(10 * n + 9, "zone", zp, col, 0.05 if act else 0.02, 1.0 if act else 0.5))
-                    msgs.append(text(10 * n + 9, "zonetext", x, y - zw - 0.5, f"Collision Monitor: {['nothing', 'STOP', 'SLOWDOWN', 'APPROACH', 'LIMIT'][act]} {who}", col, 0.3))
+                    for zi, zs in enumerate(args.zone):
+                        parts = zs.split(",")
+                        zf, zb, zw = float(parts[0]), float(parts[1]), float(parts[2])
+                        mine = act == 2 and (len(parts) < 4 or who == parts[3])
+                        col = (1.0, 0.1, 0.1) if mine else ((1.0, 0.85, 0.0) if act in (1, 3, 4) else (0.5, 0.6, 0.5))
+                        zp = [(x + cy * u - sy * v, y + sy * u + cy * v) for u, v in ((zf, zw), (zf, -zw), (zb, -zw), (zb, zw), (zf, zw))]
+                        msgs.append(line(10 * n + 9, f"zone{zi}", zp, col, 0.05 if mine else 0.02, 1.0 if mine else 0.5))
+                    msgs.append(text(10 * n + 9, "zonetext", x, y - max(float(z.split(",")[2]) for z in args.zone) - 0.5, f"Collision Monitor: {['nothing', 'STOP', 'SLOWDOWN', 'APPROACH', 'LIMIT'][act]} {who}", (1.0, 0.1, 0.1) if act == 2 else ((1.0, 0.85, 0.0) if act else (0.5, 0.6, 0.5)), 0.3))
                 if c.get("walker"):
                     o = walker_at(c["walker"], tt)
                     if o:
