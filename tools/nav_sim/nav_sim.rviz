@@ -85,6 +85,15 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /scan
+    - Class: rviz_default_plugins/Marker
+      Name: Legend (job and trial)
+      Enabled: true
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /legend
     - Class: rviz_default_plugins/Polygon
       Name: Footprint
       Enabled: true

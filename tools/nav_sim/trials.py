@@ -19,8 +19,10 @@ from rclpy.action import ActionClient
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
+from visualization_msgs.msg import Marker
 
 import dyn
+import legend
 from initpose import init_offset
 
 HZ = 50.0
@@ -62,6 +64,8 @@ class Runner:
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
         node.create_subscription(OccupancyGrid, "/map", lambda m: setattr(self, "static_map", m), latched)
         node.create_subscription(OccupancyGrid, "/global_costmap/costmap", lambda m: setattr(self, "gcm", m), 1)
+        self.legend_pub = node.create_publisher(Marker, "/legend", latched)   # rviz2 Marker display: what the job runs, and which trial
+        self.total = 0
         node.create_timer(1.0 / HZ, self.sample)
 
     def now(self):
@@ -97,6 +101,19 @@ class Runner:
         est = self.estimate() or (math.nan,) * 3
         self.rows.append([round(self.now(), 4), *[round(v, 4) for v in self.gt], *[round(v, 4) for v in est],
                           *[round(v, 4) for k in self.cmd for v in self.cmd[k]], *[round(v, 4) for v in self.odom]])
+
+    def publish_legend(self, trial_id):
+        m = self.static_map
+        if m is None:
+            return
+        k = Marker()
+        w, h = m.info.width * m.info.resolution, m.info.height * m.info.resolution
+        k.header.frame_id, k.ns, k.id, k.type, k.action = "map", "legend", 0, Marker.TEXT_VIEW_FACING, Marker.ADD
+        k.pose.position.x, k.pose.position.y, k.pose.position.z = m.info.origin.position.x + w / 2, m.info.origin.position.y + h - 1.6, 0.5
+        k.scale.z = max(0.35, 0.025 * w)
+        k.color.r, k.color.g, k.color.b, k.color.a = 1.0, 0.9, 0.1, 1.0
+        k.text = "\n".join(legend.legend_lines(os.environ.get("LEGEND"), trial_id, self.k, self.total))
+        self.legend_pub.publish(k)
 
     def ghost_cells(self):
         """Lethal cells (254) of the global costmap that are free in the static map: obstacles the lidar marked at the wrong place or that nobody cleared. With the moving obstacles parked away,
@@ -156,8 +173,10 @@ class Runner:
         offset = init_offset(self.k, float(os.environ.get("INIT_OFFSET_M", 0)), float(os.environ.get("INIT_OFFSET_DEG", 0)))
         chained = bool(os.environ.get("CHAIN")) and self.k > 0   # CHAIN=1: no teleport and no AMCL reset after the first trial; the robot continues from where it is
         self.k += 1
+        self.publish_legend(trial["id"])
         est = self.estimate()
         init_err = (math.hypot(est[0] - self.gt[0], est[1] - self.gt[1]) if est else math.nan) if chained else self.reset(trial["start"], offset)
+        self.publish_legend(trial["id"])      # again: the first call can come before the map has arrived
         walkers = trial.get("dyn", [])
         if walkers:
             self.mover = self.mover or dyn.Mover(os.environ.get("WORLD", "loyola"), self.now)
@@ -239,6 +258,7 @@ def main(scenario, out_dir, reps=1):
     os.makedirs(out_dir, exist_ok=True)
     r = Runner(node, out_dir)
     trials = json.load(open(scenario))["trials"]
+    r.total = len(trials) * int(reps)
     (r.through if any(t.get("via") for t in trials) else r.client).wait_for_server()
     while r.gt is None:
         rclpy.spin_once(node, timeout_sec=0.1)
