@@ -68,7 +68,8 @@ def walker_at(w, t):
 
 def load_case(spec, ctx, occ):
     label, run, tid = spec.split(":")
-    rec = next(r for r in a.load_trials(run) if r["id"] == tid)
+    tid, _, tag = tid.partition("@")      # "p12@r1" picks repetition r1 of p12
+    rec = next(r for r in a.load_trials(run) if r["id"] == tid and (not tag or r.get("tag") == tag))
     col = {c: i for i, c in enumerate(rec["cols"])}
     rows = np.asarray(rec["rows"], float)
     t, pose = rows[:, col["t"]] - rows[0, col["t"]], rows[:, [col["gt_x"], col["gt_y"], col["gt_yaw"]]]
