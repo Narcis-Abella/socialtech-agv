@@ -1,0 +1,5 @@
+<library path="decay_obstacle_layer">
+  <class name="socialtech_costmap/DecayObstacleLayer" type="socialtech_costmap::DecayObstacleLayer" base_class_type="nav2_costmap_2d::Layer">
+    <description>nav2_costmap_2d::ObstacleLayer whose marks expire observation_expiry seconds after they were last observed</description>
+  </class>
+</library>
