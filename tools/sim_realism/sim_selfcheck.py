@@ -4,6 +4,7 @@ Drives /cmd_vel with a fixed profile and compares /odom_gt_raw (the true twist o
 Prints a table 'measured | calibration' and exits 1 when something is off by more than the tolerance."""
 import json
 import math
+import os
 import sys
 import time
 
@@ -14,16 +15,19 @@ from nav_msgs.msg import Odometry
 
 PROFILE = [(0.0, 0.0, 2.0), (0.6, 0.0, 5.0), (0.0, 0.0, 3.0), (-0.3, 0.0, 4.0), (0.0, 0.0, 2.0),
            (0.0, 0.10, 4.0), (0.0, 0.30, 4.0), (0.0, 0.60, 4.0), (0.0, -0.60, 4.0), (0.0, 0.0, 2.0), (0.3, 0.4, 5.0), (0.3, -0.4, 5.0), (0.0, 0.0, 2.0)]   # (v, w, seconds)
-rclpy.init(); n = rclpy.create_node("sim_selfcheck")
-cmd_pub = n.create_publisher(Twist, "/cmd_vel", 10); gt, rep, cmdlog = [], [], []
-n.create_subscription(Odometry, "/odom_gt_raw", lambda m: gt.append((time.time(), m.twist.twist.linear.x, m.twist.twist.angular.z)), 50)
-n.create_subscription(Odometry, "/odom", lambda m: rep.append((time.time(), m.twist.twist.linear.x, m.twist.twist.angular.z)), 50)
-t_end = 0.0; t_start = time.time()
+rclpy.init(); n = rclpy.create_node("sim_selfcheck", parameter_overrides=[rclpy.parameter.Parameter("use_sim_time", rclpy.Parameter.Type.BOOL, True)])   # all times in simulation time: the real-time factor is not 1
+CMD_TOPIC = os.environ.get("CMD_TOPIC", "/cmd_vel")   # /cmd_vel_gz: Gazebo alone, without sim_base_model
+now = lambda: n.get_clock().now().nanoseconds * 1e-9
+cmd_pub = n.create_publisher(Twist, CMD_TOPIC, 10); gt, rep, cmdlog = [], [], []
+n.create_subscription(Odometry, "/odom_gt_raw", lambda m: gt.append((m.header.stamp.sec + m.header.stamp.nanosec * 1e-9, m.twist.twist.linear.x, m.twist.twist.angular.z)), 50)
+n.create_subscription(Odometry, "/odom", lambda m: rep.append((m.header.stamp.sec + m.header.stamp.nanosec * 1e-9, m.twist.twist.linear.x, m.twist.twist.angular.z)), 50)
+while now() == 0.0: rclpy.spin_once(n, timeout_sec=0.1)   # wait for /clock
+t_wall0, t_sim0 = time.time(), now()
 for v, w, dur in PROFILE:
-    seg_end = time.time() + dur
-    while time.time() < seg_end:
-        m = Twist(); m.linear.x = v; m.angular.z = w; cmd_pub.publish(m); cmdlog.append((time.time(), v, w)); rclpy.spin_once(n, timeout_sec=0.01); time.sleep(0.01)
-gt, rep, cmdlog = (np.array(a) for a in (gt, rep, cmdlog)); dt = 0.02; g = np.arange(max(gt[0, 0], cmdlog[0, 0]) + 0.5, min(gt[-1, 0], cmdlog[-1, 0]) - 0.5, dt)
+    seg_end = now() + dur
+    while now() < seg_end:
+        m = Twist(); m.linear.x = v; m.angular.z = w; cmd_pub.publish(m); cmdlog.append((now(), v, w)); rclpy.spin_once(n, timeout_sec=0.01)
+print(f"real-time factor during the check: {(now() - t_sim0) / (time.time() - t_wall0):.2f}"); gt, rep, cmdlog = (np.array(a) for a in (gt, rep, cmdlog)); dt = 0.02; g = np.arange(max(gt[0, 0], cmdlog[0, 0]) + 0.5, min(gt[-1, 0], cmdlog[-1, 0]) - 0.5, dt)
 U = np.c_[np.interp(g, cmdlog[:, 0], cmdlog[:, 1]), np.interp(g, cmdlog[:, 0], cmdlog[:, 2])]; Y = np.c_[np.interp(g, gt[:, 0], gt[:, 1]), np.interp(g, gt[:, 0], gt[:, 2])]; R = np.c_[np.interp(g, rep[:, 0], rep[:, 1]), np.interp(g, rep[:, 0], rep[:, 2])]
 
 

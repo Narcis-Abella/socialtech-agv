@@ -19,3 +19,12 @@ What the data says (see `calibration.json`):
 - Wheel odometry: reports 0.965 x the linear speed and 0.92-1.0 x the yaw rate, quantised at 0.003 m/s and 0.018 rad/s.
 - IMU: ICM-40609-D from a 12 h Allan variance (static: a lower bound).
 - NOT modelled / weak: the caster kick after in-place turns (7 sequences, off by default), vibration, wheel slip on slopes, the transient linear gain > 1 after in-place turns (probably a FAST-LIO artefact).
+
+## Validated in the running simulation (2026-10-30, AGX, `sim-nav2` image)
+`run_selfcheck.sh`-style run: the sim as **root** (the headless Gazebo server does not start as a normal user in this image), `world:=empty.sdf`, all times in simulation time (real-time factor 0.95):
+whole chain /cmd_vel -> base model -> Gazebo: linear dead time 0.060 s, lag 0.100 s, gain 1.015; angular moving gain 0.967, in-place deadband as drawn; wheel odometry linear 0.956 / in place 0.930 of the true twist;
+Gazebo alone (/cmd_vel_gz): dead time 0.02 s, gain 1.000, so everything above comes from the models. `scan_selfcheck.py` in the hospital world: core sigma, dropout and jump rate per range bin within the real values.
+Pitfalls found: a test in wall time against a simulator under real time; a command profile that drives into the walls of the hospital world.
+
+## Livox Mid-360 scan pattern (research, not yet a node)
+`livox_io.py`, `livox_pattern_real.py`, `livox_fit_pattern.py`, `livox_torus_model.py`, `livox_csv_vs_real.py` read raw frames (CustomMsg or PointCloud2) and characterise the pattern. See notes/sim_realism of the SocialTech workspace.
