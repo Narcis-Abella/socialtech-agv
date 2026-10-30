@@ -43,3 +43,16 @@ TEST(PoseTrack, InterpolatesTheShortestArcAndExtrapolatesNowhere)
   EXPECT_NEAR(std::fabs(std::remainder(m.yaw - M_PI, 2 * M_PI)), 0.0, 0.2);   // through +-pi, not through 0
   EXPECT_NEAR(t.at(-1.0).x, 0.0, 1e-12);                                      // before the oldest: held
 }
+
+TEST(Model, CircleOnTheSlotClockAndFanTurnWithTheLineIndex)
+{
+  Model m; m.f_a = 181.0; m.f_z = 10.0; m.c_ze[0] = 69.0; m.c_ze[4] = 26.0;       // zenith = 69 + 26 sin z on line 0; the rest of the shape is zero
+  double az, ze;
+  m.direction(5000, az, ze);                                                      // t = 25 ms: z = pi/2, a = 2 pi * 4.525
+  EXPECT_NEAR(ze * 180 / M_PI, 95.0, 1e-9);
+  EXPECT_NEAR(std::remainder(az * 180 / M_PI - 0.525 * 360.0, 360.0), 0.0, 1e-6);
+  m.direction(5003, az, ze);                                                      // line 3: +3 deg azimuth, zenith centre is c_ze[3] = 0 here
+  EXPECT_NEAR(std::remainder(az * 180 / M_PI - (0.525 * 360.0 + 3.0 + 3 * 181.0 * 360.0 * kSlot), 360.0), 0.0, 1e-6);
+  m.direction(0, az, ze);                                                         // z = 0: sin = 0, cos = 1 (cos terms are zero here)
+  EXPECT_NEAR(ze * 180 / M_PI, 69.0, 1e-9);
+}

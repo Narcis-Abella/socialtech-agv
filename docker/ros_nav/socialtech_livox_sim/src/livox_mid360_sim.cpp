@@ -1,4 +1,5 @@
-// Simulated Livox Mid-360: every point of a measured per-unit pattern table is ray cast from the sensor pose at the point's own time,
+// Simulated Livox Mid-360: every point of the closed-form scan model (per-unit constants) is ray cast from the sensor pose at the point's own time,
+#include <algorithm>
 // so the output carries the real motion distortion and per-point offset_time. No-return slots are emitted as zero points (as the driver does).
 #include <chrono>
 #include <cstring>
@@ -18,7 +19,7 @@ class LivoxSim : public rclcpp::Node
 {
 public:
   LivoxSim()
-  : Node("livox_mid360_sim"), pat_(livoxsim::load_pattern(declare_parameter<std::string>("pattern_file", ""))),
+  : Node("livox_mid360_sim"), mod_(livoxsim::load_model(declare_parameter<std::string>("model_file", ""))),
     scene_(declare_parameter<std::string>("scene_file", ""))
   {
     frame_id_ = declare_parameter("frame_id", std::string("livox_mid360_link"));
@@ -28,6 +29,7 @@ public:
     rmin_ = declare_parameter("range_min", 0.1); rmax_ = declare_parameter("range_max", 40.0);
     sigma_ = declare_parameter("range_sigma", 0.02); refl_ = declare_parameter("reflectivity", 100);
     rng_.seed(declare_parameter("seed", 1));
+    jitter_ = declare_parameter("jitter_std", 0.0);                                         // s; reported packet time vs firing (real driver ~0.0005, AR(1) 0.65), off by default
     const auto custom_topic = declare_parameter("custom_topic", std::string("/livox/lidar")), pc2_topic = declare_parameter("pc2_topic", std::string(""));
     if (!custom_topic.empty()) {custom_pub_ = create_publisher<CustomMsg>(custom_topic, 10);}
     if (!pc2_topic.empty()) {pc2_pub_ = create_publisher<PointCloud2>(pc2_topic, 10);}
@@ -35,7 +37,7 @@ public:
       odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(declare_parameter("pose_topic", std::string("/odom_gt_raw")), 50, [this](nav_msgs::msg::Odometry::SharedPtr m) {on_odom(*m);});
     }
     timer_ = create_wall_timer(std::chrono::milliseconds(5), [this]() {tick();});          // wall timer + node clock reads: also works with use_sim_time
-    RCLCPP_INFO(get_logger(), "pattern: %zu frames, f_z %.4f Hz, f_a %.4f Hz; scene: %zu triangles", pat_.frames(), pat_.f_z, pat_.f_a, scene_.triangles());
+    RCLCPP_INFO(get_logger(), "model: f_z %.4f Hz, f_a %.4f Hz; scene: %zu triangles", mod_.f_z, mod_.f_a, scene_.triangles());
   }
 
 private:
@@ -47,30 +49,36 @@ private:
     track_.push({rclcpp::Time(m.header.stamp).seconds(), pose_off_[0] + c * p.x - s * p.y, pose_off_[1] + s * p.x + c * p.y, yaw + pose_off_[2]});
   }
 
+  // The point stream is continuous (slot clock); a frame is the whole packets that start inside its 100 ms, like the driver (208 or 209 packets = 19968 / 20064 points)
+  static uint64_t first_packet(uint64_t n) {return (625 * n + 2) / 3;}        // ceil(n * 0.1 s / 480 us)
+
   void tick()
   {
     if (!static_.empty()) {track_.push({now().seconds(), static_[0], static_[1], static_[2]});}
     if (track_.empty()) {return;}
-    if (next_start_ < 0) {next_start_ = track_.newest();}
-    while (next_start_ + pat_.period <= track_.newest()) {emit(next_start_, frame_++); next_start_ += pat_.period;}
+    if (t_stream_ < 0) {t_stream_ = track_.newest();}
+    while (t_stream_ + double(first_packet(frame_ + 1)) * livoxsim::kPacket * livoxsim::kSlot <= track_.newest()) {emit(frame_++);}
   }
 
-  void emit(double t0, uint64_t n)
+  void emit(uint64_t n)
   {
     const auto c0 = std::chrono::steady_clock::now();
-    const size_t k = n % pat_.frames(), a = pat_.start[k], b = pat_.start[k + 1];
-    std::normal_distribution<float> noise(0.0f, float(sigma_));
-    CustomMsg msg; msg.header.frame_id = frame_id_; msg.header.stamp = rclcpp::Time(int64_t(t0 * 1e9)); msg.timebase = uint64_t(t0 * 1e9); msg.lidar_id = 0; msg.points.resize(b - a);
-    const float sx = float(sensor_[0]), sy = float(sensor_[1]), sz = float(sensor_[2]); size_t nvalid = 0;
-    for (size_t i = a; i < b; ++i) {
-      const livoxsim::Pose p = track_.at(t0 + pat_.toff[i]);
+    const uint64_t p0 = first_packet(n), p1 = first_packet(n + 1), k0 = p0 * livoxsim::kPacket, np = (p1 - p0) * livoxsim::kPacket;
+    const double t0 = t_stream_ + double(k0) * livoxsim::kSlot;
+    std::normal_distribution<float> noise(0.0f, float(sigma_)), innov(0.0f, 1.0f);
+    CustomMsg msg; msg.header.frame_id = frame_id_; msg.header.stamp = rclcpp::Time(int64_t(t0 * 1e9)); msg.timebase = uint64_t(t0 * 1e9); msg.lidar_id = 0; msg.points.resize(np);
+    const float sx = float(sensor_[0]), sy = float(sensor_[1]), sz = float(sensor_[2]); size_t nvalid = 0; double jit = 0;
+    for (uint64_t i = 0; i < np; ++i) {
+      if (i % livoxsim::kPacket == 0) {jit_ = 0.65 * jit_ + 0.76 * jitter_ * innov(rng_); jit = jit_;}   // one reported-time error per packet; sqrt(1 - 0.65^2) = 0.76
+      const double off = double(i) * livoxsim::kSlot;
+      const livoxsim::Pose p = track_.at(t0 + off);
       const float c = float(std::cos(p.yaw)), s = float(std::sin(p.yaw));
-      const float az = float(pat_.az[i]) * float(2 * M_PI / 65536.0), ze = float(pat_.ze[i]) * float(M_PI / 65536.0), sz_ = std::sin(ze);
-      const float ds[3] = {sz_ * std::cos(az), sz_ * std::sin(az), std::cos(ze)};
+      double az, ze; mod_.direction(k0 + i, az, ze);
+      const float sze = float(std::sin(ze)), ds[3] = {sze * float(std::cos(az)), sze * float(std::sin(az)), float(std::cos(ze))};
       const float o[3] = {float(p.x) + c * sx - s * sy, float(p.y) + s * sx + c * sy, sz}, d[3] = {c * ds[0] - s * ds[1], s * ds[0] + c * ds[1], ds[2]};
       float r = scene_.cast(o, d, float(rmin_), float(rmax_));
-      CustomPoint & q = msg.points[i - a];
-      q.offset_time = uint32_t(pat_.toff[i] * 1e9f); q.line = pat_.line[i]; q.tag = 0;
+      CustomPoint & q = msg.points[i];
+      q.offset_time = uint32_t(std::max(0.0, off + jit) * 1e9); q.line = uint8_t((k0 + i) & 3); q.tag = 0;
       if (r >= 0 && (r += noise(rng_)) >= float(rmin_)) {q.x = r * ds[0]; q.y = r * ds[1]; q.z = r * ds[2]; q.reflectivity = uint8_t(refl_); ++nvalid;}
       else {q.x = q.y = q.z = 0.0f; q.reflectivity = 0;}
     }
@@ -78,7 +86,7 @@ private:
     if (pc2_pub_) {pc2_pub_->publish(to_pc2(msg));}
     if (custom_pub_) {custom_pub_->publish(msg);}
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - c0).count();
-    sum_ms_ += ms; max_ms_ = std::max(max_ms_, ms); valid_ += nvalid; total_ += b - a;
+    sum_ms_ += ms; max_ms_ = std::max(max_ms_, ms); valid_ += nvalid; total_ += np;
     if (++n_stat_ == 100) {
       RCLCPP_INFO(get_logger(), "100 frames: %.2f ms/frame (max %.2f), %.2f Mrays/s, valid %.0f %%", sum_ms_ / 100, max_ms_, double(total_) / (sum_ms_ * 1e3), 100.0 * double(valid_) / double(total_));
       sum_ms_ = max_ms_ = 0; valid_ = total_ = 0; n_stat_ = 0;
@@ -100,9 +108,9 @@ private:
     return pc;
   }
 
-  livoxsim::Pattern pat_; livoxsim::Scene scene_; livoxsim::PoseTrack track_;
+  livoxsim::Model mod_; livoxsim::Scene scene_; livoxsim::PoseTrack track_;
   std::string frame_id_; std::vector<double> sensor_, pose_off_, static_; double rmin_, rmax_, sigma_; int refl_;
-  std::mt19937_64 rng_; double next_start_ = -1; uint64_t frame_ = 0;
+  std::mt19937_64 rng_; double t_stream_ = -1, jitter_ = 0, jit_ = 0; uint64_t frame_ = 0;
   double sum_ms_ = 0, max_ms_ = 0; uint64_t valid_ = 0, total_ = 0; int n_stat_ = 0;
   rclcpp::Publisher<CustomMsg>::SharedPtr custom_pub_; rclcpp::Publisher<PointCloud2>::SharedPtr pc2_pub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_; rclcpp::TimerBase::SharedPtr timer_;

@@ -1,5 +1,5 @@
 """Output check of the simulated Mid-360 (socialtech_livox_sim) against the pattern table it was built from and against a real bag.
-usage: livox_sim_check.py SIM_BAG PATTERN.pat REAL_BAG REAL_TOPIC
+usage: livox_sim_check.py SIM_BAG PATTERN.pat|- REAL_BAG REAL_TOPIC   (- skips the comparison with a .pat table; the node now uses the closed-form model)
 SIM_BAG holds /livox/lidar (CustomMsg) and /livox/pc2 (PointCloud2, driver xfer_format 0). Prints one table: sim | real."""
 import struct
 import sys
@@ -30,7 +30,7 @@ def stats(fr):
     return dict(frames=len(n), points=(np.mean(n), min(n), max(n)), valid=np.mean(v), offmax=np.mean(off), mono=mono, line_seq=lineok, tags=sorted(tags), rho=(rmin, rmax), rate=1 / np.median(np.diff(dts)))
 
 
-pat = read_pat(patf)
+pat = read_pat(patf) if patf != "-" else None
 C = list(io.frames(sim, "/livox/lidar")); P = list(io.frames(sim, "/livox/pc2"))
 print(f"messages: custom {len(C)}, pc2 {len(P)}")
 # 1) custom vs pc2: same stamps, points, times
@@ -47,9 +47,11 @@ def frame_err(k0, d, k):
     az = np.degrees(np.arctan2(d["y"][ok], d["x"][ok])) % 360; ze = np.degrees(np.arccos(d["z"][ok] / rho[ok]))
     da = ((az - pat["az"][a:b][ok] + 180) % 360 - 180) * np.sin(np.radians(pat["ze"][a:b][ok])); dz = ze - pat["ze"][a:b][ok]
     return max(np.abs(da).max(), np.abs(dz).max()), np.abs((d["t"] - d["t"].min()) - (pat["toff"][a:b] - pat["toff"][a:b].min())).max()
-k0 = min(range(pat["nf"]), key=lambda c: frame_err(c, C[0][2], 0)[0])
-E = [frame_err(k0, d, k) for k, (rt, st, d) in enumerate(C)]
-print(f"directions vs table (bag frame 0 = table frame {k0}, {len(E)} frames, wraps the table {len(E)//pat['nf']} time(s)): worst angular error {max(e[0] for e in E):.4f} deg, worst time-offset error {max(e[1] for e in E):.2e} s")
+if pat is None: E = []
+else:
+  k0 = min(range(pat["nf"]), key=lambda c: frame_err(c, C[0][2], 0)[0])
+  E = [frame_err(k0, d, k) for k, (rt, st, d) in enumerate(C)]
+  print(f"directions vs table (bag frame 0 = table frame {k0}, {len(E)} frames, wraps the table {len(E)//pat['nf']} time(s)): worst angular error {max(e[0] for e in E):.4f} deg, worst time-offset error {max(e[1] for e in E):.2e} s")
 # 3) frame statistics, sim vs real
 S, R = stats(C), stats(io.frames(real, rtopic, 5, 25))
 print(f"{'':28s}{'sim':>26s}{'real':>26s}")

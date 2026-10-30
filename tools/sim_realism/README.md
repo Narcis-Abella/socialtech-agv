@@ -27,16 +27,19 @@ Gazebo alone (/cmd_vel_gz): dead time 0.02 s, gain 1.000, so everything above co
 Pitfalls found: a test in wall time against a simulator under real time; a command profile that drives into the walls of the hospital world.
 
 ## Livox Mid-360 (non-repetitive, `docker/ros_nav/socialtech_livox_sim`)
-`livox_mid360_sim` ray casts a measured per-unit pattern table on the world triangles (Embree) and publishes `livox_ros_driver2/CustomMsg` (`/livox/lidar`) and, optionally, the driver's PointCloud2 (`xfer_format 0`, PointXYZRTLT) with the real per-point time. Every point is cast from the ground-truth pose (`/odom_gt_raw`, world frame) at the point's own time, so the output has the real motion distortion (FAST-LIO undistorts it with `offset_time`). Slots without a return are zero points, as in the driver.
+`livox_mid360_sim` ray casts a closed-form scan model on the world triangles (Embree) and publishes `livox_ros_driver2/CustomMsg` (`/livox/lidar`) and, optionally, the driver's PointCloud2 (`xfer_format 0`, PointXYZRTLT) with per-point `offset_time`. Every point is cast from the ground-truth pose (`/odom_gt_raw`, world frame) at the point's own time (motion distortion as on the real unit). The point stream is continuous on the slot clock (5.000 us per point, 96-point packets, frames of whole packets: 19968 / 20064 points); slots without a return are zero points as in the driver. `jitter_std` (s, default 0) adds the real driver's per-packet reported-time error (AR(1) 0.65; real ~0.0005).
+
+Model (notes/sim_realism/livox_modelo_matematico.md): slot k, line l = k % 4, t = 5 us k, rotor a = phi0 + 2 pi f_a t, oscillator z = psi + 2 pi f_z t; azimuth = deg(a) + l + B.c_az, zenith = B.c_ze, 24 basis terms (nutation circle at f_z, harmonics, 4-beam fan turning with the rotor). 48 coefficients + 4 constants per unit (~1.5 kB), never repeats. The earlier +-27 deg "azimuth modulation" was packet-timestamp jitter, not optics.
 
 | step | tool |
 |---|---|
-| pattern table of a unit (20 s = 200 frames, 36 MB, not in git) | `livox_build_pattern.py BAG TOPIC T0 SECONDS F_Z OUT.pat` (f_z from `livox_fit_pattern.py`) |
+| fit a unit (2 s of its bag) | `livox_model_fit.py fit BAG TOPIC T0 2 MODEL.json`; `eval` = held-out error |
+| to the node's text format | `livox_model_to_txt.py MODEL.json OUT.lvm` |
 | world to triangles (visuals; boxes, plane, OBJ meshes) | `world_to_tris.py loyola.sdf MODELS_DIR loyola.tris` |
-| run | `ros2 run socialtech_livox_sim livox_mid360_sim --ros-args -p pattern_file:=... -p scene_file:=... [-p pc2_topic:=/livox/pc2] [-p static_pose:="[x,y,yaw]"]` |
-| output check vs table and real frames | `livox_sim_check.py` |
-| pattern statistics vs real units and the official CSV | `livox_pattern_compare.py` |
-| geometry vs Gazebo gpu_lidar, still and turning (inside the sim image) | `livox_sim_geom.py` |
+| run | `ros2 run socialtech_livox_sim livox_mid360_sim --ros-args -p model_file:=... -p scene_file:=... [-p pc2_topic:=/livox/pc2] [-p static_pose:="[x,y,yaw]"] [-p jitter_std:=0.0005]` |
+| output format vs a real bag | `livox_sim_check.py SIM_BAG - REAL_BAG TOPIC` |
+| pattern statistics vs real units | `livox_pattern_compare.py` |
+| geometry vs Gazebo gpu_lidar (inside the sim image) | `livox_sim_geom.py` |
 
-Why a table: the azimuth law is not recoverable in closed form (see notes/sim_realism/calibracion_resultados.md), so the node replays what the unit did. The table wraps every 20 s.
-Known limits: no moving objects in the scene (the world has none), tag always 0 (a real unit flags ~1.3 % of points), reflectivity constant, range noise 2 cm is the datasheet value (not measured), the robot body does not occlude.
+Held-out error (own unit, constants re-estimated on 1 s): azimuth x sin(zenith) median 0.33-0.44 deg, zenith 0.26-0.39 deg. Another unit needs its own 2 s fit (the zenith shape does not transfer: 0.75 deg).
+Known limits: no moving objects in the scene, tag always 0 (a real unit flags ~1.3 %), reflectivity constant, range noise 2 cm is the datasheet value, the robot body does not occlude, mechanism is phenomenological.

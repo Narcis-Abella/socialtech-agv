@@ -1,5 +1,5 @@
 #pragma once
-// Core of the simulated non-repetitive Mid-360: pattern table (measured on a real unit, see notes/sim_realism/livox_build_pattern.py), triangle scene (Embree), pose interpolation.
+// Core of the simulated non-repetitive Mid-360: closed-form scan model on the slot clock (notes/sim_realism/livox_modelo_matematico.md), triangle scene (Embree), pose interpolation.
 #include <embree4/rtcore.h>
 
 #include <cmath>
@@ -12,32 +12,44 @@
 
 namespace livoxsim
 {
-struct Pattern
+// Closed-form Mid-360 scan on the SLOT clock (notes/sim_realism/livox_modelo_matematico.md): slot k, line l = k % 4, t = k * 5 us, rotor angle a = phi0 + 2 pi f_a t,
+// oscillator phase z = psi + 2 pi f_z t; azimuth = deg(a) + l + B.c_az, zenith = B.c_ze with B = [onehot(l), sin/cos(h z) h=1..3, sin/cos(h a) h=1..3, onehot(l) sin a, onehot(l) cos a].
+// Text file (livox_model_to_txt.py): "f_a f_z phi0 psi" then 24 c_az then 24 c_ze.
+constexpr double kSlot = 5e-6;          // s per point
+constexpr int kPacket = 96;             // points per packet (480 us)
+
+struct Model
 {
-  double f_z = 0, f_a = 0, period = 0.1;
-  std::vector<uint32_t> start;          // frame k owns points [start[k], start[k+1])
-  std::vector<float> toff;              // seconds from the first point of the frame
-  std::vector<uint16_t> az, ze;         // deg * 65536/360, deg * 65536/180 (zenith from +z)
-  std::vector<uint8_t> line;            // laser 0..3
-  size_t frames() const {return start.size() - 1;}
+  double f_a = 0, f_z = 0, phi0 = 0, psi = 0, c_az[24] = {}, c_ze[24] = {};
+
+  void direction(uint64_t k, double & az_rad, double & ze_rad) const
+  {
+    const double t = double(k) * kSlot;
+    const double a = phi0 + 2 * M_PI * (f_a * t - std::floor(f_a * t)), z = psi + 2 * M_PI * (f_z * t - std::floor(f_z * t));
+    const int l = int(k & 3);
+    double B[24] = {};
+    B[l] = 1.0;
+    for (int h = 1; h <= 3; ++h) {
+      B[2 + 2 * h] = std::sin(h * z); B[3 + 2 * h] = std::cos(h * z);
+      B[8 + 2 * h] = std::sin(h * a); B[9 + 2 * h] = std::cos(h * a);
+    }
+    B[16 + l] = std::sin(a); B[20 + l] = std::cos(a);
+    double az = std::fmod(a * 180.0 / M_PI + l, 360.0), ze = 0;
+    for (int i = 0; i < 24; ++i) {az += B[i] * c_az[i]; ze += B[i] * c_ze[i];}
+    az_rad = az * M_PI / 180.0; ze_rad = ze * M_PI / 180.0;
+  }
 };
 
-inline Pattern load_pattern(const std::string & path)
+inline Model load_model(const std::string & path)
 {
-  FILE * f = std::fopen(path.c_str(), "rb");
-  if (!f) {throw std::runtime_error("cannot open pattern " + path);}
-  auto rd = [&](void * p, size_t sz, size_t n) {if (std::fread(p, sz, n, f) != n) {std::fclose(f); throw std::runtime_error("short read in " + path);}};
-  char magic[4]; uint32_t hdr[3]; double d[3]; Pattern p;
-  rd(magic, 1, 4); rd(hdr, 4, 3); rd(d, 8, 3);
-  if (std::string(magic, 4) != "MIDP" || hdr[0] != 1) {std::fclose(f); throw std::runtime_error("bad pattern header in " + path);}
-  p.f_z = d[0]; p.f_a = d[1]; p.period = d[2];
-  p.start.resize(hdr[1] + 1); rd(p.start.data(), 4, hdr[1] + 1);
-  const size_t n = hdr[2];
-  if (p.start.back() != n) {std::fclose(f); throw std::runtime_error("inconsistent pattern " + path);}
-  p.toff.resize(n); p.az.resize(n); p.ze.resize(n); p.line.resize(n);
-  rd(p.toff.data(), 4, n); rd(p.az.data(), 2, n); rd(p.ze.data(), 2, n); rd(p.line.data(), 1, n);
+  FILE * f = std::fopen(path.c_str(), "r");
+  if (!f) {throw std::runtime_error("cannot open model " + path);}
+  Model m; bool ok = std::fscanf(f, "%lf %lf %lf %lf", &m.f_a, &m.f_z, &m.phi0, &m.psi) == 4;
+  for (int i = 0; ok && i < 24; ++i) {ok = std::fscanf(f, "%lf", &m.c_az[i]) == 1;}
+  for (int i = 0; ok && i < 24; ++i) {ok = std::fscanf(f, "%lf", &m.c_ze[i]) == 1;}
   std::fclose(f);
-  return p;
+  if (!ok) {throw std::runtime_error("bad model file " + path);}
+  return m;
 }
 
 struct Pose {double t, x, y, yaw;};
