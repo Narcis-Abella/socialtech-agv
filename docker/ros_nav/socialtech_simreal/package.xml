@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>socialtech_simreal</name>
+  <version>0.1.0</version>
+  <description>Realism models for the Tracer simulation, calibrated on real data: Mid-360 /scan noise by range, ICM-40609 IMU, base response (dead time, lag, in-place deadband) and wheel-odometry measurement</description>
+  <maintainer email="narcis.abellallos@gmail.com">Narcis</maintainer>
+  <license>GPL-2.0-only</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

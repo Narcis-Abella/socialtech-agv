@@ -1,0 +1,173 @@
+{
+ "_about": "Calibration of the simulator's sensor and base models from real data (2026-10-30). Sources: nav bags 2026-10-29 (120453, 131206) and 2026-10-30 (lab), 12 h static IMU log of the NX (2026-10-02). Scripts in notes/sim_realism/.",
+ "lidar_scan": {
+  "_about": "REAL /scan (pointcloud_to_laserscan on FAST-LIO's cloud, closest point per 0.5 deg bin) in 38 stationary stretches (>=4 s, robot still). Per beam: core = frames within 10 cm of the beam's median; outliers = the rest (surface jumps of the 3D band collapsed to 2D, people).",
+  "range_bins_m": [
+   0.5,
+   1,
+   2,
+   3,
+   5,
+   8,
+   12,
+   20
+  ],
+  "core_sigma_m": [
+   0.0163,
+   0.0134,
+   0.0099,
+   0.0156,
+   0.0159,
+   0.0248,
+   0.0201
+  ],
+  "outlier_rate_mean": [
+   0.16,
+   0.209,
+   0.214,
+   0.219,
+   0.269,
+   0.253,
+   0.351
+  ],
+  "outlier_rate_p90_of_beams": [
+   0.469,
+   0.703,
+   0.723,
+   0.596,
+   0.64,
+   0.626,
+   0.77
+  ],
+  "outlier_nearer_share": [
+   0.29,
+   0.47,
+   0.61,
+   0.7,
+   0.66,
+   0.42,
+   0.73
+  ],
+  "outlier_dev_median_m": [
+   0.282,
+   0.493,
+   0.947,
+   2.101,
+   1.837,
+   0.733,
+   1.56
+  ],
+  "outlier_dev_p90_m": [
+   1.251,
+   1.579,
+   2.099,
+   3.382,
+   4.748,
+   5.902,
+   9.819
+  ],
+  "dropout_mean": [
+   0.038,
+   0.02,
+   0.021,
+   0.059,
+   0.085,
+   0.151,
+   0.275
+  ],
+  "legacy_sim_sigma_m": "1 % of r up to 3 m, 2 % up to 5 m, 2.5 % beyond (RPLiDAR A2M12): 0.03 m at 3 m, 0.10 at 5 m, 0.25 at 10 m"
+ },
+ "imu": {
+  "_about": "Allan variance of 11.97 h static /livox/imu (ICM-40609-D, 200 Hz). Static, motors off = LOWER BOUND. Accelerometer noise is not white (slope -0.6..-0.77): give the fitted range. Random walk K not determinable.",
+  "gyro_white_density_rad_s_sqrtHz": [
+   8.3e-05,
+   6.25e-05,
+   0.000107
+  ],
+  "gyro_bias_instability_rad_s": [
+   3.3e-05,
+   2.3e-05,
+   3e-05
+  ],
+  "gyro_bias_tau_s": [
+   29,
+   116,
+   97
+  ],
+  "acc_white_density_m_s2_sqrtHz_mid_of_fit_range": [
+   0.00087,
+   0.00049,
+   0.00041
+  ],
+  "acc_bias_instability_m_s2": [
+   0.00013,
+   0.00013,
+   0.00029
+  ],
+  "acc_bias_tau_s": [
+   232,
+   138,
+   29
+  ],
+  "fs_hz": 200,
+  "legacy_sim": "WT901C hard-coded: gyro white 1.75e-3 rad/s, acc white 0.02 m/s2, bias 3e-4 / 1e-2"
+ },
+ "base_response": {
+  "_about": "actual motion (FAST-LIO derivative for v, gyro z for w) against the final /cmd_vel, motion only. Legacy sim: ideal DiffDrive (accel limits only).",
+  "linear": {
+   "dead_time_s": 0.06,
+   "lowpass_tau_s": 0.1,
+   "gain": 1.015,
+   "r2": [
+    0.963,
+    0.974
+   ]
+  },
+  "angular_moving": {
+   "dead_time_s": 0.12,
+   "lowpass_tau_s": 0.05,
+   "gain": 0.97,
+   "note": "gain 0.93-1.02 for |v cmd| > 0.03 m/s in all three bags"
+  },
+  "angular_in_place": {
+   "dead_time_s": 0.12,
+   "lowpass_tau_s": 0.05,
+   "gain_beyond_deadband": 1.0,
+   "deadband_rad_s_by_session": {
+    "29Oct_131206": 0.18,
+    "29Oct_120453": 0.08,
+    "30Oct_lab": 0.06
+   },
+   "deadband_draw_per_run": "uniform 0.03..0.18",
+   "note": "w_actual = sign(u) * max(0, |u| - d) for |v cmd| < 0.03 m/s; 75-92 % of the samples with |u| < 0.15 move less than 0.02 rad/s in the worst session"
+  },
+  "caster_kick": {
+   "evidence": "WEAK (n = 7 sequences)",
+   "yaw_rate_after_in_place_turn_rad_s": -0.05,
+   "direction": "opposite to the previous turn, 0.5-2.5 s after the start of the forward motion; the first 0.25 s keep turning (+0.24)",
+   "default": "off"
+  }
+ },
+ "wheel_odometry": {
+  "_about": "reported /odom twist against the actual motion (same references).",
+  "linear_reported_over_actual": 0.965,
+  "linear_quantisation_m_s": 0.003,
+  "linear_noise_at_rest_m_s": 0.0002,
+  "angular_reported_over_actual": {
+   "in_place": 0.94,
+   "moving": [
+    0.967,
+    1.003
+   ],
+   "draw_per_run": "uniform 0.94..1.0"
+  },
+  "angular_quantisation_rad_s": 0.018,
+  "angular_noise_at_rest_rad_s": 0.001,
+  "report_delay_s": 0.03,
+  "integrated_turn_ratio_wheels_over_gyro": [
+   0.87,
+   0.907,
+   0.962
+  ]
+ }
+}
