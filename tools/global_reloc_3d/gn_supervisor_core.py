@@ -195,6 +195,11 @@ class Supervisor:
             self.actions.append(('state', self.state, self.reason))
         if self.t_wheel is not None and t - self.t_wheel > p.wheel_stale_s:
             self.t_wheels_still, self.anchor, self.t_drift = None, None, None
+        if self.state == 'VERIFYING' and self.t_lost is not None:     # the parked check does not hold: GN lost meanwhile is a stop
+            self.cancel(t)
+            self.attempts = 1                                            # the running relocalization counts as the first attempt
+            self.timeout = t + p.reloc_timeout_s
+            return self.go(t, 'RELOCALIZING', 'gn_lost')
         if self.state != 'MONITOR':
             return
         if self.t_lost is not None and t - self.t_lost >= p.lost_stop_s:

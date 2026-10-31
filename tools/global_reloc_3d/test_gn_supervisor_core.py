@@ -235,6 +235,16 @@ class ParkedDriftTest(Fixture):
         self.assertEqual(s.state, 'CONFIRMING')
         self.assertTrue(s.hold)
 
+    def test_lost_during_a_parked_check_still_stops(self):
+        s, t = self.new(park_arm_s=3., verify_period_s=60.)
+        t = self.park(s, t, 3, lambda k: (1., 2., 0.))
+        run(s, t, ('on_wheel', 0., 0.))
+        self.assertEqual(s.state, 'VERIFYING')
+        a = run(s, t + 1, ('on_wheel', .3, 0.), ('on_status', 'LOST', .1, .1))     # the robot drove off and GN lost the map
+        self.assertIn('cancel', kinds(a))
+        self.assertEqual(s.state, 'RELOCALIZING')
+        self.assertTrue(s.hold)
+
     def test_periodic_check_without_a_pose_is_not_an_alarm(self):
         s, t = self.new(park_arm_s=3., verify_period_s=60.)
         t = self.park(s, t, 4, lambda k: (1., 2., 0.))
