@@ -16,7 +16,7 @@ Needs numpy + scipy (host/laptop tool, like floor_tilt.py; scipy is not in the r
    No sensor-height prior: a desk 0.60 m under the sensor would pass one.
 4. The cloud is rotated so the floor is horizontal (tilt printed) and heights become metres above the floor (the PLY origin is the sensor). Then the
    map is turned about z so the walls lie on the pixel rows/columns (Manhattan: circular mean of 4*theta of the wall normals; only if the walls are
-   Manhattan enough, --min-manhattan; --no-align to keep the SLAM world's yaw). The map is then turned another 90 deg if it is taller than wide, so the long side is horizontal (--keep-portrait to skip). The transform PLY -> map is written in the YAML as a comment.
+   Manhattan enough, --min-manhattan; --no-align to keep the SLAM world's yaw). The wall normals only decide WHETHER to turn and give a first angle; the angle itself is refined within 5 deg so the wall points pile onto the fewest pixel rows and columns (long walls decide, furniture does not). The map is then turned another 90 deg if it is taller than wide, so the long side is horizontal (--keep-portrait to skip). The transform PLY -> map is written in the YAML as a comment.
    Heights: < floor-band = floor (marks free), floor-band..ceil = obstacle, > ceil = dropped (ceiling, door frames).
 5. Cells: occupied (0) with >= min-hits obstacle points, else free (254) with floor points, else unknown (205). With --min-component N, occupied islands of fewer than N cells (8-connected) are then set free.
 Free space comes only from floor points the sensor actually saw (sparse: --fill closes gaps of about 0.3 m), so large areas the LiDAR never saw the floor of stay unknown.
@@ -42,6 +42,7 @@ MAX_PLANES = 6
 MIN_SEED = 50       # voxels: smallest plane considered while choosing the lowest; --min-floor is checked AFTER the choice
 STRAY_PTS = 5       # points a 1 m cell needs to count for the map extent (walls and floor have hundreds)
 WALL_NZ, WALL_LO, WALL_HI, MIN_WALL = 0.1, 0.2, 1.6, 50  # a wall voxel: |nz| below, metres above the floor between, at least this many voxels to estimate
+REFINE_SPAN, REFINE_STEP, REFINE_BIN, REFINE_PTS = 5.0, 0.1, 0.05, 300000  # yaw refinement: deg searched either side of the normals' estimate, deg step, m histogram bin, points used
 LANDSCAPE_RATIO = 1.1  # the map is turned to landscape only if it is this much taller than wide (a square one stays as it is)
 OBST_LO, OBST_HI = 0.10, 1.80  # m above the floor: the obstacle band measured to pick landscape (the rasterize defaults)
 BELOW = 0.3         # m: voxels this far under the chosen plane mean it is not the floor
@@ -129,6 +130,22 @@ def manhattan_yaw(n):
     return float(np.degrees(-np.angle(z) / 4)), float(abs(z))
 
 
+def refine_yaw(X, yaw):
+    """Turn (deg) within REFINE_SPAN of `yaw` that piles the points X (N, 2) onto the fewest rows and columns: the sum of squared REFINE_BIN histogram
+    counts along x and y after the turn. A wall of length L adds about L squared, so the long walls decide and furniture hardly counts; the mean over wall
+    normals that gives `yaw` weights every 10 cm voxel the same and lands between walls and furniture (lab_test_01: 1.3 deg turned, 2.5 deg needed)."""
+    X = X[::max(1, len(X) // REFINE_PTS)]
+
+    def score(a):
+        c, s = np.cos(np.radians(a)), np.sin(np.radians(a))
+        return sum(float((np.bincount(((u - u.min()) / REFINE_BIN).astype(int)).astype(float) ** 2).sum()) for u in (c * X[:, 0] - s * X[:, 1], s * X[:, 0] + c * X[:, 1]))
+
+    coarse = np.arange(yaw - REFINE_SPAN, yaw + REFINE_SPAN + 1e-9, REFINE_STEP)
+    best = coarse[int(np.argmax([score(a) for a in coarse]))]
+    fine = np.arange(best - REFINE_STEP, best + REFINE_STEP + 1e-9, REFINE_STEP / 10)
+    return float(fine[int(np.argmax([score(a) for a in fine]))])
+
+
 def level_to_floor(P, min_floor=250, max_below=0.10, traj=None, align=True, min_manhattan=0.7, landscape=True):
     """(Q, info): P rotated so the floor is horizontal and shifted so the floor is z = 0, then (align, if the walls are Manhattan enough) turned about z
     so the walls lie on the x/y axes (landscape: and the longer side of the map is x, turning another 90 deg if needed). info: tilt_deg, resid_std (m), n_floor, below, traj, yaw_deg (turn applied), manhattan (wall strength),
@@ -162,11 +179,15 @@ def level_to_floor(P, min_floor=250, max_below=0.10, traj=None, align=True, min_
     nl, hv = nrm @ Rl.T, V @ Rl[2] - d  # voxel normals and heights above the floor in the levelled frame
     wall = (np.abs(nl[:, 2]) < WALL_NZ) & (planar < PLANAR) & (hv > WALL_LO) & (hv < WALL_HI)
     yaw, strength = manhattan_yaw(nl[wall, :2]) if wall.sum() >= MIN_WALL else (0.0, 0.0)
-    turn = yaw if align and strength >= min_manhattan else 0.0
+    aligned = align and strength >= min_manhattan
+    turn = 0.0
+    if aligned:
+        z = P @ Rl[2] - d
+        turn = refine_yaw((P @ Rl.T)[:, :2][(z > WALL_LO) & (z < WALL_HI)], yaw)
     T = np.eye(4)
     T[:3, :3] = Rotation.from_euler("z", turn, degrees=True).as_matrix() @ Rl
     T[2, 3] = -d
-    if landscape and align and strength >= min_manhattan:
+    if landscape and aligned:
         o = P @ T[:3, :3].T + T[:3, 3]
         o = o[(o[:, 2] > OBST_LO) & (o[:, 2] <= OBST_HI)][:, :2]
         ex, ey = np.ptp(np.percentile(o, [1, 99], axis=0), axis=0)

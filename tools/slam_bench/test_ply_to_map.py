@@ -178,6 +178,23 @@ def test_manhattan_yaw_recovers_the_rotation_and_reports_how_manhattan_it_is():
     assert ply_to_map.manhattan_yaw(np.c_[np.cos(a), np.sin(a)])[1] < 0.1  # walls at every angle: nothing to align to
 
 
+def furnished_room(yaw=2.5, panels=12):
+    """room(yaw) plus short, dense vertical panels (shelves, partitions) lying on the world axes, i.e. `yaw` deg off the building's walls.
+    Their normals are as many as the shell's, so a mean over normals lands in between; the long walls decide a projection histogram."""
+    P = room(tilt=0.0, yaw=yaw)
+    panel_pts = []
+    for i in range(panels):
+        c = RNG.uniform([-3.5, -2.5], [3.5, 2.5]); n = 700
+        along = RNG.uniform(-0.5, 0.5, n); z = FLOOR_Z + RNG.uniform(0.0, 2.0, n)
+        panel_pts.append(np.c_[c[0] + along, np.full(n, c[1]), z] if i % 2 == 0 else np.c_[np.full(n, c[0]), c[1] + along, z])
+    return np.vstack([P, np.vstack(panel_pts)]) @ tilt_rot(TILT).T
+
+
+def test_long_walls_decide_the_turn_not_the_furniture_between_them():
+    _, info = ply_to_map.level_to_floor(furnished_room(2.5))
+    assert abs(info["yaw_deg"] + 2.5) < 0.3, info  # a mean over wall normals gives about half of it
+
+
 def test_walls_end_up_on_pixel_rows_and_columns():
     P = room(yaw=23.0)
     Q, info = ply_to_map.level_to_floor(P)
@@ -354,6 +371,7 @@ if __name__ == "__main__":
     test_too_little_floor_is_refused_by_min_floor()
     test_a_rough_floor_is_refused()
     test_manhattan_yaw_recovers_the_rotation_and_reports_how_manhattan_it_is()
+    test_long_walls_decide_the_turn_not_the_furniture_between_them()
     test_walls_end_up_on_pixel_rows_and_columns()
     test_the_long_side_ends_up_horizontal()
     test_a_square_room_is_not_turned_and_portrait_can_be_kept()
