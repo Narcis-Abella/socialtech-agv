@@ -52,7 +52,7 @@ class Worker:
 
 
 class LiveReloc:
-    def __init__(self, map_xyz, binary, lib_dir, work_dir, deadline_s=30., base_ext=(0., 0., 0.), exposure_s=rc.S2_EXPOSURE_S, spawn=None):
+    def __init__(self, map_xyz, binary, lib_dir, work_dir, deadline_s=60., base_ext=(0., 0., 0.), exposure_s=rc.S2_EXPOSURE_S, spawn=None):
         self.map_xyz, self.work, self.deadline_s, self.base_ext, self.exposure_s = map_xyz, Path(work_dir), deadline_s, tuple(base_ext), exposure_s
         self.spawn = spawn or (lambda run, out, dl: Worker(binary, lib_dir, run, out, dl))
         self.stage, self.n, self.proc = None, 0, None

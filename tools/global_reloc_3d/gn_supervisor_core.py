@@ -24,7 +24,7 @@ class Params:
     confirm_timeout_s: float = 15.
     agree_xy: float = .30            # relocalizer vs GN: the wrong-acceptance bounds of the relocalizer's protocol (02-protocolo-evaluacion.md)
     agree_yaw_deg: float = 8.
-    reloc_timeout_s: float = 45.     # IMU stillness (2 s) + exposure (3 s) + search worker (9-13 s on the NX, note 23); bounded here
+    reloc_timeout_s: float = 75.     # IMU 2 s + exposure 3 s + search: 7 s (small map) - 23 s (mapa_20261028_01) on the AGX, Nano slower and unmeasured
     max_attempts: int = 2
     stop_check_s: float = 3.         # wheels still turning this long after the cancel -> reported (the supervisor cannot do more)
     wheel_v_still: float = .002      # m/s, rad/s: the stillness test of the L2 parked windows

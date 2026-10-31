@@ -49,7 +49,7 @@ class SupervisorNode(Node):
         core = {k: P(k, getattr(sc.Params, k)).value for k in sc.Params.__dataclass_fields__}
         self.core = sc.Supervisor(sc.Params(**core))
         self.reloc = rl.LiveReloc(P('map_xyz', '').value, P('register_binary', '').value, P('lib_dir', '/opt').value,
-                                  P('work_dir', '/tmp/gn_supervisor').value, P('search_deadline_s', 30.).value,
+                                  P('work_dir', '/tmp/gn_supervisor').value, P('search_deadline_s', 60.).value,
                                   tuple(P('base_from_body_xyyaw', [0., 0., 0.]).value))
         self.init_std, self.init_yaw_std = P('init_std_m', .15).value, P('init_yaw_std_deg', 5.).value
         self.mono = time.monotonic
