@@ -13,6 +13,28 @@ from launch_ros.parameter_descriptions import ParameterValue
 NAV_BENCH = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "tools/nav_bench")
 
 
+SCAN = os.path.join(NAV_BENCH, "config/scan.yaml")
+CLOUD = [("cloud_in", "/cloud_registered_body")]
+
+
+def scan_nodes():
+    """Default: scan_median (overlay), quantile 0 = the closest point per bin = the same /scan as pointcloud_to_laserscan, plus the median of each bin on /scan_med (recorded, used by nothing).
+    SCAN_CONVERTER=p2l: pointcloud_to_laserscan as before."""
+    if os.environ.get("SCAN_CONVERTER") == "p2l":
+        return [Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", parameters=[SCAN], remappings=CLOUD + [("scan", "/scan")])]
+    return [Node(package="scan_median", executable="scan_median_node", name=name, parameters=[SCAN, {"quantile": q}], remappings=CLOUD + [("scan", topic)])
+            for name, q, topic in (("scan_closest", 0.0, "/scan"),)]
+
+
+def localizer_nodes(overrides):
+    """Default: gn_loc (Gauss-Newton scan-to-map, ~/nav_overlay). LOCALIZER=amcl: nav2_amcl in its place. Same /initialpose in, map->odom and /amcl_pose out."""
+    gn = os.environ.get("LOCALIZER") != "amcl"
+    return [Node(package="gn_loc", executable="gn_loc_node", name="gn_loc", output="screen") if gn else
+            Node(package="nav2_amcl", executable="amcl", parameters=[os.path.join(NAV_BENCH, "config/amcl.yaml"), overrides]),
+            Node(package="nav2_lifecycle_manager", executable="lifecycle_manager", name="lifecycle_manager_localization",
+                 parameters=[{"autostart": True, "node_names": ["map_server", "gn_loc" if gn else "amcl"]}])]
+
+
 def generate_launch_description():
     args = [DeclareLaunchArgument(n) for n in ("livox_config", "fastlio_params", "map", "overrides", "sensor_height", "level_qx", "level_qy", "level_qz", "level_qw")]
     return LaunchDescription(args + [
@@ -23,12 +45,9 @@ def generate_launch_description():
         Node(package="planar_odom", executable="planar_odom", parameters=[{
             "sensor_height": ParameterValue(LC("sensor_height"), value_type=float),
             "level": ParameterValue(["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])}]),
-        Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", parameters=[os.path.join(NAV_BENCH, "config/scan.yaml")],
-             remappings=[("cloud_in", "/cloud_registered_body"), ("scan", "/scan")]),
+        *scan_nodes(),
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}]),
-        Node(package="nav2_amcl", executable="amcl", parameters=[os.path.join(NAV_BENCH, "config/amcl.yaml"), LC("overrides")]),
-        Node(package="nav2_lifecycle_manager", executable="lifecycle_manager", name="lifecycle_manager_localization",
-             parameters=[{"autostart": True, "node_names": ["map_server", "amcl"]}]),
+        *localizer_nodes(LC("overrides")),
         # AMCL trail (/amcl_path) and its particles as a PoseArray (/particle_poses), which rviz2 can draw; "-" = no reference path
         ExecuteProcess(cmd=["python3", os.path.join(NAV_BENCH, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen"),
     ])

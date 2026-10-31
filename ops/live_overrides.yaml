@@ -2,3 +2,9 @@
 /**:
   ros__parameters:
     set_initial_pose: false
+    # 2026-10-30: 0.01 -> 0.005. AMCL-only replays of the 29 Oct occluded turn (AGX): worst yaw 13.4 -> 5.9 deg, tracking unchanged (offset 0.3 m / 10 deg). amcl.yaml notes that alpha <= 0.005 converged late
+    # (100-243 s) from LARGE initial offsets: the pose from the relocalizer / rviz2 should be close. Revert: delete these four lines.
+    alpha1: 0.005
+    alpha2: 0.005
+    alpha3: 0.005
+    alpha4: 0.005
