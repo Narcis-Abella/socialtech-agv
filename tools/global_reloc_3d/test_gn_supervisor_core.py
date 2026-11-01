@@ -491,12 +491,19 @@ class MovedWhileConfirmingTest(Fixture):
     def good(self, s, t, pose):
         return run(s, t, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', pose))
 
-    def test_gn_close_to_the_pose_once_and_then_moved_with_a_good_fit_is_confirmed(self):
+    def test_gn_close_to_the_pose_and_then_carried_along_with_a_good_fit_is_confirmed(self):
         s, t = self.relocalized()
         self.good(s, t + 1, (1., 2., .3))                                    # GN took the pose: the lock is the relocalizer's
-        self.good(s, t + 2, (3., 4., .3))                                    # the robot was pushed 2.8 m
-        self.good(s, t + 3, (3.4, 4., .3))
+        self.good(s, t + 2, (1.6, 2.4, .3))                                  # the robot is pushed ~0.7 m per status (1 Hz): GN follows it
+        self.good(s, t + 3, (2.2, 2.8, .3))
         self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+
+    def test_gn_that_jumps_elsewhere_with_a_good_fit_after_the_close_sample_is_not_confirmed(self):
+        s, t = self.relocalized()
+        self.good(s, t + 1, (1., 2., .3))
+        for k in range(2, 20):
+            self.good(s, t + k, (6., 2., .3))                                # a snap to another well-fitting place (symmetric corridor): not the pose it was given
+        self.assertEqual((s.state, s.reason), ('FAILED', 'gn_not_confirmed'))
 
     def test_gn_that_was_never_close_to_the_pose_is_still_not_confirmed(self):
         s, t = self.relocalized()
@@ -562,6 +569,65 @@ class FailedRetryTest(Fixture):
         run(s, t + 70., ('on_status', 'LOST', 0., 0.))
         self.assertEqual(s.reason, 'failed_retry')
 
+    def failed_by(self, reason_setup):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 5)
+        run(s, t + 5, ('on_reloc_result', False, None, reason_setup))
+        self.lost(s, t + 6, t + 9)
+        run(s, t + 9, ('on_reloc_result', False, None, reason_setup))
+        return s, t + 9
+
+    def test_a_relocalizer_exception_is_not_retried(self):
+        s, t = self.failed_by('exception_in_start')
+        self.assertEqual(s.state, 'FAILED')
+        a = []
+        for k in range(1, 130):
+            a += run(s, t + float(k), ('on_status', 'LOST', 0., 0.))
+        self.assertNotIn('reloc_start', kinds(a))                            # a bug would loop: each cycle restarts FAST-LIO2
+
+    def test_the_retry_cycles_are_capped(self):
+        s, t = self.failed(failed_retry_max=2)
+        starts = 0
+        for k in range(1, 400):
+            tt = t + float(k)
+            a = run(s, tt, ('on_status', 'LOST', 0., 0.))
+            if s.state == 'RELOCALIZING':
+                a += run(s, tt, ('on_reloc_result', False, None, 'x'))        # every attempt of every cycle fails
+            starts += kinds(a).count('reloc_start')
+        self.assertEqual(starts, 2 * 2)                                       # 2 cycles x 2 attempts, then the operator
+        self.assertEqual(s.state, 'FAILED')
+
+    def test_an_operator_pose_gives_the_retries_back(self):
+        s, t = self.failed(failed_retry_max=1)
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.reason, 'failed_retry')
+        run(s, t + 31., ('on_operator_pose', (1., 2., 0.)))
+        for k in range(32, 36):
+            run(s, t + float(k), ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))
+        self.assertEqual(s.state, 'MONITOR')
+        self.assertEqual(s.retries, 0)
+
+    def test_a_failure_that_is_not_a_relocalization_one_is_never_retried(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))                        # the retry starts ...
+        self.assertEqual(s.reason, 'failed_retry')
+        for k in range(1, 40):
+            run(s, t + 30. + k)                                                # ... and gn_loc goes silent: gn_status_stale
+        self.assertEqual((s.state, s.reason), ('FAILED', 'gn_status_stale'))
+        a = []
+        for k in range(40, 200):
+            a += run(s, t + 30. + k)
+        self.assertNotIn('reloc_start', kinds(a))
+        s2, t2 = self.failed()                                                # the same for the node's internal_error hold
+        s2.go(t2 + 1., 'FAILED', 'internal_error'); s2.drain()
+        a = []
+        for k in range(2, 200):
+            a += run(s2, t2 + float(k), ('on_status', 'LOST', 0., 0.))
+        self.assertNotIn('reloc_start', kinds(a))
+
     def test_a_pose_that_gn_did_not_confirm_is_not_searched_again(self):
         s, t = self.new()
         run(s, t, ('on_status', 'LOST', 0., 0.))
@@ -592,11 +658,18 @@ class ScansFlowingTest(Fixture):
     def test_it_follows_the_scan_counter_of_gn(self):
         s, t = self.new()
         run(s, t, ('on_status', 'TRACKING', .9, .8, 100))
-        self.assertTrue(s.scans_flowing)
+        self.assertTrue(s.scans_flowing(t))
         run(s, t + 1, ('on_status', 'TRACKING', 0., 0., 100))                # the counter did not move: the lidar is covered (3 of 3 covers of 2026-11-01)
-        self.assertFalse(s.scans_flowing)
+        self.assertFalse(s.scans_flowing(t + 1))
         run(s, t + 2, ('on_status', 'TRACKING', .9, .8, 110))
-        self.assertTrue(s.scans_flowing)
+        self.assertTrue(s.scans_flowing(t + 2))
+
+    def test_without_a_recent_status_nothing_is_known_to_flow(self):
+        s = sc.Supervisor(sc.Params())
+        self.assertFalse(s.scans_flowing(0.))                                # no status ever
+        run(s, 0., ('on_status', 'TRACKING', .9, .8, 100))
+        self.assertTrue(s.scans_flowing(1.))
+        self.assertFalse(s.scans_flowing(10.))                               # gn_loc went silent: its last "flowing" is not evidence
 
 
 class GoalHoldTest(Fixture):

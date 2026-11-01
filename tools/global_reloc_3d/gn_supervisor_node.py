@@ -58,6 +58,7 @@ class SupervisorNode(Node):
                                   tuple(P('base_from_body_xyyaw', [0., 0., 0.]).value),
                                   restart=self.restart_lio if P('restart_lio', True).value else None, settle_s=P('lio_settle_s', 3.).value,
                                   lio_timeout_s=P('lio_timeout_s', 15.).value)
+        self.reloc.restart_ready = lambda: self.core.scans_flowing(self.mono())     # a covered lidar: the restart of FAST-LIO2 waits for the scans
         self.init_std, self.init_yaw_std = P('init_std_m', .15).value, P('init_yaw_std_deg', 5.).value
         binary, lib = self.get_parameter('register_binary').value, self.get_parameter('lib_dir').value
         missing = [f for f, ok in ((self.reloc.map_xyz, os.path.isfile(self.reloc.map_xyz)), (binary, os.access(binary, os.X_OK)),
@@ -145,7 +146,6 @@ class SupervisorNode(Node):
     # ------------------------------------------------------------------ outputs
     def tick(self):
         now = self.mono()
-        self.reloc.restart_ok = self.core.scans_flowing                    # a covered lidar: the restart of FAST-LIO2 waits for the scans (its filter would get no points)
         try:
             r = self.reloc.poll()
         except Exception:

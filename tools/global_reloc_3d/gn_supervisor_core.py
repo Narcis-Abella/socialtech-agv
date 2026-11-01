@@ -33,6 +33,9 @@ class Params:
     agree_yaw_deg: float = 8.
     reloc_timeout_s: float = 75.     # IMU 2 s + exposure 3 s + search: 7 s (small map) - 23 s (mapa_20261028_01) on the AGX, Nano slower and unmeasured
     max_attempts: int = 2
+    failed_retry_max: int = 10       # at most this many retry cycles in a row (2 attempts each; each restarts FAST-LIO2 and runs a 60 s search on a shared board): then the operator
+    track_xy: float = 1.0            # once GN took the relocalizer's pose, how far it may move between two statuses (1 Hz) and still count as the same lock: a pushed robot
+    track_yaw_deg: float = 30.       # yes, a snap to another well-fitting place no
     failed_retry_s: float = 30.      # FAILED after a relocalization that did not work: search again this often (0 = wait for the operator only). The lidar may have been uncovered
                                      # or the robot parked since. Not for gn_not_confirmed: the search would give the same pose
     stop_check_s: float = 3.         # wheels still turning this long after the cancel -> reported (the supervisor cannot do more)
@@ -92,14 +95,15 @@ class Supervisor:
         self.timeout = None
         self.t_boot = None              # first tick: the start-up has no transition to date it from
         self.retry = False              # FAILED because a relocalization did not work: it is tried again by itself
+        self.retries = 0                # retry cycles since the last confirmed pose or operator pose
+        self.locked = False             # GN took the pose of the relocalizer in this confirmation: it is followed (track_xy), not compared with the pose any more
         self.auto = False               # the pose under way is the supervisor's own start-up one: if it fails the operator is asked for his
 
     # ------------------------------------------------------------------ outputs
-    @property
-    def scans_flowing(self):
-        """GN's scan counter moved in its last status. It stands still when the lidar is covered (< 20 valid beams): the three covers of 2026-11-01 stalled it from 1 s after
-        the cover until 1 s after the uncover. A FAST-LIO2 restarted while it stands still gets no points either."""
-        return self.stall == 0
+    def scans_flowing(self, t):
+        """GN's scan counter moved in its last status, and that status is recent. It stands still when the lidar is covered (< 20 valid beams): the three covers of 2026-11-01
+        stalled it from 1 s after the cover until 1 s after the uncover. A FAST-LIO2 restarted while it stands still gets no points either."""
+        return self.t_status is not None and t - self.t_status <= self.p.status_stale_s and self.stall == 0
 
     @property
     def hold(self):
@@ -111,6 +115,9 @@ class Supervisor:
 
     def go(self, t, state, reason):
         self.state, self.reason, self.t_enter = state, reason, t
+        self.retry = False                           # fail() says whether this FAILED is one to retry; any other way into FAILED (stale status, internal error) is a hold for good
+        if state == 'MONITOR':
+            self.retries = 0
         self.auto = self.auto and state != 'MONITOR'     # any way into MONITOR (confirmed, GN agrees, a parked check) ends the start-up localization
         self.anchor, self.t_drift = None, None      # a new pose (operator, relocalizer) or a new phase: the old parked anchor would read the jump as drift
         self.actions.append(('state', state, reason))
@@ -162,6 +169,7 @@ class Supervisor:
         if self.state in ('RELOCALIZING', 'VERIFYING'):
             self.actions.append(('reloc_abort',))
         self.auto = False                                           # the operator always wins over the start-up localization
+        self.retries = 0
         self.confirm(t, None, 'operator_pose')
 
     def on_reloc_result(self, t, ok, pose, why):
@@ -175,7 +183,7 @@ class Supervisor:
                 return self.go(t, 'MONITOR', f'verify_no_pose_{why}')
             if self.attempts < self.p.max_attempts:
                 return self.start_reloc(t, self.reason.split('+')[0])      # the '+not_stopped' note belongs to the attempt that was reported
-            return self.fail(t, f'reloc_failed_{why}')
+            return self.fail(t, f'reloc_failed_{why}', retry=not why.startswith('exception_in_'))      # an exception would loop: each retry restarts FAST-LIO2
         if self.gn_good and self.pose is not None and agree(self.pose, pose, self.p.agree_xy, self.p.agree_yaw_deg):
             return self.go(t, 'MONITOR', 'verified_gn_agrees')
         if verifying:
@@ -199,7 +207,7 @@ class Supervisor:
         self.go(t, state, why)
 
     def confirm(self, t, target, why):
-        self.target, self.t_pose, self.good = target, t, 0
+        self.target, self.t_pose, self.good, self.locked = target, t, 0, False
         self.timeout = t + self.p.confirm_timeout_s
         self.go(t, 'CONFIRMING', why)
 
@@ -213,10 +221,10 @@ class Supervisor:
             return 'gn_no_scans'
         return None
 
-    def fail(self, t, reason):
+    def fail(self, t, reason, retry=False):
         """FAILED holds navigation until an operator pose. After the start-up localization the name says that the operator is being asked for it."""
-        self.retry = reason.startswith('reloc_')
-        return self.go(t, 'FAILED', f'needs_operator:{reason}' if self.auto else reason)
+        self.go(t, 'FAILED', f'needs_operator:{reason}' if self.auto else reason)
+        self.retry = retry
 
     def tick(self, t):
         p = self.p
@@ -228,8 +236,8 @@ class Supervisor:
             return self.start_reloc(t, 'startup_auto')
         if self.hold and any(self.goals.values()) and (self.t_sent is None or t - self.t_sent >= p.recancel_s):
             self.actions.append(('cancel',)); self.t_sent = t
-        if self.state == 'FAILED' and self.retry and p.failed_retry_s > 0 and t - self.t_enter >= p.failed_retry_s:
-            self.attempts = 0
+        if self.state == 'FAILED' and self.retry and p.failed_retry_s > 0 and self.retries < p.failed_retry_max and t - self.t_enter >= p.failed_retry_s:
+            self.attempts, self.retries = 0, self.retries + 1
             return self.start_reloc(t, 'failed_retry')
         if self.state != 'CONFIRMING':
             self.status_new = False
@@ -240,11 +248,12 @@ class Supervisor:
             return self.go(t, 'FAILED', 'gn_status_stale')
         if self.state == 'CONFIRMING':
             if self.status_new and self.t_status >= self.t_pose + p.confirm_lag_s:
-                close = self.target is None or (self.pose is not None and self.t_gn_pose >= self.t_pose + p.confirm_lag_s
-                                                and agree(self.pose, self.target, p.agree_xy, p.agree_yaw_deg))
+                fresh = self.pose is not None and self.t_gn_pose >= self.t_pose + p.confirm_lag_s
+                xy, yaw = (p.track_xy, p.track_yaw_deg) if self.locked else (p.agree_xy, p.agree_yaw_deg)
+                close = self.target is None or (fresh and agree(self.pose, self.target, xy, yaw))
                 self.good = self.good + 1 if self.gn_good and close else 0
-                if self.good:
-                    self.target = None     # GN took the relocalizer's pose: from here on a good lock is enough, the robot may be moved (pushed, kidnapped) while it confirms
+                if self.good and self.target is not None:
+                    self.target, self.locked = self.pose, True      # GN took the relocalizer's pose: it is followed from here, so a robot pushed meanwhile is not a failure, a jump is
             self.status_new = False
             if self.good >= p.confirm_n:
                 self.target = None
@@ -259,7 +268,7 @@ class Supervisor:
                 return self.go(t, 'MONITOR', 'verify_timeout')
             if self.attempts < p.max_attempts:
                 return self.start_reloc(t, self.reason)
-            return self.fail(t, 'reloc_timeout')
+            return self.fail(t, 'reloc_timeout', retry=True)
         if self.state == 'RELOCALIZING' and self.wheel_moving and self.t_cancel is not None and t - self.t_cancel > p.stop_check_s \
                 and 'not_stopped' not in self.reason:
             self.reason += '+not_stopped'
