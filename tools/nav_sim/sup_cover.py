@@ -1,5 +1,7 @@
 """Covered-lidar scenario of gn_supervisor in the full simulation (sup_sim.sh): start-up localization, a cover of the lidar, the uncover, the way back to MONITOR.
-usage: sup_cover.py OUT.json [cover_s=20] [settle_s=10]      sim time for the scenario, wall time next to it for the RTF.
+usage: sup_cover.py OUT.json [cover_s=20] [settle_s=10] [--push-after S] [--move-covered M]      sim time for the scenario, wall time next to it for the RTF.
+  --push-after S    S seconds after the uncover the robot drives 0.4 m (a push while the relocalizer works): the pose of that attempt must be refused and a later one released
+  --move-covered M  the robot drives M metres forward while the lidar is covered: GN dead-reckons on the old place, the relocalizer finds the new one and GN must confirm it
 The headline is `uncover_to_monitor_s`: from the lidar seeing again to Nav2 released (MONITOR: confirmed, or verified_gn_agrees when GN already agrees). Pose error: GN's pose against the Gazebo pose, 3 s after the release."""
 import json
 import math
@@ -8,7 +10,7 @@ import sys
 import time
 
 import rclpy
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -35,6 +37,7 @@ class Scenario(Node):
         self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose', lambda m: setattr(self, 'gn', m), LATCHED)
         self.create_subscription(PoseWithCovarianceStamped, '/initialpose', lambda m: self.log('initialpose', x=m.pose.pose.position.x, y=m.pose.pose.position.y), 10)
         self.status = ''
+        self.cmd = self.create_publisher(Twist, '/cmd_vel', 10)
 
     def sim(self):
         return self.get_clock().now().nanoseconds * 1e-9
@@ -63,6 +66,16 @@ class Scenario(Node):
         while rclpy.ok() and self.sim() - t0 < seconds:
             rclpy.spin_once(self, timeout_sec=.05)
 
+    def drive(self, metres, v=.3):
+        """Forward `metres` at v (sim time), then stop."""
+        t0, m = self.sim(), Twist()
+        m.linear.x = v
+        while rclpy.ok() and self.sim() - t0 < metres / v:
+            self.cmd.publish(m)
+            rclpy.spin_once(self, timeout_sec=.05)
+        self.cmd.publish(Twist())
+        self.log('drive', metres=metres)
+
     def cover(self, on):
         subprocess.run(['ros2', 'param', 'set', '/livox_mid360_sim', 'cover', 'true' if on else 'false'], check=True, capture_output=True)
         self.log('cover' if on else 'uncover')
@@ -79,26 +92,39 @@ def first(events, after, pred):
 
 
 def main():
-    out, cover_s, settle_s = sys.argv[1], float(sys.argv[2]) if len(sys.argv) > 2 else 20., float(sys.argv[3]) if len(sys.argv) > 3 else 10.
+    args = sys.argv[1:]
+    opt = {}
+    for flag in ('--push-after', '--move-covered'):
+        if flag in args:
+            i = args.index(flag); opt[flag] = float(args[i + 1]); del args[i:i + 2]
+    out, cover_s, settle_s = args[0], float(args[1]) if len(args) > 1 else 20., float(args[2]) if len(args) > 2 else 10.
     rclpy.init()
     n = Scenario()
-    s = {}
+    s = {'options': opt}
     ok = n.spin_until(lambda: n.state and n.state[0] == 'MONITOR', 240., 'start-up localization (MONITOR)')
     s['startup_localized_at_sim_s'] = n.sim() if ok else None
     if ok:
         n.spin_for(settle_s)
         s['pose_error_before_cover'] = n.pose_error()
         t_cover = n.sim(); n.cover(True)
-        n.spin_for(cover_s)
+        if '--move-covered' in opt:
+            n.spin_for(6.)                                               # long enough for the stop and the first looks of the relocalizer
+            n.drive(opt['--move-covered'])
+            n.spin_for(max(cover_s - 6. - opt['--move-covered'] / .3, 1.))
+        else:
+            n.spin_for(cover_s)
         t_uncover = n.sim(); n.cover(False)
-        back = lambda: next((e for e in n.events if e['what'] == 'state' and e['sim'] > t_uncover and e['state'] == 'MONITOR'), None)
+        if '--push-after' in opt:
+            n.spin_for(opt['--push-after']); n.drive(.4)
+        back = lambda: next((e for e in reversed(n.events) if e['what'] == 'state' and e['sim'] > t_uncover and e['state'] == 'MONITOR'), None)
         done = n.spin_until(lambda: back() is not None, 240., 'MONITOR after the uncover')
         t_done = back()['sim'] if done else n.sim()
         stop = first(n.events, t_cover, lambda e: e['state'] != 'MONITOR')
-        reloc = first(n.events, t_cover, lambda e: e['state'] == 'RELOCALIZING')
         s.update({'cover_s': cover_s, 'stopped_after_cover_s': stop['sim'] - t_cover if stop else None, 'stop_reason': stop['reason'] if stop else None,
-                  'relocalizing_after_cover_s': reloc['sim'] - t_cover if reloc else None, 'back_to_monitor': done, 'monitor_reason': back()['reason'] if done else None,
-                  'uncover_to_monitor_s': t_done - t_uncover if done else None})
+                  'back_to_monitor': done, 'monitor_reason': back()['reason'] if done else None,
+                  'uncover_to_monitor_s': t_done - t_uncover if done else None,
+                  'relocalizations': sum(1 for e in n.events if e['what'] == 'state' and e['state'] == 'RELOCALIZING' and e['sim'] > t_cover),
+                  'refused': [e['why'] for e in n.events if e['what'] == 'state' and e['sim'] > t_cover and (e.get('why') or '').startswith('moved')]})
         n.spin_for(3.)
         s['pose_error_after'] = n.pose_error()
     s['events'] = n.events
