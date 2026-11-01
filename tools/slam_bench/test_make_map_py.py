@@ -97,6 +97,9 @@ def test_lost_scans_warn_and_recommend_real_time_replay():
     assert "900 of 1000" in w and "PLAY_RATE=1" in w
     assert make_map.scan_warning(poses=990, scans=1000, play_rate=2.0) is None                  # 99 %: normal (eco01 at 1x: 99.0-99.5 %)
     assert make_map.scan_warning(poses=10, scans=None, play_rate=2.0) is None                   # no bag metadata: nothing to compare
+    assert "NEW_MAP_NAME" in w                                                                  # ops/make_map.sh refuses a MAP_NAME that exists
+    unknown = make_map.scan_warning(poses=900, scans=1000, play_rate=None)                      # a map regenerated from an old folder: nobody recorded the rate
+    assert "unknown" in unknown and "PLAY_RATE=1" in unknown and "bag itself" in unknown
     at_1x = make_map.scan_warning(poses=900, scans=1000, play_rate=1.0)
     assert "PLAY_RATE=1" not in at_1x and "bag" in at_1x                                      # already real time: the bag itself lost scans
 

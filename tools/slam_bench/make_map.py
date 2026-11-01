@@ -52,13 +52,15 @@ def check_cloud_has_the_trajectory(cloud, poses, margin=1.0):
 
 
 def scan_warning(poses, scans, play_rate):
-    """The warning text when too few scans of the bag got a pose, else None. At a replay faster than real time it recommends relaunching at 1x."""
+    """The warning text when too few scans of the bag got a pose, else None. At a replay faster than real time (or of unknown rate) it recommends relaunching at 1x."""
     if not scans or poses / scans >= LOST_RATIO:
         return None
     head = f"WARNING: only {poses} of {scans} scans of the bag got a pose ({100 * poses / scans:.1f} %): Voxel-SLAM lost data."
-    if play_rate > 1:
-        return head + f" The bag was replayed at {play_rate:g}x: relaunch in real time, PLAY_RATE=1 ops/make_map.sh BAG_NAME MAP_NAME."
-    return head + " The replay was already real time: the bag itself lost scans (tools/slam_bench/bag_check.py)."
+    again = "relaunch in real time with PLAY_RATE=1 ops/make_map.sh BAG_NAME NEW_MAP_NAME (a new name: ops/make_map.sh refuses a folder that exists)"
+    bag = "the bag itself lost scans (tools/slam_bench/bag_check.py)"
+    if play_rate is None:
+        return head + f" The replay rate of this run is unknown: if it was faster than real time, {again}; if not, {bag}."
+    return head + (f" The bag was replayed at {play_rate:g}x: {again}." if play_rate > 1 else f" The replay was already real time: {bag}.")
 
 
 def commit():
@@ -85,7 +87,7 @@ def main(argv):
     ap.add_argument("--ceil", type=float, default=floor_level.OBST_HI, help="m above the floor: obstacle band ceiling (30 for an outdoor map)")
     ap.add_argument("--topic", default="/livox/lidar")
     ap.add_argument("--node-log", help="node.log of the SLAM run (default: <out>/node.log when it exists)")
-    ap.add_argument("--play-rate", type=float, default=float(os.environ.get("PLAY_RATE", "1")))
+    ap.add_argument("--play-rate", type=float, help="x, the replay rate of the SLAM run (default: unknown, as in a map regenerated from an old folder)")
     a = ap.parse_args(argv)
     out = Path(a.out)
     if a.run:

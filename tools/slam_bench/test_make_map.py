@@ -51,9 +51,10 @@ def test_the_steps_run_in_order_with_the_arguments_each_tool_needs_and_the_outpu
         assert [l.split()[0] for l in lines] == ["engine", "run", "make_map"], lines
         assert lines[0].strip() == "engine"
         assert lines[1] == f"run bag dir /livox/lidar /livox/imu {out} | sed: s/^\\( *\\)degrade_bound:.*/\\1degrade_bound: 100000/ | rate: 2", lines[1]
-        assert lines[2] == f"make_map --run {out}/vs/run --bag bag dir --out {out} --res 0.025 --voxel 0.025 --ceil 1.80 --topic /livox/lidar --play-rate 2", lines[2]
+        assert lines[2] == f"make_map --run {out}/vs/run --bag bag dir --out {out}/.build --node-log {out}/node.log --res 0.025 --voxel 0.025 --ceil 1.80 --topic /livox/lidar --play-rate 2", lines[2]
         assert all((out / f).exists() for f in ("map.pgm", "map.yaml", "map.ply", "map_clean.ply", "report.json"))
         assert "make_map: OK" in r.stdout
+        assert not (out / ".build").exists() and (out / "play_rate").read_text().strip() == "2"      # the staging dir is gone; the rate of this replay is recorded
 
 
 def test_the_replay_rate_defaults_to_2x_and_can_be_changed():
@@ -155,7 +156,7 @@ def test_reuse_slam_skips_the_replay_and_builds_from_map_ply_when_it_exists():
         r = run(tmp, out, args=["--reuse-slam"])
         assert r.returncode == 0, r.stderr
         assert tools_logged(tmp) == ["engine", "make_map"], log(tmp)            # no replay
-        assert f"make_map --cloud {out}/map.ply --poses {out}/vs/run/alidarState.txt --bag bag dir" in log(tmp), log(tmp)
+        assert f"make_map --cloud {out}/map.ply --poses {out}/vs/run/alidarState.txt --bag bag dir --out {out}/.build" in log(tmp), log(tmp)
         assert (out / "node.log").exists() and (out / "vs" / "run" / "alidarState.txt").exists()      # the SLAM output is kept
 
 
@@ -220,3 +221,45 @@ def test_the_flags_make_map_passes_exist_in_the_real_tool():
     for flag in ("--run", "--cloud", "--poses", "--bag", "--out", "--res", "--voxel", "--ceil", "--topic", "--play-rate"):
         assert flag in helptext, (flag, helptext)
     assert "--check-engine" in (HERE / "ghosts.py").read_text()
+
+
+def finished_map(out, content="a map that works"):
+    (out / "vs" / "run").mkdir(parents=True)
+    (out / "vs" / "run" / "alidarState.txt").write_text("1 0 0 0 0 0 0 1\n")
+    for f in ("map.pgm", "map.yaml", "map_clean.ply", "map.ply", "report.json"):
+        (out / f).write_text(content)
+
+
+def test_reuse_slam_that_fails_leaves_the_map_that_was_there():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        finished_map(out)
+        for extra in ({"REJECT": "1"}, {"FAIL_LATE": "1"}, {"STUB_CHECK_FAIL": "1"}):
+            r = run(tmp, out, extra, args=["--reuse-slam"])
+            assert r.returncode != 0, extra
+            assert all((out / f).read_text() == "a map that works" for f in ("map.pgm", "map.yaml", "map_clean.ply", "map.ply", "report.json")), extra     # a live map survives a failed rebuild
+            assert not (out / ".build").exists(), extra
+
+
+def test_reuse_slam_that_works_replaces_the_map_and_leaves_no_staging_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        finished_map(out)
+        (out / ".build").mkdir()
+        (out / ".build" / "junk").write_text("a crashed run")
+        r = run(tmp, out, args=["--reuse-slam"])
+        assert r.returncode == 0, r.stderr
+        assert (out / "map.pgm").read_text().strip() == "P5" and (out / "map.ply").read_text().strip() == "ply" and not (out / ".build").exists()
+
+
+def test_reuse_slam_reports_the_rate_the_replay_used_not_the_default():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        assert run(tmp, out, {"PLAY_RATE": "1"}).returncode == 0                      # the map is made at 1x
+        assert run(tmp, out, args=["--reuse-slam"]).returncode == 0                    # and regenerated later with the default env (2)
+        assert log(tmp).splitlines()[-1].endswith("--play-rate 1"), log(tmp)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        finished_map(out)                                                             # an old folder: nobody recorded the rate
+        assert run(tmp, out, args=["--reuse-slam"]).returncode == 0
+        assert "--play-rate" not in log(tmp), log(tmp)

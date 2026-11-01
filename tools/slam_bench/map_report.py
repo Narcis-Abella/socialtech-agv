@@ -21,11 +21,12 @@ def run_stats(poses_file, node_log=None):
 def scans_in_bag(bag, topic):
     """Message count of `topic` from the bag's metadata.yaml, None when the file or the topic is not there."""
     f = Path(bag) / "metadata.yaml"
-    if not f.exists():
-        return None
-    for t in yaml.safe_load(f.read_text())["rosbag2_bagfile_information"]["topics_with_message_count"]:
-        if t["topic_metadata"]["name"] == topic:
-            return int(t["message_count"])
+    try:
+        for t in yaml.safe_load(f.read_text())["rosbag2_bagfile_information"]["topics_with_message_count"]:
+            if t["topic_metadata"]["name"] == topic:
+                return int(t["message_count"])
+    except (OSError, yaml.YAMLError, KeyError, TypeError, ValueError):     # the lost-scan check is optional: another layout of the file must not cost the map built before it
+        pass
     return None
 
 

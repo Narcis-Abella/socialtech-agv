@@ -64,3 +64,10 @@ def test_scans_in_bag_reads_the_message_count_of_the_topic_from_metadata_yaml(tm
     assert map_report.scans_in_bag(tmp_path, "/livox/imu") == 73228
     assert map_report.scans_in_bag(tmp_path, "/nope") is None
     assert map_report.scans_in_bag(tmp_path / "missing", "/livox/lidar") is None
+
+
+def test_scans_in_bag_survives_a_metadata_layout_it_does_not_know(tmp_path):
+    for text in ("rosbag2_bagfile_information: {}\n", "rosbag2_bagfile_information:\n  topics_with_message_count: 5\n", "just: text\n", "- a\n- list\n",
+                 "rosbag2_bagfile_information:\n  topics_with_message_count:\n    - topic_metadata: {}\n      message_count: 3\n", ":::not yaml\n  - [\n"):
+        (tmp_path / "metadata.yaml").write_text(text)
+        assert map_report.scans_in_bag(tmp_path, "/livox/lidar") is None, text      # the lost-scan check is optional: it must never cost the map
