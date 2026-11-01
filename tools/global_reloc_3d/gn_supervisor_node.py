@@ -186,6 +186,8 @@ class SupervisorNode(Node):
             except Exception:
                 self.reloc_failed('start')
         elif a[0] == 'reloc_abort':
+            if self.reloc.active:                                # where it was tells a robot that kept moving (imu, restart) from a slow search
+                self.get_logger().info(f'relocalization aborted in stage {self.reloc.stage}')
             self.reloc.abort()
         elif a[0] == 'initialpose':
             x, y, yaw = a[1]
