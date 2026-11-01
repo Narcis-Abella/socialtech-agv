@@ -124,6 +124,15 @@ class AutoInitTest(Fixture):
         self.assertNotIn('reloc_start', seen)
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'startup'))
 
+    def test_a_tracking_that_never_confirms_is_localized_after_a_bounded_wait(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        t = None
+        for k in range(40):                                               # TRACKING with a poor fit for ever: the start-up has no timeout of its own
+            if 'reloc_start' in kinds(run(s, float(k), ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (1., 2., 0.)))):
+                t = k; break
+        self.assertEqual(t, 16)                                           # twice the wait: long enough for a gn_loc that settles by itself
+        self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'startup_auto'))
+
     def test_leaving_the_auto_init_through_a_verification_forgets_it(self):
         s = sc.Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
@@ -420,6 +429,7 @@ class StarvedScanTest(Fixture):
             seen += kinds(run(s, t + k, ('on_wheel', 0., 0.), ('on_status', 'TRACKING', 0., 0.)))
         self.assertEqual(s.state, 'RELOCALIZING')
         self.assertTrue(s.hold)
+        self.assertIn('reloc_abort', seen)                               # the parked check is aborted by the core, not only by the node's start()
         self.assertIn('reloc_start', seen)                               # the parked check did not restart FAST-LIO2; the stop that holds Nav2 must
 
 

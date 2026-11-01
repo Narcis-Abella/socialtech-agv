@@ -130,9 +130,7 @@ class Supervisor:
             self.anchor, self.t_drift = None, None
 
     def on_need_reloc(self, t, flag):
-        if flag and self.state == 'MONITOR':
-            self.stop(t, 'gn_need_reloc')
-        elif flag and self.state == 'VERIFYING':      # a latched edge, not delivered again: the parked check must not swallow it
+        if flag and self.state in ('MONITOR', 'VERIFYING'):      # VERIFYING: a latched edge, not delivered again, the parked check must not swallow it
             self.stop(t, 'gn_need_reloc')
 
     def on_gn_pose(self, t, pose):
@@ -178,7 +176,9 @@ class Supervisor:
 
     # ------------------------------------------------------------------ transitions
     def stop(self, t, why):
-        """Also from VERIFYING: the parked check did not hold Nav2 and did not restart FAST-LIO2, the relocalization that now holds it must (it is a new one)."""
+        """Also from VERIFYING: the parked check is aborted here and a new relocalization starts, which holds Nav2 (the node restarts FAST-LIO2 for those)."""
+        if self.state == 'VERIFYING':
+            self.actions.append(('reloc_abort',))
         self.cancel(t)
         self.attempts = 0
         self.start_reloc(t, why)
@@ -212,8 +212,9 @@ class Supervisor:
         p = self.p
         if self.t_boot is None:
             self.t_boot = t
-        if self.state == 'CONFIRMING' and self.reason == 'startup' and p.auto_init_s > 0 and t - self.t_boot >= p.auto_init_s and self.gn_state != 'TRACKING':
-            self.auto, self.attempts = True, 0                       # nobody gave a pose and gn_loc is not tracking by itself: localize (the operator can still click)
+        if self.state == 'CONFIRMING' and self.reason == 'startup' and p.auto_init_s > 0 and t - self.t_boot >= p.auto_init_s \
+                and (self.gn_state != 'TRACKING' or t - self.t_boot >= 2 * p.auto_init_s):
+            self.auto, self.attempts = True, 0                       # nobody gave a pose and gn_loc is not settling by itself (TRACKING gets twice the wait: the start-up has no timeout): localize, the operator can still click
             return self.start_reloc(t, 'startup_auto')
         if self.hold and any(self.goals.values()) and (self.t_sent is None or t - self.t_sent >= p.recancel_s):
             self.actions.append(('cancel',)); self.t_sent = t
