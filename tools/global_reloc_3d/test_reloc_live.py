@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,7 +36,7 @@ def planar(x, y, yaw):
     return T
 
 
-class LiveRelocTest(unittest.TestCase):
+class LiveRelocBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); d = Path(self.tmp.name)
         rng = np.random.default_rng(0)
@@ -64,6 +65,8 @@ class LiveRelocTest(unittest.TestCase):
                 return res
         return None
 
+
+class LiveRelocTest(LiveRelocBase):
     def test_still_robot_gives_the_pose_of_the_accepted_search(self):
         r = self.make(); r.start()
         res = self.feed(r, 0., 8.)
@@ -111,6 +114,114 @@ class LiveRelocTest(unittest.TestCase):
         self.assertTrue(procs[0].killed)
         self.assertIsNone(r.poll())
         r.start(); self.assertEqual(r.stage, 'imu')
+
+
+class RestartTest(LiveRelocBase):
+    """The robot's FAST-LIO2 is restarted once the robot has been still for 2 s, so the exposure runs on a fresh filter (gravity from a still IMU, z = 0): a blind
+    period (covered lidar) leaves it with metres of z drift and degrees of attitude error that nothing corrects."""
+    def make_restart(self, ok=True, **kw):
+        self.restarts = []
+        def restart():
+            self.restarts.append(1); return ok
+        def spawn(run_dir, out_dir, deadline_s):
+            p = FakeProc(out_dir, 'accepted', planar(3., 1., .5)); self.procs.append(p); return p
+        return rl.LiveReloc(str(self.map), 'unused', '/opt', str(self.work), spawn=spawn, restart=restart, settle_s=1., **kw)
+
+    def test_the_restart_is_called_once_and_the_pose_comes_from_the_fresh_odometry(self):
+        r = self.make_restart(); r.start(restart=True)
+        # until 2.2 s the old filter (far away, metres of drift); the restart happens at ~2 s; afterwards the new one starts at the origin
+        res = self.feed(r, 0., 14., odom=lambda t: planar(50., -30., .7) if t < 2.2 else planar(0., 0., 0.))
+        self.assertIsNotNone(res)
+        self.assertTrue(res['ok'], res)
+        self.assertEqual(len(self.restarts), 1)
+        self.assertTrue(res['info']['lio_restart'])
+        x, y, yaw = res['pose']
+        self.assertAlmostEqual(x, 3., 6); self.assertAlmostEqual(y, 1., 6); self.assertAlmostEqual(yaw, .5, 6)     # nothing of the old odometry leaks in
+
+    def test_the_gate_asks_for_a_still_robot_again_after_the_restart(self):
+        r = self.make_restart(); r.start(restart=True)
+        moving = (0., 0., .3)
+        for k in range(int(3.5 * 200)):                                      # still for the first gate (2 s) and the restart, then it is pushed
+            r.add_imu(k / 200., (0., 0., 0.) if k / 200. < 2.2 else moving, (0., 0., 1.))
+        self.assertEqual(len(self.restarts), 1)
+        for k in range(int(3.5 * 200), 7 * 200):
+            r.add_imu(k / 200., moving, (0., 0., 1.)); r.poll()
+        self.assertEqual(r.stage, 'imu')                                     # waiting for the second stillness: no exposure, no search
+        self.assertEqual(self.procs, [])
+        self.assertEqual(len(self.restarts), 1)                              # and it does not restart again
+
+    def test_a_failed_restart_goes_on_with_the_filter_it_has(self):
+        r = self.make_restart(ok=False); r.start(restart=True)
+        res = self.feed(r, 0., 8.)
+        self.assertTrue(res['ok'], res)
+        self.assertEqual(len(self.restarts), 1)
+        self.assertFalse(res['info']['lio_restart'])
+
+    def test_a_restart_that_raises_is_reported_in_the_result(self):
+        def restart():
+            raise PermissionError('not ours')
+        r = rl.LiveReloc(str(self.map), 'unused', '/opt', str(self.work), restart=restart, settle_s=1.,
+                         spawn=lambda run_dir, out_dir, dl: FakeProc(out_dir, 'accepted', planar(3., 1., .5))); r.start(restart=True)
+        res = self.feed(r, 0., 8.)
+        self.assertTrue(res['ok'], res)                                      # it goes on with the filter it has ...
+        self.assertFalse(res['info']['lio_restart'])
+        self.assertIn('PermissionError', res['info']['lio_restart_error'])   # ... and says why it could not do better
+
+    def test_no_restart_unless_asked(self):
+        r = self.make_restart(); r.start()                                   # a parked verification does not hold Nav2 and must not touch the odometry
+        res = self.feed(r, 0., 8.)
+        self.assertTrue(res['ok'], res)
+        self.assertEqual(self.restarts, [])
+        self.assertNotIn('lio_restart', res['info'])
+
+    def test_a_filter_that_does_not_come_back_ends_with_a_reason(self):
+        r = self.make_restart(lio_timeout_s=3.); r.start(restart=True)
+        res = None
+        for k in range(int(12 * 200)):
+            t = k / 200.
+            r.add_imu(t, (0., 0., 0.), (0., 0., 1.))
+            if t < 2.0 and k % 20 == 0:
+                r.add_odom(t, planar(0., 0., 0.)); r.add_cloud(t + .001, self.cloud)      # the old filter dies with the restart: nothing after it
+            res = r.poll()
+            if res is not None:
+                break
+        self.assertIsNotNone(res)
+        self.assertFalse(res['ok'])
+        self.assertEqual(res['why'], 'lio_restart_timeout')
+
+
+class SignalByCommTest(unittest.TestCase):
+    """The restart kills FAST-LIO2 by its exact process name (never `pkill -f`, which matches command lines and kills the caller's own shell)."""
+    def proc(self, entries):
+        d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup)
+        for pid, comm in entries.items():
+            (Path(d.name) / str(pid)).mkdir()
+            if comm is not None:
+                (Path(d.name) / str(pid) / 'comm').write_text(comm + '\n')
+        (Path(d.name) / 'self').mkdir(); (Path(d.name) / 'cpuinfo').write_text('x')
+        return d.name
+
+    def test_only_the_exact_name_is_signalled(self):
+        sent = []
+        proc = self.proc({100: 'fastlio_mapping', 101: 'fastlio_mapping_helper', 102: 'ros2', 103: 'python3', 104: 'fastlio_mappin'})
+        n = rl.signal_by_comm('fastlio_mapping', 15, proc=proc, kill=lambda pid, sig: sent.append((pid, sig)))
+        self.assertEqual(n, 1)
+        self.assertEqual(sent, [(100, 15)])
+
+    def test_nothing_running_is_zero_and_unreadable_entries_are_skipped(self):
+        sent = []
+        proc = self.proc({100: None, 101: 'ros2'})
+        self.assertEqual(rl.signal_by_comm('fastlio_mapping', 15, proc=proc, kill=lambda pid, sig: sent.append(pid)), 0)
+        self.assertEqual(sent, [])
+
+    def test_a_process_that_already_died_is_not_an_error(self):
+        def kill(pid, sig): raise ProcessLookupError
+        self.assertEqual(rl.signal_by_comm('fastlio_mapping', 15, proc=self.proc({100: 'fastlio_mapping'}), kill=kill), 0)
+
+    def test_it_never_signals_itself(self):
+        sent = []
+        proc = self.proc({os.getpid(): 'fastlio_mapping'})
+        self.assertEqual(rl.signal_by_comm('fastlio_mapping', 15, proc=proc, kill=lambda pid, sig: sent.append(pid)), 0)
 
 
 if __name__ == '__main__':

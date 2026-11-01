@@ -52,9 +52,12 @@ class SupervisorNode(Node):
         P = self.declare_parameter
         core = {k: P(k, getattr(sc.Params, k)).value for k in sc.Params.__dataclass_fields__}
         self.core = sc.Supervisor(sc.Params(**core))
+        self.lio_process = P('lio_process', 'fastlio_mapping').value       # comm of the robot's FAST-LIO2 (the launch respawns it)
         self.reloc = rl.LiveReloc(P('map_xyz', '').value, P('register_binary', '').value, P('lib_dir', '/opt').value,
                                   P('work_dir', '/tmp/gn_supervisor').value, P('search_deadline_s', 60.).value,
-                                  tuple(P('base_from_body_xyyaw', [0., 0., 0.]).value))
+                                  tuple(P('base_from_body_xyyaw', [0., 0., 0.]).value),
+                                  restart=self.restart_lio if P('restart_lio', True).value else None, settle_s=P('lio_settle_s', 3.).value,
+                                  lio_timeout_s=P('lio_timeout_s', 15.).value)
         self.init_std, self.init_yaw_std = P('init_std_m', .15).value, P('init_yaw_std_deg', 5.).value
         binary, lib = self.get_parameter('register_binary').value, self.get_parameter('lib_dir').value
         missing = [f for f, ok in ((self.reloc.map_xyz, os.path.isfile(self.reloc.map_xyz)), (binary, os.access(binary, os.X_OK)),
@@ -102,6 +105,13 @@ class SupervisorNode(Node):
 
     def on_goals(self, action, m):
         self.core.on_goal_status(self.mono(), action, any(s.status in (GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING) for s in m.status_list))
+
+    def restart_lio(self):
+        """Called by the relocalizer once the robot has been still for 2 s: FAST-LIO2 is killed by its exact name and the launch respawns it, so the exposure
+        runs on a filter that took gravity from a still IMU and starts at z = 0 (the old one keeps whatever a blind period did to it)."""
+        n = rl.signal_by_comm(self.lio_process)
+        self.get_logger().warn(f'restarting FAST-LIO2 ({self.lio_process}): {n} process(es) signalled' if n else f'no {self.lio_process} process to restart')
+        return n > 0
 
     def reloc_failed(self, what):
         """An exception inside the relocalizer: it is stopped and the core sees a failed attempt (retry or FAILED, still holding)."""
@@ -172,10 +182,12 @@ class SupervisorNode(Node):
                     self.get_logger().warn(f'{name} cancel service not available', throttle_duration_sec=5.)
         elif a[0] == 'reloc_start':
             try:
-                self.reloc.start()
+                self.reloc.start(restart=self.core.hold)        # only a relocalization that holds Nav2 restarts the odometry; the parked check must not
             except Exception:
                 self.reloc_failed('start')
         elif a[0] == 'reloc_abort':
+            if self.reloc.active:                                # where it was tells a robot that kept moving (imu, restart) from a slow search
+                self.get_logger().info(f'relocalization aborted in stage {self.reloc.stage}')
             self.reloc.abort()
         elif a[0] == 'initialpose':
             x, y, yaw = a[1]

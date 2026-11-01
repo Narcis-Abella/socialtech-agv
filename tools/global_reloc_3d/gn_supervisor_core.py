@@ -42,6 +42,8 @@ class Params:
     park_drift_hold_s: float = 1.    # ... for this long with the wheels still (the scan sees a turn ~0.1-1 s before the wheel speed does: 140131)
     wheel_stale_s: float = .5        # no wheel message this long: stillness unknown, the parked check disarms (131206: 7 s gap in /odom)
     verify_period_s: float = 0.      # > 0: also relocalize (without holding) when parked and the last check is this old
+    auto_init_s: float = 8.          # start-up with nobody having given gn_loc a pose for this long: localize by itself (0 = wait for the operator only). It only
+                                     # asks the operator (FAILED needs_operator:...) when the relocalizer does not accept or gn_loc does not confirm its pose
 
 
 def wrap(a):
@@ -86,6 +88,8 @@ class Supervisor:
         self.t_bad = None               # TRACKING but bad since
         self.scans, self.stall = None, 0
         self.timeout = None
+        self.t_boot = None              # first tick: the start-up has no transition to date it from
+        self.auto = False               # the pose under way is the supervisor's own start-up one: if it fails the operator is asked for his
 
     # ------------------------------------------------------------------ outputs
     @property
@@ -98,7 +102,8 @@ class Supervisor:
 
     def go(self, t, state, reason):
         self.state, self.reason, self.t_enter = state, reason, t
-        self.anchor, self.t_drift = None, None       # a new pose (operator, relocalizer) or a new phase: the old parked anchor would read the jump as drift
+        self.auto = self.auto and state != 'MONITOR'     # any way into MONITOR (confirmed, GN agrees, a parked check) ends the start-up localization
+        self.anchor, self.t_drift = None, None      # a new pose (operator, relocalizer) or a new phase: the old parked anchor would read the jump as drift
         self.actions.append(('state', state, reason))
 
     def cancel(self, t):
@@ -125,10 +130,8 @@ class Supervisor:
             self.anchor, self.t_drift = None, None
 
     def on_need_reloc(self, t, flag):
-        if flag and self.state == 'MONITOR':
+        if flag and self.state in ('MONITOR', 'VERIFYING'):      # VERIFYING: a latched edge, not delivered again, the parked check must not swallow it
             self.stop(t, 'gn_need_reloc')
-        elif flag and self.state == 'VERIFYING':      # a latched edge, not delivered again: the parked check must not swallow it
-            self.escalate(t, 'gn_need_reloc')
 
     def on_gn_pose(self, t, pose):
         self.pose, self.t_gn_pose = tuple(pose), t
@@ -149,6 +152,7 @@ class Supervisor:
     def on_operator_pose(self, t, pose):
         if self.state in ('RELOCALIZING', 'VERIFYING'):
             self.actions.append(('reloc_abort',))
+        self.auto = False                                           # the operator always wins over the start-up localization
         self.confirm(t, None, 'operator_pose')
 
     def on_reloc_result(self, t, ok, pose, why):
@@ -162,7 +166,7 @@ class Supervisor:
                 return self.go(t, 'MONITOR', f'verify_no_pose_{why}')
             if self.attempts < self.p.max_attempts:
                 return self.start_reloc(t, self.reason.split('+')[0])      # the '+not_stopped' note belongs to the attempt that was reported
-            return self.go(t, 'FAILED', f'reloc_failed_{why}')
+            return self.fail(t, f'reloc_failed_{why}')
         if self.gn_good and self.pose is not None and agree(self.pose, pose, self.p.agree_xy, self.p.agree_yaw_deg):
             return self.go(t, 'MONITOR', 'verified_gn_agrees')
         if verifying:
@@ -172,6 +176,9 @@ class Supervisor:
 
     # ------------------------------------------------------------------ transitions
     def stop(self, t, why):
+        """Also from VERIFYING: the parked check is aborted here and a new relocalization starts, which holds Nav2 (the node restarts FAST-LIO2 for those)."""
+        if self.state == 'VERIFYING':
+            self.actions.append(('reloc_abort',))
         self.cancel(t)
         self.attempts = 0
         self.start_reloc(t, why)
@@ -181,13 +188,6 @@ class Supervisor:
         self.timeout = t + self.p.reloc_timeout_s
         self.actions.append(('reloc_start', why))
         self.go(t, state, why)
-
-    def escalate(self, t, why):
-        """A parked verification is running and GN cannot be trusted: stop now; the running relocalization counts as the first attempt."""
-        self.cancel(t)
-        self.attempts = 1
-        self.timeout = t + self.p.reloc_timeout_s
-        self.go(t, 'RELOCALIZING', why)
 
     def confirm(self, t, target, why):
         self.target, self.t_pose, self.good = target, t, 0
@@ -204,8 +204,18 @@ class Supervisor:
             return 'gn_no_scans'
         return None
 
+    def fail(self, t, reason):
+        """FAILED holds navigation until an operator pose. After the start-up localization the name says that the operator is being asked for it."""
+        return self.go(t, 'FAILED', f'needs_operator:{reason}' if self.auto else reason)
+
     def tick(self, t):
         p = self.p
+        if self.t_boot is None:
+            self.t_boot = t
+        if self.state == 'CONFIRMING' and self.reason == 'startup' and p.auto_init_s > 0 and t - self.t_boot >= p.auto_init_s \
+                and (self.gn_state != 'TRACKING' or t - self.t_boot >= 2 * p.auto_init_s):
+            self.auto, self.attempts = True, 0                       # nobody gave a pose and gn_loc is not settling by itself (TRACKING gets twice the wait: the start-up has no timeout): localize, the operator can still click
+            return self.start_reloc(t, 'startup_auto')
         if self.hold and any(self.goals.values()) and (self.t_sent is None or t - self.t_sent >= p.recancel_s):
             self.actions.append(('cancel',)); self.t_sent = t
         if self.state != 'CONFIRMING':
@@ -225,7 +235,7 @@ class Supervisor:
                 self.target = None
                 return self.go(t, 'MONITOR', 'confirmed')
             if self.reason != 'startup' and t > self.timeout:
-                return self.go(t, 'FAILED', 'gn_not_confirmed')
+                return self.fail(t, 'gn_not_confirmed')
             return
         if self.state in ('RELOCALIZING', 'VERIFYING') and t > self.timeout:
             self.actions.append(('reloc_abort',))
@@ -234,7 +244,7 @@ class Supervisor:
                 return self.go(t, 'MONITOR', 'verify_timeout')
             if self.attempts < p.max_attempts:
                 return self.start_reloc(t, self.reason)
-            return self.go(t, 'FAILED', 'reloc_timeout')
+            return self.fail(t, 'reloc_timeout')
         if self.state == 'RELOCALIZING' and self.wheel_moving and self.t_cancel is not None and t - self.t_cancel > p.stop_check_s \
                 and 'not_stopped' not in self.reason:
             self.reason += '+not_stopped'
@@ -243,7 +253,7 @@ class Supervisor:
             self.t_wheels_still, self.anchor, self.t_drift = None, None, None
         why = self.alarm(t)
         if self.state == 'VERIFYING' and why:                          # the parked check does not hold: an alarm meanwhile is a stop
-            return self.escalate(t, why)
+            return self.stop(t, why)
         if self.state != 'MONITOR':
             return
         if why:
