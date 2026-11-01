@@ -34,6 +34,23 @@ def _die_with_parent():
     ctypes.CDLL('libc.so.6').prctl(1, signal.SIGTERM)
 
 
+def signal_by_comm(name, sig=signal.SIGTERM, proc='/proc', kill=os.kill):
+    """Signals every process whose kernel name (comm, 15 characters at most) is exactly `name`; returns how many. Never this process. Exact name and not a
+    command-line pattern: `pkill -f` matches the caller's own command line and kills its shell."""
+    n = 0
+    for d in Path(proc).iterdir():
+        if not d.name.isdigit() or int(d.name) == os.getpid():
+            continue
+        try:
+            if (d / 'comm').read_text().strip() != name:
+                continue
+            kill(int(d.name), sig)
+            n += 1
+        except OSError:                                                      # gone meanwhile, or not ours to read
+            continue
+    return n
+
+
 class Worker:
     """search_v2.py as a killable process group."""
     def __init__(self, binary, lib_dir, run_dir, out_dir, deadline_s):
@@ -52,18 +69,24 @@ class Worker:
 
 
 class LiveReloc:
-    def __init__(self, map_xyz, binary, lib_dir, work_dir, deadline_s=60., base_ext=(0., 0., 0.), exposure_s=rc.S2_EXPOSURE_S, spawn=None):
+    """restart: callable that restarts the robot's FAST-LIO2 and returns whether it did. start(restart=True) uses it once the robot has been still for 2 s: a long
+    blind period (covered lidar) leaves the filter with metres of z drift and degrees of attitude error that nothing corrects, and a fresh one takes gravity from a
+    still IMU. The restart is followed by settle_s of nothing, a second stillness gate on the new filter and then the exposure."""
+    def __init__(self, map_xyz, binary, lib_dir, work_dir, deadline_s=60., base_ext=(0., 0., 0.), exposure_s=rc.S2_EXPOSURE_S, spawn=None,
+                 restart=None, settle_s=3., lio_timeout_s=15.):
         self.map_xyz, self.work, self.deadline_s, self.base_ext, self.exposure_s = map_xyz, Path(work_dir), deadline_s, tuple(base_ext), exposure_s
         self.spawn = spawn or (lambda run, out, dl: Worker(binary, lib_dir, run, out, dl))
+        self.restart_fn, self.settle_s, self.lio_timeout_s = restart, settle_s, lio_timeout_s
         self.stage, self.n, self.proc = None, 0, None
 
     # ------------------------------------------------------------------ control
-    def start(self):
+    def start(self, restart=False):
         self.abort()
         self.n += 1
         self.dir = self.work / f'reloc{self.n:03d}_{time.strftime("%H%M%S")}'
         self.gate, self.imu, self.odom, self.clouds = rc.ImuGate(), [], [], []
         self.t_ready, self.result, self.info = None, None, {}
+        self.want_restart, self.restarted, self.t_restart, self.t_imu = bool(restart and self.restart_fn), False, None, None
         self.t_start = time.monotonic()
         self.stage = 'imu'
 
@@ -74,18 +97,43 @@ class LiveReloc:
 
     @property
     def active(self):
-        return self.stage in ('imu', 'expose', 'search')
+        return self.stage in ('imu', 'restart', 'expose', 'search')
+
+    def lio_restarted(self):
+        return self.restarted and self.t_restart is not None
 
     # ------------------------------------------------------------------ inputs (only kept while active)
     def add_imu(self, t, gyro, acc_g):
+        self.t_imu = t
+        if self.stage == 'restart' and t >= self.t_restart + self.settle_s:
+            self.gate, self.stage = rc.ImuGate(), 'imu'                    # the fresh filter must also start from a robot at rest
         if self.stage == 'imu' and self.gate.add(t, gyro, acc_g):
+            if self.want_restart and not self.restarted:
+                self.do_restart(t)
+                return
             self.t_ready, self.stage = self.gate.ready_stamp, 'expose'
             self.info['imu_wait_s'] = round(time.monotonic() - self.t_start, 3)
         if self.stage == 'expose':
             self.imu.append((t, np.asarray(acc_g, float)))
 
+    def do_restart(self, t):
+        self.restarted = True
+        try:
+            ok = bool(self.restart_fn())
+        except Exception:
+            ok = False
+        self.info['lio_restart'] = ok
+        if not ok:                                                           # go on with the filter it has: worse than a fresh one, better than no answer
+            self.t_ready, self.stage = self.gate.ready_stamp, 'expose'
+            self.info['imu_wait_s'] = round(time.monotonic() - self.t_start, 3)
+            return
+        self.t_restart, self.stage = t, 'restart'
+        self.imu, self.odom, self.clouds = [], [], []                        # everything of the old filter is in another frame
+
     def add_odom(self, t, T):
-        if self.active and np.isfinite(T).all():
+        if self.lio_restarted() and t < self.t_restart + self.settle_s:      # in flight from the old filter
+            return
+        if self.active and self.stage != 'restart' and np.isfinite(T).all():
             self.odom.append((t, np.asarray(T, float)))
             while self.odom and self.odom[-1][0] - self.odom[0][0] > ODOM_KEEP_S:
                 self.odom.pop(0)
@@ -97,6 +145,9 @@ class LiveReloc:
     # ------------------------------------------------------------------ progress (called from the node's timer)
     def poll(self):
         """None while running (or idle); else {'ok', 'pose' (x, y, yaw) or None, 'stamp', 'why', 'info'} once."""
+        if self.lio_restarted() and self.stage in ('restart', 'imu', 'expose') and not self.odom and self.t_imu is not None \
+                and self.t_imu - self.t_restart > self.settle_s + self.lio_timeout_s:
+            return self.end(False, 'lio_restart_timeout')                    # the new filter never published: do not wait for the deadline of the node
         if self.stage == 'expose' and self.odom:
             done = [c for c in self.clouds if c[0] <= self.odom[-1][0]]     # every cloud of the submap needs an odometry bracket
             if done and done[-1][0] - done[0][0] >= self.exposure_s:

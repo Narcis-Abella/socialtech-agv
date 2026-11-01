@@ -41,6 +41,90 @@ class StartupTest(Fixture):
         self.assertFalse(s.hold)
 
 
+class AutoInitTest(Fixture):
+    """At start-up nobody has given gn_loc a pose: after auto_init_s the supervisor localizes by itself and only asks the operator when that fails."""
+    def waiting(self, s, t0, t1):
+        for k in range(int(t0), int(t1) + 1):
+            a = run(s, float(k), ('on_status', 'WAITING_POSE', 0., 0.))
+            if 'reloc_start' in kinds(a):
+                return k, a
+        return None, []
+
+    def hold(self, s, t0, t1):
+        """gn_loc keeps publishing its 1 Hz status while it waits (silence would be gn_status_stale)."""
+        for k in range(int(t0), int(t1) + 1):
+            run(s, float(k), ('on_status', 'WAITING_POSE', 0., 0.))
+
+    def test_it_localizes_by_itself_after_the_wait_when_nobody_gave_a_pose(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        t, a = self.waiting(s, 0, 20)
+        self.assertEqual(t, 8)
+        self.assertIn(('reloc_start', 'startup_auto'), a)
+        self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'startup_auto'))
+
+    def test_it_can_be_switched_off(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=0.))
+        t, _ = self.waiting(s, 0, 60)
+        self.assertIsNone(t)
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'startup'))
+
+    def test_an_operator_pose_given_first_cancels_the_wait(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        self.waiting(s, 0, 3)
+        run(s, 3.5, ('on_operator_pose', (1., 2., 0.)))
+        t, _ = self.waiting(s, 4, 30)
+        self.assertIsNone(t)
+
+    def test_an_operator_pose_during_the_auto_init_aborts_it_and_wins(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        self.waiting(s, 0, 8)
+        self.hold(s, 9, 11)
+        a = run(s, 12., ('on_operator_pose', (1., 2., 0.)))
+        self.assertIn('reloc_abort', kinds(a))
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
+
+    def test_the_accepted_pose_is_published_and_confirmed_without_the_operator(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        self.waiting(s, 0, 8)
+        self.hold(s, 9, 19)
+        a = run(s, 20., ('on_reloc_result', True, (1., 2., .3), 'accepted'))
+        self.assertIn(('initialpose', (1., 2., .3)), a)
+        self.assertEqual(s.state, 'CONFIRMING')
+        self.tracking(s, 21., pose=(1., 2., .3))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+
+    def test_two_rejections_ask_the_operator(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        self.waiting(s, 0, 8)
+        self.hold(s, 9, 19)
+        run(s, 20., ('on_reloc_result', False, None, 'ambiguous'))
+        self.assertEqual(s.state, 'RELOCALIZING')                         # the second attempt
+        self.hold(s, 21, 39)
+        run(s, 40., ('on_reloc_result', False, None, 'ambiguous'))
+        self.assertEqual(s.state, 'FAILED')
+        self.assertTrue(s.reason.startswith('needs_operator:'), s.reason)
+        a = run(s, 41., ('on_operator_pose', (1., 2., 0.)))                # the operator always wins
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
+
+    def test_a_pose_gn_does_not_confirm_asks_the_operator(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        self.waiting(s, 0, 8)
+        self.hold(s, 9, 19)
+        run(s, 20., ('on_reloc_result', True, (1., 2., .3), 'accepted'))
+        for k in range(21, 40):                                            # GN sits on another pose with a poor fit
+            run(s, float(k), ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (5., 5., 0.)))
+        self.assertEqual(s.state, 'FAILED')
+        self.assertEqual(s.reason, 'needs_operator:gn_not_confirmed')
+
+    def test_a_failure_after_a_stop_keeps_its_own_name(self):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        run(s, t + 5, ('on_reloc_result', False, None, 'x'))
+        run(s, t + 9, ('on_reloc_result', False, None, 'x'))
+        self.assertEqual(s.state, 'FAILED')
+        self.assertFalse(s.reason.startswith('needs_operator'), s.reason)
+
+
 class LostTest(Fixture):
     def test_lost_stops_and_starts_the_relocalizer_once(self):
         s, t = self.new()
