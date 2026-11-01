@@ -1,0 +1,7 @@
+# Nav2 source for the packages the `robot` image builds over the apt ones, pinned by commit (same format as ../robot.repos). Only
+# nav2_regulated_pure_pursuit_controller is built; the rest of the repo is fetched and ignored. Bump = change the commit, re-check nav2/*.patch, rebuild.
+repositories:
+  navigation2:
+    type: git
+    url: https://github.com/ros-navigation/navigation2.git
+    version: f4108e5b1c2bce804a1aa0c7be6673a8eb4a1501  # tag 1.3.13 (the apt ros-jazzy-nav2-* version of the image)

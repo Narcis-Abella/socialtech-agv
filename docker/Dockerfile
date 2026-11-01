@@ -109,6 +109,24 @@ RUN --mount=type=cache,target=/tmp/build_loc \
  && cd /ws && colcon --log-base /tmp/log_loc build --base-paths src_loc --merge-install --install-base /opt/socialtech_loc --build-base /tmp/build_loc \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DGN_LOC_OFFLINE=OFF
 
+# Nav2 on the real robot (ops/nav_live.sh NAV=1) and in the simulator, whose stage adds Gazebo on top. docker/ros_nav: socialtech_nav (our params, launch and map) and
+# socialtech_costmap (the decay obstacle layer). The simulation-only packages of ros_nav are built in `sim`. The regulated pure pursuit controller is built from the
+# pinned Nav2 source with nav2/*.patch (rotate_to_heading_dist_tol, which ops/nav2_robot_overrides.yaml sets) and installed in /opt/socialtech_nav, which ros_env.sh
+# sources after /opt/ros: it shadows the apt controller that nav2_bringup pulls in. Not in patches/: that directory is applied to the robot.repos checkouts.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ros-jazzy-nav2-bringup ros-jazzy-nav2-regulated-pure-pursuit-controller ros-jazzy-nav2-smac-planner
+COPY nav2/ /ws/nav2/
+RUN python3 fetch_repos.py nav2/nav2.repos src_nav2 \
+ && for p in nav2/*.patch; do echo "applying $p"; git -C src_nav2/navigation2 apply "/ws/$p" || exit 1; done
+COPY ros_nav/ /ws/src_nav/
+RUN . /opt/ros/jazzy/setup.sh \
+ && colcon build --base-paths src_nav src_nav2/navigation2/nav2_regulated_pure_pursuit_controller \
+      --packages-select socialtech_nav socialtech_costmap nav2_regulated_pure_pursuit_controller \
+      --merge-install --install-base /opt/socialtech_nav --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+
 # ROS environment shared by the entrypoint and interactive shells (`docker exec -it ... bash`).
 # Last on purpose: editing these scripts must not invalidate the SDK and colcon layers above.
 COPY cyclone_uri.sh /cyclone_uri.sh
@@ -119,23 +137,18 @@ ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Nav2 in simulation: Gazebo Harmonic + Nav2 on top of `robot`. Nav2 lives here until it goes to the real robot (then it moves to `robot`).
+# Simulator: Gazebo Harmonic on top of `robot`, which already carries Nav2 and socialtech_nav. Adds the simulation-only packages of ros_nav to the same prefix.
 FROM robot AS sim
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ros-jazzy-ros-gz ros-jazzy-nav2-bringup ros-jazzy-nav2-regulated-pure-pursuit-controller \
-      ros-jazzy-nav2-smac-planner ros-jazzy-xacro libembree-dev
+      ros-jazzy-ros-gz ros-jazzy-xacro libembree-dev
 
-# socialtech_nav: params, launch and map. Separate from docker/ros/ (copied into `robot`) so Nav2 stays out of `robot`.
-WORKDIR /ws
-COPY ros_nav/ src_nav/
 # /opt/socialtech too: socialtech_livox_sim needs livox_ros_driver2, which `robot` installed there.
-RUN . /opt/ros/jazzy/setup.sh && . /opt/socialtech/setup.sh \
- && colcon build --base-paths src_nav --merge-install --install-base /opt/socialtech_nav
-# Appended here and not in ros_env.sh: that file is copied in `robot`, and editing it would rebuild the sim and mapper stages.
-RUN echo 'if [[ -f /opt/socialtech_nav/setup.bash ]]; then source /opt/socialtech_nav/setup.bash --; fi' >> /ros_env.sh
+WORKDIR /ws
+RUN . /opt/ros/jazzy/setup.sh && . /opt/socialtech/setup.sh && . /opt/socialtech_nav/setup.sh \
+ && colcon build --base-paths src_nav --packages-select socialtech_livox_sim socialtech_simreal --merge-install --install-base /opt/socialtech_nav
 
 # Offline mapping (`docker build --target mapper`): Voxel-SLAM + GTSAM + the tools/slam_bench pipeline (make_map.sh). A separate stage: the robot image
 # runs the navigation stack and carries neither GTSAM (with Boost) nor Voxel-SLAM. Without --target, the last stage is the one that gets built.

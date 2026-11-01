@@ -17,7 +17,7 @@ normalize_flags NAV BASE SUPERVISOR   # NAV=0 / BASE=0 / SUPERVISOR=0 mean off (
 if [[ ${1:-} == --inside ]]; then   # runs in the container
   source /ros_env.sh
   source "$REPO/ops/fastlio_check.sh"
-  # ~/nav_overlay: patched RPP (rotate_to_heading_dist_tol), scan_median, gn_loc, built with colcon in this image; not part of it
+  # ~/nav_overlay: optional, a colcon overlay built in this image that shadows its packages (an image built from this tree already has the patched RPP, scan_median and gn_loc)
   if [[ -f /ov/install/setup.bash ]]; then source /ov/install/setup.bash; fi
   export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-53}
   # lo first: the stack's own traffic (driver -> FAST-LIO, recorder) must not ride on the link to the laptop. Pinned to DDS_IFACE alone,
