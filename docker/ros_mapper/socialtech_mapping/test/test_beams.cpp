@@ -48,7 +48,7 @@ TEST(Pose, InterpolatesAndRefusesOutsideAndAcrossGaps) {
   ASSERT_TRUE(p);
   EXPECT_NEAR(p->t[0], 0.5, 1e-12);
   const double yaw = std::atan2(p->R[3], p->R[0]);
-  EXPECT_NEAR(yaw, std::atan2(s / 2, 0.5 + s / 2) * 2, 1e-12);   // nlerp, as map_visibility.py
+  EXPECT_NEAR(yaw, std::atan2(s / 2, 0.5 + s / 2) * 2, 1e-12);   // nlerp, as beams_oracle.py
   EXPECT_FALSE(pose_at(poses, 3, -0.01, 0.5));
   EXPECT_FALSE(pose_at(poses, 3, 0.6, 0.5));
   EXPECT_FALSE(pose_at(poses, 3, 1.2, 0.5));

@@ -1,4 +1,4 @@
-// C entry point of the beam counting, loaded by tools/slam_bench/map_visibility.py (--engine cpp) with ctypes.
+// C entry point of the beam counting, loaded by tools/slam_bench/ghosts.py with ctypes.
 // Reads the bag once per call (rosbag2_cpp: mcap or sqlite3), decodes the scans in batches and counts them on all cores.
 #include <omp.h>
 
@@ -15,7 +15,7 @@ using namespace socialtech_mapping;
 
 namespace {
 
-// xyz of a sensor_msgs/PointCloud2, read as float32 at the x, y, z field offsets (as map_visibility.py does); non-finite points dropped.
+// xyz of a sensor_msgs/PointCloud2, read as float32 at the x, y, z field offsets (as tools/slam_bench/beams_oracle.py does); non-finite points dropped.
 double decode_cloud(const rclcpp::SerializedMessage& raw, std::vector<float>& xyz) {
   static const rclcpp::Serialization<sensor_msgs::msg::PointCloud2> ser;
   sensor_msgs::msg::PointCloud2 msg;

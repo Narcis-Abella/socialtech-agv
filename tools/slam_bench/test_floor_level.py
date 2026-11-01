@@ -1,4 +1,4 @@
-"""floor_level: floor finding, levelling, wall alignment and the trajectory vote, on synthetic rooms. Moved from test_ply_to_map.py."""
+"""floor_level: floor finding, levelling, wall alignment and the trajectory vote, on synthetic rooms."""
 import numpy as np
 from scipy.spatial.transform import Rotation
 

@@ -6,7 +6,7 @@ usage:
   pose_eval.py level  --ref alidarState.txt --map map.yaml   -> "qx qy qz qw" of R_L, the rotation from FAST-LIO2's world frame to the floor-levelled, wall-aligned frame
   pose_eval.py report --est amcl.tum --odom odom.tum --ref alidarState.txt --map map.yaml [--ref-dt 0] [thresholds]   -> JSON
 Pose files: "t x y z qx qy qz qw [cov_xx cov_yy cov_yawyaw]" (record_poses.py); alidarState.txt has the same first 8 columns.
-The map YAML must carry the `# T_map_world` comment block written by ply_to_map (p_map = T p_ply). numpy only (the robot image has no scipy)."""
+The map YAML must carry the `# T_map_world` comment block written by make_map.sh (p_map = T p_ply). numpy only (the robot image has no scipy)."""
 import argparse
 import json
 import re
@@ -73,7 +73,7 @@ def read_map_yaml(path):
     img = re.search(r"^image:\s*(\S+)", txt, re.M).group(1)
     rows = re.findall(r"^#\s*\[([^\]]+)\]\s*$", txt.split("T_map_world", 1)[1], re.M) if "T_map_world" in txt else []
     if len(rows) < 4:
-        raise ValueError(f"{path}: no '# T_map_world' block (4 rows) in the comments: not made by ply_to_map, cannot move the reference into the map frame")
+        raise ValueError(f"{path}: no '# T_map_world' block (4 rows) in the comments: not made by make_map.sh, cannot move the reference into the map frame")
     T = np.array([[float(v) for v in r.split(",")] for r in rows[:4]])
     return {"resolution": res, "origin": (ox, oy), "image": str(Path(path).with_name(img)), "T_map_world": T}
 
@@ -193,7 +193,7 @@ def initpose_json(pose, std, yaw_std_deg):
 
 def level_quat(ref_path, T):
     """Quaternion of R_L = T_R @ R(q0): FAST-LIO2's world frame is the IMU frame at start (NOT gravity-aligned), Voxel-SLAM's is, and its first pose q0 is
-    that IMU frame in it. Vectors of FAST-LIO2's frame go to Voxel-SLAM's world with R(q0) and from there to the map frame with T_R (ply_to_map's
+    that IMU frame in it. Vectors of FAST-LIO2's frame go to Voxel-SLAM's world with R(q0) and from there to the map frame with T_R (make_map's
     levelling + Manhattan yaw), so the floor normal ends up on z exactly as in the PGM. Assumes both SLAMs start on the same IMU orientation."""
     _, _, quat, _ = read_poses(ref_path)
     return mat_to_quat(T[:3, :3] @ quat_to_mat(quat[0]))

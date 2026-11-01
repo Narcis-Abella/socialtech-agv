@@ -1,4 +1,4 @@
-"""grid2d: rasterize, unknown-cell fill and the PGM/YAML writer. Moved from test_ply_to_map.py and test_map_visibility.py."""
+"""grid2d: rasterize, unknown-cell fill and the PGM/YAML writer."""
 import tempfile
 from pathlib import Path
 

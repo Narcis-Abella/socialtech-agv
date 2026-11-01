@@ -7,7 +7,7 @@ out=${1:?out dir}
 nb=/tools/nav_bench
 declare -A BAG=([hospital02]=custom/hospital_02_custom [zona01]=custom/mapping_zona_01_custom [seat01]=custom/mapping_seat_01_custom [zona05]=custom/mapping_zona_05_custom [zona06]=custom/mapping_zona_06_custom
                 [eco01]=custom/mapping_eco_-1_01_custom [eco03]=custom/mapping_eco_-1_03_custom [corridor01]=benchmarks/m3dgr_Corridor01_custom [corridor02]=benchmarks/m3dgr_Corridor02_custom [dynamic01]=benchmarks/m3dgr_Dynamic01_custom)
-# map, reference trajectory, sensor height (m) per dataset; M3DGR bags use /livox/mid360/* and need their own height (Corridor01 0.773, Dynamic01 0.782, Corridor02 0.831: floor plane of ply_to_map's trajectory check)
+# map, reference trajectory, sensor height (m) per dataset; M3DGR bags use /livox/mid360/* and need their own height (Corridor01 0.773, Dynamic01 0.782, Corridor02 0.831: floor plane of make_map's trajectory check)
 declare -A MAPF=([hospital02]=/data/live_hospital_02/final.yaml [zona01]=/data/live_zona_01/final.yaml [seat01]=/data/live_seat_01/final.yaml [zona05]=/data/live_zona_05/final.yaml [zona06]=/data/live_zona_06/final.yaml
                  [eco01]=/data/eco_-1_01/map.yaml [eco03]=/data/eco_-1_03/final.yaml [corridor01]=/data/res_test/corridor01_r0.05.yaml [corridor02]=/data/res_test/corridor02_r0.05.yaml [dynamic01]=/data/res_test/dynamic01_r0.05.yaml)
 declare -A REFF=([hospital02]=/data/live_hospital_02/alidarState.txt [zona01]=/data/live_zona_01/alidarState.txt [seat01]=/data/live_seat_01/alidarState.txt [zona05]=/data/live_zona_05/alidarState.txt [zona06]=/data/live_zona_06/alidarState.txt

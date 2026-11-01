@@ -62,7 +62,7 @@ def main():
     T_ref = map_transform(a.map_yaml) @ reference_at(np.loadtxt(a.reference, usecols=range(8)), t)
     if a.link:
         T_ref = np.asarray(json.loads(Path(a.link).read_text())['T_A_B']) @ T_ref
-    # mid360.yaml/map_visibility.py fixed LiDAR origin in IMU body, R=I.
+    # mid360.yaml/ghosts.py (EXTR) fixed LiDAR origin in IMU body, R=I.
     T_imu_lidar = np.eye(4)
     T_imu_lidar[:3, 3] = [-.011, -.02329, .04412]
     output = {'represented_time_s': t, 'accepted': accepted, 'link': a.link,

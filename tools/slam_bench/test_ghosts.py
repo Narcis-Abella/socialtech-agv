@@ -1,4 +1,4 @@
-"""ghosts: the beam test through the C++ engine and the ghost rule. Moved from test_map_visibility.py."""
+"""ghosts: the beam test through the C++ engine and the ghost rule."""
 import numpy as np
 import pytest
 

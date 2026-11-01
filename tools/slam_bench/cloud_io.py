@@ -1,4 +1,4 @@
-"""Point-cloud and pose I/O, and the world cloud of a Voxel-SLAM run (the part of vs_to_ply.py that builds it). numpy + scipy only."""
+"""Point-cloud and pose I/O, and the world cloud of a Voxel-SLAM run. numpy + scipy only."""
 import sys
 from pathlib import Path
 

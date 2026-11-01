@@ -1,4 +1,4 @@
-"""cloud_io: PLY / pose I/O and the world cloud of a Voxel-SLAM run. Moved from test_vs_to_ply.py and the I/O tests of test_ply_to_map.py."""
+"""cloud_io: PLY / pose I/O and the world cloud of a Voxel-SLAM run."""
 import tempfile
 from pathlib import Path
 
