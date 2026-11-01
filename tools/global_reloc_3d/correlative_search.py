@@ -37,9 +37,9 @@ def crop_source(points, radius):
 class MapField:
     """Likelihood field of the map on a grid padded by the source reach."""
 
-    def __init__(self, points, res, sigma, reach_xy, reach_z):
+    def __init__(self, points, res, sigma, reach_xy, reach_z, workers=2):
         points = np.asarray(points, float)
-        self.res = res
+        self.res, self.workers = res, workers
         lo = points.min(axis=0)
         hi = points.max(axis=0)
         pad = np.array([reach_xy, reach_xy, reach_z])
@@ -53,7 +53,7 @@ class MapField:
         occ[tuple(idx.T)] = True
         d = ndimage.distance_transform_edt(~occ) * res
         self.field = np.exp(-.5 * (d / sigma) ** 2).astype(np.float32)
-        self.spectrum = fft.rfftn(self.field, workers=2)
+        self.spectrum = fft.rfftn(self.field, workers=workers)
 
     def correlate(self, source_points, yaw):
         """Return (score volume, number of source voxels) for one yaw."""
@@ -61,7 +61,7 @@ class MapField:
         cells = np.unique(np.floor(rotated / self.res).astype(int), axis=0)
         S = np.zeros(self.shape, np.float32)
         S[tuple((cells % np.array(self.shape)).T)] = 1.
-        c = fft.irfftn(self.spectrum * np.conj(fft.rfftn(S, workers=2)), s=self.shape, workers=2)
+        c = fft.irfftn(self.spectrum * np.conj(fft.rfftn(S, workers=self.workers)), s=self.shape, workers=self.workers)
         return c / len(cells), len(cells)
 
     def position(self, index):

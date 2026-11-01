@@ -53,10 +53,10 @@ def signal_by_comm(name, sig=signal.SIGTERM, proc='/proc', kill=os.kill):
 
 class Worker:
     """search_v2.py as a killable process group."""
-    def __init__(self, binary, lib_dir, run_dir, out_dir, deadline_s):
+    def __init__(self, binary, lib_dir, run_dir, out_dir, deadline_s, threads=2):
         env = {**os.environ, 'LD_LIBRARY_PATH': f"{lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
         cmd = [sys.executable, '-B', str(HERE / 'search_v2.py'), '--run', str(run_dir), '--out', str(out_dir), '--binary', binary,
-               '--deadline-s', f'{deadline_s:.3f}']
+               '--deadline-s', f'{deadline_s:.3f}', '--threads', str(threads)]
         with open(Path(run_dir).parent / 'search.stdout', 'w') as log:      # the child keeps its own copy of the descriptor
             self.p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True, preexec_fn=_die_with_parent)
 
@@ -73,9 +73,9 @@ class LiveReloc:
     blind period (covered lidar) leaves the filter with metres of z drift and degrees of attitude error that nothing corrects, and a fresh one takes gravity from a
     still IMU. The restart is followed by settle_s of nothing, a second stillness gate on the new filter and then the exposure."""
     def __init__(self, map_xyz, binary, lib_dir, work_dir, deadline_s=60., base_ext=(0., 0., 0.), exposure_s=rc.S2_EXPOSURE_S, spawn=None,
-                 restart=None, settle_s=3., lio_timeout_s=15.):
+                 restart=None, settle_s=2.5, lio_timeout_s=15., threads=2):
         self.map_xyz, self.work, self.deadline_s, self.base_ext, self.exposure_s = map_xyz, Path(work_dir), deadline_s, tuple(base_ext), exposure_s
-        self.spawn = spawn or (lambda run, out, dl: Worker(binary, lib_dir, run, out, dl))
+        self.spawn = spawn or (lambda run, out, dl: Worker(binary, lib_dir, run, out, dl, threads))
         self.restart_fn, self.settle_s, self.lio_timeout_s = restart, settle_s, lio_timeout_s
         self.stage, self.n, self.proc = None, 0, None
         self.restart_ready = lambda: True    # False while the lidar is covered (the node sets it from the supervisor): the restart waits, the new filter would get no points
@@ -107,20 +107,25 @@ class LiveReloc:
     # ------------------------------------------------------------------ inputs (only kept while active)
     def add_imu(self, t, gyro, acc_g):
         self.t_imu = t
-        if self.stage == 'restart' and t >= self.t_restart + self.settle_s:
-            self.gate, self.stage = rc.ImuGate(), 'imu'                    # the fresh filter must also start from a robot at rest
-        if self.stage == 'imu' and self.gate.add(t, gyro, acc_g):
+        if self.stage == 'restart':
+            # the stillness is proved over the start of the new filter (the gate was renewed at the restart): it initialises from the first IMU samples after it publishes again
+            # (1.8 s after the kill on the Nano, 2 of 2), so the exposure waits for the larger of the stillness window and the settling, not for one after the other
+            if self.gate.add(t, gyro, acc_g) and t >= self.t_restart + self.settle_s:
+                self.begin_exposure(max(self.gate.ready_stamp, self.t_restart + self.settle_s))
+        elif self.stage == 'imu' and self.gate.add(t, gyro, acc_g):
             if self.want_restart and not self.restarted:
                 if self.restart_ready():
                     self.do_restart(t)
                 else:
                     self.gate = rc.ImuGate()                                 # the lidar is covered: whatever happens meanwhile, stillness must be proved again when the scans flow
                 return
-
-            self.t_ready, self.stage = self.gate.ready_stamp, 'expose'
-            self.info['imu_wait_s'] = round(time.monotonic() - self.t_start, 3)
+            self.begin_exposure(self.gate.ready_stamp)
         if self.stage == 'expose':
             self.imu.append((t, np.asarray(acc_g, float)))
+
+    def begin_exposure(self, t_ready):
+        self.t_ready, self.stage = t_ready, 'expose'
+        self.info['imu_wait_s'] = round(time.monotonic() - self.t_start, 3)
 
     def do_restart(self, t):
         self.restarted = True
@@ -131,10 +136,10 @@ class LiveReloc:
             self.info['lio_restart_error'] = repr(e)
         self.info['lio_restart'] = ok
         if not ok:                                                           # go on with the filter it has: worse than a fresh one, better than no answer
-            self.t_ready, self.stage = self.gate.ready_stamp, 'expose'
-            self.info['imu_wait_s'] = round(time.monotonic() - self.t_start, 3)
+            self.begin_exposure(self.gate.ready_stamp)
             return
         self.t_restart, self.stage = t, 'restart'
+        self.gate = rc.ImuGate()                                             # the new filter must start from a robot at rest
         self.imu, self.odom, self.clouds = [], [], []                        # everything of the old filter is in another frame
 
     def add_odom(self, t, T):

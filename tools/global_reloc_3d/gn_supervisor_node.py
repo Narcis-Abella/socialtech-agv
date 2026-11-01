@@ -56,8 +56,8 @@ class SupervisorNode(Node):
         self.reloc = rl.LiveReloc(P('map_xyz', '').value, P('register_binary', '').value, P('lib_dir', '/opt').value,
                                   P('work_dir', '/tmp/gn_supervisor').value, P('search_deadline_s', 60.).value,
                                   tuple(P('base_from_body_xyyaw', [0., 0., 0.]).value),
-                                  restart=self.restart_lio if P('restart_lio', True).value else None, settle_s=P('lio_settle_s', 3.).value,
-                                  lio_timeout_s=P('lio_timeout_s', 15.).value)
+                                  restart=self.restart_lio if P('restart_lio', True).value else None, settle_s=P('lio_settle_s', 2.5).value,
+                                  lio_timeout_s=P('lio_timeout_s', 15.).value, threads=P('search_threads', 2).value)
         self.reloc.restart_ready = lambda: self.core.scans_flowing(self.mono())     # a covered lidar: the restart of FAST-LIO2 waits for the scans
         self.init_std, self.init_yaw_std = P('init_std_m', .15).value, P('init_yaw_std_deg', 5.).value
         binary, lib = self.get_parameter('register_binary').value, self.get_parameter('lib_dir').value

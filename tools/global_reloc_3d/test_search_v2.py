@@ -1,11 +1,12 @@
 import math
+import threading
 import unittest
 
 import numpy as np
 
 from correlative_search import pose
 from make_hole_map import hole
-from search_v2 import rank, source_reach_z, tilt_deg
+from search_v2 import rank, run_concurrently, source_reach_z, tilt_deg
 from summarize_batch import classify, wilson
 
 
@@ -26,6 +27,22 @@ class SearchV2Test(unittest.TestCase):
         same = row('same', .8, pose(math.radians(2), [.1, 0, 0]))  # within 0.30 m / 8 deg of a
         far = row('far', .7, pose(0., [5, 0, 0]))
         self.assertEqual([r['id'] for r in rank([far, same, a])], ['a', 'far'])
+
+    def test_the_two_searches_run_at_the_same_time_and_both_results_come_back(self):
+        barrier = threading.Barrier(2, timeout=5)                     # each waits for the other: a sequential run would break the barrier
+
+        def search(name):
+            barrier.wait()
+            return name
+        self.assertEqual(run_concurrently(lambda: search('primary'), lambda: search('confirmation')), ('primary', 'confirmation'))
+
+    def test_an_error_in_either_search_is_raised_not_swallowed(self):
+        def boom():
+            raise ValueError('the search failed')
+        with self.assertRaisesRegex(ValueError, 'the search failed'):
+            run_concurrently(lambda: 1, boom)
+        with self.assertRaisesRegex(ValueError, 'the search failed'):
+            run_concurrently(boom, lambda: 1)
 
     def test_tilt(self):
         self.assertAlmostEqual(tilt_deg(pose(1., [0, 0, 0])), 0., places=6)

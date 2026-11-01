@@ -13,7 +13,9 @@ import os
 from pathlib import Path
 import resource
 import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
@@ -23,6 +25,14 @@ from verify import decide, score
 
 DEADLINE_S = 60.
 STAGE_S = {'gicp': 0., 'score': 0., 'confirm_total': 0.}  # additive instrumentation, no effect on decisions
+STAGE_LOCK = threading.Lock()                               # the primary and the confirmation searches add to it at the same time
+
+
+def run_concurrently(f, g):
+    """(f(), g()) with both running at the same time; the first error is raised (after both ended)."""
+    with ThreadPoolExecutor(2) as ex:
+        a, b = ex.submit(f), ex.submit(g)
+        return a.result(), b.result()
 
 
 def tilt_deg(T):
@@ -30,7 +40,7 @@ def tilt_deg(T):
     return float(math.degrees(math.acos(np.clip(np.asarray(T)[2, 2], -1., 1.))))
 
 
-def refine(binary, map_path, source_path, check_path, T_init, out_dir, voxel, timeout_s):
+def refine(binary, map_path, source_path, check_path, T_init, out_dir, voxel, timeout_s, threads=2):
     out_dir.mkdir()
     init = out_dir / 'init.txt'
     np.savetxt(init, np.asarray(T_init))
@@ -38,7 +48,7 @@ def refine(binary, map_path, source_path, check_path, T_init, out_dir, voxel, ti
         proc = subprocess.run([str(binary), str(map_path), str(source_path), str(check_path), str(voxel),
                                str(out_dir / 'result.json'), '--init', str(init)],
                               capture_output=True, text=True, timeout=max(.001, timeout_s),
-                              env={**os.environ, 'OMP_NUM_THREADS': '2'})
+                              env={**os.environ, 'OMP_NUM_THREADS': str(threads)})
         log = {'exit_code': proc.returncode, 'stdout': proc.stdout[-500:], 'stderr': proc.stderr[-500:]}
     except subprocess.TimeoutExpired:
         return {'exit_code': 124, 'stderr': 'matcher_deadline_exceeded'}, None
@@ -57,8 +67,9 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
             return found, rows, True
         t_g = time.monotonic()
         log, result = refine(args.binary, map_path, batch_path, other_path, c['T_map_source'],
-                             out / f'{prefix}_{i:02d}', args.gicp_voxel, remaining)
-        STAGE_S['gicp'] += time.monotonic() - t_g
+                             out / f'{prefix}_{i:02d}', args.gicp_voxel, remaining, args.threads)
+        with STAGE_LOCK:
+            STAGE_S['gicp'] += time.monotonic() - t_g
         if log['exit_code'] == 124:
             return found, rows, True
         row = {'id': f'{prefix}_{i:02d}', 'correlative': {k: c[k] for k in ('score', 'yaw_rad', 'xyz')}, 'run': log}
@@ -69,7 +80,8 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
             if result['gicp_converged']:
                 t_s = time.monotonic()
                 row['geometry'] = score(map_points, other, result['T_map_lidar_refined'])
-                STAGE_S['score'] += time.monotonic() - t_s
+                with STAGE_LOCK:
+                    STAGE_S['score'] += time.monotonic() - t_s
                 row['tilt_deg'] = tilt_deg(result['T_map_lidar_refined'])
                 xy, deg = pose_difference(np.asarray(c['T_map_source']), np.asarray(result['T_map_lidar_refined']))
                 row['gicp_shift'] = {'xy_m': xy, 'yaw_deg': deg}
@@ -107,6 +119,7 @@ def main():
     p.add_argument('--top', type=int, default=10)
     p.add_argument('--gicp-voxel', type=float, default=.3)
     p.add_argument('--deadline-s', type=float, default=60., help='remaining decision budget from this process start')
+    p.add_argument('--threads', type=int, default=2, help='threads of each search (FFT workers, GICP): the primary and the confirmation search run at the same time')
     a = p.parse_args()
     global DEADLINE_S
     DEADLINE_S = a.deadline_s
@@ -120,22 +133,24 @@ def main():
     fit = np.loadtxt(run / 'fit.xyz')
     check = np.loadtxt(run / 'check.xyz')
     reach_z = source_reach_z(fit, check, a.radius)
-    field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res)
+    field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res, workers=a.threads)
     t_field = time.monotonic() - t0
     temporal_ok, separation = temporal_evidence(manifest['stamps_s'], manifest['start_header_s'], manifest['duration_s'])
-    found, rows, timed_out = global_hypotheses(field, full, fit, run / 'fit.xyz', check, run / 'check.xyz',
-                                               run / 'map.xyz', a, out, 'cand', t0)
+    def confirmation_search():
+        # independent global search of the later batch; its best is chosen on the fit batch. It does not depend on the primary search, so both run at the same time
+        t_c = time.monotonic()
+        r = global_hypotheses(field, full, check, run / 'check.xyz', fit, run / 'fit.xyz', run / 'map.xyz', a, out, 'confirm', t0)
+        STAGE_S['confirm_total'] = time.monotonic() - t_c
+        return r
+    (found, rows, timed_out), (c_found, c_rows, c_timed_out) = run_concurrently(
+        lambda: global_hypotheses(field, full, fit, run / 'fit.xyz', check, run / 'check.xyz', run / 'map.xyz', a, out, 'cand', t0), confirmation_search)
     top = rank(rows)
     primary = top[0] if top else None
     runner = top[1] if len(top) > 1 else None
     margin = primary['geometry']['support_015'] - runner['geometry']['support_015'] if runner else None
     confirmation = None
     if primary and not timed_out and time.monotonic() - t0 < DEADLINE_S:
-        # Independent global search of the later batch; its best is chosen on the fit batch.
-        t_c = time.monotonic()
-        c_found, c_rows, timed_out = global_hypotheses(field, full, check, run / 'check.xyz', fit, run / 'fit.xyz',
-                                                       run / 'map.xyz', a, out, 'confirm', t0)
-        STAGE_S['confirm_total'] = time.monotonic() - t_c
+        timed_out = c_timed_out
         c_top = rank(c_rows)
         confirmation = {'search_seconds': c_found['seconds'], 'top_ids': [r['id'] for r in c_top], 'agreement': False}
         if c_top:

@@ -153,7 +153,7 @@ class RestartTest(LiveRelocBase):
         self.assertEqual(len(self.restarts), 1)
         for k in range(int(3.5 * 200), 7 * 200):
             r.add_imu(k / 200., moving, (0., 0., 1.)); r.poll()
-        self.assertEqual(r.stage, 'imu')                                     # waiting for the second stillness: no exposure, no search
+        self.assertEqual(r.stage, 'restart')                                 # waiting for the stillness over the new filter's start: no exposure, no search
         self.assertEqual(self.procs, [])
         self.assertEqual(len(self.restarts), 1)                              # and it does not restart again
 
@@ -203,6 +203,28 @@ class RestartTest(LiveRelocBase):
         self.assertEqual(self.restarts, [])
         self.feed(r, 10.4, 14.)
         self.assertEqual(len(self.restarts), 1)
+
+    def test_the_exposure_starts_when_the_new_filter_has_settled_not_two_seconds_later(self):
+        # the stillness is proved over the start of the new filter (the restart and its first 2 s), not over a window that begins after the settling: the old design needed
+        # settle + 2 s of nothing before the exposure, this one needs the larger of the two
+        r = self.make_restart(); r.settle_s = 2.5; r.start(restart=True)
+        self.assertTrue(self.feed(r, 0., 14.)['ok'])
+        self.assertGreaterEqual(r.t_ready, r.t_restart + 2.5)
+        self.assertLess(r.t_ready, r.t_restart + 3.0)                        # before: >= t_restart + 5.0
+
+    def test_a_push_during_the_settling_delays_the_exposure_until_the_robot_is_still_again(self):
+        r = self.make_restart(); r.settle_s = 2.5; r.start(restart=True)
+        for k in range(int(2.3 * 200)):                                      # still until the restart (2 s) ...
+            r.add_imu(k / 200., (0., 0., 0.), (0., 0., 1.))
+        self.assertEqual(len(self.restarts), 1)
+        for k in range(int(2.3 * 200), int(4. * 200)):                       # ... then pushed during the first seconds of the new filter
+            r.add_imu(k / 200., (0., 0., .3), (0., 0., 1.)); r.poll()
+        self.assertEqual(r.stage, 'restart')
+        self.assertEqual(self.procs, [])
+        for k in range(int(4. * 200), int(8. * 200)):
+            r.add_imu(k / 200., (0., 0., 0.), (0., 0., 1.))
+        self.assertEqual(r.stage, 'expose')                                  # the gate had to see 2 s of stillness again
+        self.assertGreaterEqual(r.t_ready, 6.)
 
     def test_no_restart_unless_asked(self):
         r = self.make_restart(); r.start()                                   # a parked verification does not hold Nav2 and must not touch the odometry
