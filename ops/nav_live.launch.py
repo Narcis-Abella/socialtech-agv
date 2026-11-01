@@ -38,11 +38,14 @@ def localizer_nodes(overrides):
 def supervisor_nodes():
     """SUPERVISOR=1 (ops/nav_live.sh): gn_supervisor_node.py staged in /greloc. Respawned: a restarted supervisor comes up in CONFIRMING and holds Nav2 until
     gn_loc confirms its pose. It reads the robot's own FAST-LIO2 (/Odometry, /cloud_registered_body, /livox/imu): no second FAST-LIO (PR #14's reloc_node.py is not used)."""
-    if not os.environ.get("SUPERVISOR"):
+    if os.environ.get("SUPERVISOR", "").lower() in ("", "0", "false", "no", "off"):    # the rule of ops/flags.sh
         return []
+    prior = os.environ.get("SUP_PRIOR")
+    if not prior:
+        raise RuntimeError("SUPERVISOR is set but SUP_PRIOR (the 3D prior of the map) is not: start it with ops/nav_live.sh, which checks the staged files and sets it")
     return [ExecuteProcess(name="gn_supervisor", output="screen", respawn=True, respawn_delay=2.0, cmd=[
         "python3", "-B", "/greloc/tools/global_reloc_3d/gn_supervisor_node.py", "--ros-args",
-        "-p", f"map_xyz:={os.environ['SUP_PRIOR']}", "-p", "register_binary:=/greloc/build/register_v2", "-p", "lib_dir:=/greloc/build",
+        "-p", f"map_xyz:={prior}", "-p", "register_binary:=/greloc/build/register_v2", "-p", "lib_dir:=/greloc/build",
         "-p", "wheel_topic:=/odom", "-p", "work_dir:=/runs/gn_supervisor"])]
 
 

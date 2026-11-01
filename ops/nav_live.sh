@@ -12,7 +12,7 @@ set -eo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 NB=$REPO/tools/nav_bench
 source "$REPO/ops/flags.sh"
-normalize_flags NAV BASE   # NAV=0 / BASE=0 mean off (a non-empty test used to arm Nav2 and the Tracer base)
+normalize_flags NAV BASE SUPERVISOR   # NAV=0 / BASE=0 / SUPERVISOR=0 mean off (a non-empty test used to arm Nav2, the Tracer base and the supervisor)
 
 if [[ ${1:-} == --inside ]]; then   # runs in the container
   source /ros_env.sh
@@ -34,12 +34,13 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   launch=nav_live; extra=()
   if [[ -n ${NAV:-} ]]; then   # navigation: Nav2 params of the sim + the real robot's differences
     python3 "$REPO/ops/merge_params.py" "$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml" "$REPO/ops/nav2_robot_overrides.yaml" >/tmp/nav2_params.yaml
+    sup_topics=(); [[ -z ${SUPERVISOR:-} ]] || sup_topics=(/gn_loc/status /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status)   # only where they exist
     set -m   # job control: a background job of a non-interactive shell ignores SIGINT, and the recorder needs one to write its metadata.yaml
     python3 "$REPO/ops/nav_start_when_localized.py" &   # lifetime = the container's
     # Everything needed to judge a run offline (and to replay FAST-LIO on it: /Odometry, /livox/lidar, /livox/imu): the three speed stages, what the base reports, AMCL, BT, plans, scan, local costmap, TF, goals. Not the global costmap (static, big).
     ros2 bag record -s mcap -o /runs/bag /cmd_vel_nav /cmd_vel_smoothed /cmd_vel /odom /tracer_status /amcl_pose /behavior_tree_log /collision_monitor_state /diagnostics \
       /goal_pose /plan /local_plan /received_global_plan /speed_limit /scan /local_costmap/costmap /tf /tf_static /navigate_to_pose/_action/status /navigate_to_pose/_action/feedback \
-      /Odometry /livox/lidar /livox/imu /gn_loc/status /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status \
+      /Odometry /livox/lidar /livox/imu "${sup_topics[@]}" \
       </dev/null >/runs/bag.log 2>&1 &
     rec=$!
     [[ -z ${BASE:-} ]] || { sleep 12; python3 "$REPO/ops/base_state.py" --require-can || echo "!!! the base IGNORES Nav2's commands until this is fixed" >&2; } &   # tracer_base has asked for CAN mode by then
@@ -80,6 +81,18 @@ ping -c1 -W2 "$LIDAR_IP" >/dev/null 2>&1 || die "Livox $LIDAR_IP does not answer
 ping -c1 -W2 "$PEER" >/dev/null 2>&1 || echo "WARN: $PEER does not answer ping (rviz2 may not see the robot)" >&2
 (($(sysctl -n net.core.rmem_max) >= RMEM_WANT)) || echo "WARN: net.core.rmem_max below $RMEM_WANT: scans may be lost (sudo sysctl -w net.core.rmem_max=$RMEM_WANT)" >&2
 
+SUP=()
+if [[ -n ${SUPERVISOR:-} ]]; then   # validated first: an error must not come after the "a goal MOVES THE ROBOT" banner
+  [[ -n ${NAV:-} ]] || die "SUPERVISOR=1 holds Nav2 goals: it needs NAV=1 (alone it would only relocalize beside a manual 2D Pose Estimate)"
+  [[ ${LOCALIZER:-} != amcl ]] || die "SUPERVISOR=1 supervises gn_loc: unset LOCALIZER=amcl"
+  G=${GRELOC:-$HOME/greloc}
+  for f in tools/global_reloc_3d/gn_supervisor_node.py build/register_v2 build/libsmall_gicp.so prior/$MAP_NAME/prior/map.xyz; do
+    [[ -f $G/$f ]] || die "$G/$f missing: stage the supervisor tools, register_v2 and the 3D prior of the map into GRELOC (stage_supervisor.sh, in the team's SocialTech workspace repo)"
+  done
+  docker run --rm "$IMAGE" python3 -c "import numpy, scipy, rclpy, action_msgs.msg, diagnostic_msgs.msg" >/dev/null 2>&1 || die "$IMAGE lacks a python module the supervisor imports (numpy, scipy, rclpy, action_msgs, diagnostic_msgs)"
+  SUP=(-e SUPERVISOR=1 -e "SUP_PRIOR=/greloc/prior/$MAP_NAME/prior/map.xyz" -v "$G:/greloc:ro")
+  echo "SUPERVISOR=1: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
+fi
 if [[ -n ${NAV:-} ]]; then
   docker run --rm "$IMAGE" ros2 pkg prefix socialtech_nav >/dev/null 2>&1 || die "$IMAGE has no Nav2 (socialtech_nav): rebuild it (ops/build_image.sh robot)"
   if [[ -n ${BASE:-} ]]; then
@@ -89,16 +102,6 @@ if [[ -n ${NAV:-} ]]; then
   else
     echo "NAV=1: Nav2 on, base OFF: goals plan and drive nothing. Push the robot by hand."
   fi
-fi
-SUP=()
-if [[ -n ${SUPERVISOR:-} ]]; then
-  [[ ${LOCALIZER:-} != amcl ]] || die "SUPERVISOR=1 supervises gn_loc: unset LOCALIZER=amcl"
-  G=${GRELOC:-$HOME/greloc}
-  for f in tools/global_reloc_3d/gn_supervisor_node.py build/register_v2 build/libsmall_gicp.so prior/$MAP_NAME/prior/map.xyz; do
-    [[ -f $G/$f ]] || die "$G/$f missing: stage it (notes/gn_reloc_scripts/stage_supervisor.sh in the SocialTech repo)"
-  done
-  SUP=(-e SUPERVISOR=1 -e "SUP_PRIOR=/greloc/prior/$MAP_NAME/prior/map.xyz" -v "$G:/greloc:ro")
-  echo "SUPERVISOR=1: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
 fi
 RUN=${NAV_RUNS:-$HOME/nav_runs}/$(date +%Y%m%d_%H%M%S)   # persists after the container is gone: ROS node logs (log/) and, with NAV, the bag (bag/)
 mkdir -p "$RUN/log"
