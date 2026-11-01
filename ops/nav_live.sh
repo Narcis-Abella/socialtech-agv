@@ -24,7 +24,11 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   "$REPO/ops/livox_config.sh" >/tmp/MID360_config.json
   sed -e "s|pcd_save_en:.*|pcd_save_en: false|" -e "s|map_en:.*|map_en: false|" -e "s|path_en:.*|path_en: false|" \
       -e "s|^\( *\)gyr_cov:.*|\1gyr_cov: ${GYR_COV:-0.01}|" -e "s|^\( *\)acc_cov:.*|\1acc_cov: 1.0|" -e "s|^\( *\)blind:.*|\1blind: 0.1|" \
+      -e "s|^\( *\)filter_size_map:.*|\1filter_size_map: 0.25|" -e "s|^\( *\)point_filter_num:.*|\1point_filter_num: 2|" \
       "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" >/tmp/fastlio.yaml   # gyr_cov (env GYR_COV, default 0.01: parked yaw drift -25 %, live 2026-10-31; 1.0 = the bench value) / acc_cov 1.0 (upstream 0.1 degrades in featureless corridors)
+  # filter_size_map 0.25 (upstream 0.5) + point_filter_num 2 (upstream 3): the ICP was under-constrained in pitch/roll; on replays of 3 runs the pitch wobble
+  # while driving fell 1.5-2.1 -> 0.2-0.3 deg, isolated /scan flashes -44..-79 %, CPU 17.5 -> 20.3 s per 238 s replay on the AGX (SocialTech notes/ruido_lidar_2026-10-31.md)
+  grep -q "filter_size_map: 0.25" /tmp/fastlio.yaml && grep -q "point_filter_num: 2" /tmp/fastlio.yaml || { echo "FAIL: the FAST-LIO config edit did not apply" >&2; exit 1; }
   echo "sensor height $h m; level quaternion $qx $qy $qz $qw; DDS $DDS_IFACE -> $PEER (domain $ROS_DOMAIN_ID)"
   launch=nav_live; extra=()
   if [[ -n ${NAV:-} ]]; then   # navigation: Nav2 params of the sim + the real robot's differences
