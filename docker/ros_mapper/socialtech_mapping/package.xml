@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>socialtech_mapping</name>
+  <version>0.1.0</version>
+  <description>Offline mapping hot paths in C++: the beam counting of tools/slam_bench/map_visibility.py (bag read, range images, hit/pass counts), loaded from Python with ctypes</description>
+  <maintainer email="narcis.abellallos@gmail.com">Narcis</maintainer>
+  <license>GPL-2.0-only</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>rosbag2_storage</depend>
+  <depend>sensor_msgs</depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

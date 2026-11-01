@@ -53,6 +53,16 @@ def test_a_run_with_one_frame_works():
         assert vs_to_ply.vs_to_ply(run, Path(tmp) / "w.ply", 0.05) == (1, 1)
 
 
+def test_far_outliers_do_not_break_the_voxel_order():
+    # a drifted run leaves stray points ~1e5 m away: at 0.025 m the 1-D key (ix * m1 + iy) * m2 + iz exceeds int64 and wraps, which scrambles the order
+    rng = np.random.default_rng(3)
+    p = np.vstack([rng.uniform(0, 5, (500, 3)), [[1e5, 1e5, 1e5], [-1e5, -1e5, -1e5], [1e5, -1e5, 0.0]]])
+    got = vs_to_ply.first_per_voxel(p, 0.025)
+    i = np.floor(p / 0.025).astype(np.int64)
+    _, k = np.unique(i, axis=0, return_index=True)        # the reference: lexicographic (ix, iy, iz), first point of each voxel
+    assert np.array_equal(got, p[k])
+
+
 def test_command_line_prints_frames_and_points():
     import subprocess
     import sys
@@ -65,5 +75,6 @@ def test_command_line_prints_frames_and_points():
 if __name__ == "__main__":
     test_frames_land_in_the_world_with_their_pose_and_repeats_collapse()
     test_a_run_with_one_frame_works()
+    test_far_outliers_do_not_break_the_voxel_order()
     test_command_line_prints_frames_and_points()
     print("ok")

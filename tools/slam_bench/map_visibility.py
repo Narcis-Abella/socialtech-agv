@@ -1,17 +1,22 @@
 """2D map of a SLAM cloud cleaned with the raw scans: drops points beams pass through, and frees unknown cells beams crossed.
 
-  map_visibility.py <bag> <poses.txt> <world.ply> <out_prefix> [--topic /livox/lidar] [--ceil 1.80] [--min-ratio 0.10] [--res 0.05] [--min-component 10] [--no-fill] [--ply-out cloud.ply]
+  map_visibility.py <bag> <poses.txt> <world.ply> <out_prefix> [--topic /livox/lidar] [--ceil 1.80] [--min-ratio 0.10] [--res 0.05] [--min-component 10] [--no-fill] [--ply-out cloud.ply] [--ghost-margin 0.03] [--ghost-vox 0.05] [--ghost-centre] [--halo-radius 0.10] [--halo-ratio 0.10] [--free-swept 0] [--engine py|cpp]
 
 Needs numpy + scipy (+ rosbags to read the bag). Inputs: the ROS 2 bag of the mapping run (sensor_msgs/PointCloud2 or livox_ros_driver2/CustomMsg), the SLAM poses (t x y z qx qy qz qw, the IMU pose at the END of each
 scan, as Voxel-SLAM's alidarState.txt) and the SLAM cloud in the same world (x y z PLY). The cloud is levelled and aligned like ply_to_map does; the bag is read twice.
 Every check is a beam test: with a range image per scan (1 deg bins, nearest return), a point is HIT when a beam ends within a margin (+1 % of the range) of it, and PASSED when the beam ends farther away.
-1. Ghosts (--min-ratio): cloud points in the obstacle band (0.10-1.80 m) are grouped in 10 cm voxels; a voxel with >= 10 observations and hits / (hits + passes) < 0.10 is dropped (margin 15 cm):
-   thin or dim things the beams mostly cross (walls measure ~0.75, isolated specks ~0.01 on eco_-1_01). Then the map is rasterised and occupied islands under --min-component cells are freed.
+1. Ghosts (--min-ratio): cloud points in the obstacle band (0.10-1.80 m) are grouped in 5 cm voxels (the centroid of each voxel's points is tested; --ghost-vox 0.10 --ghost-centre = before 2026-10-31); a voxel with >= 10 observations and hits / (hits + passes) < 0.10 is dropped (HIT margin 3 cm, --ghost-margin; 5 cm from 2026-10-30, 15 cm before):
+   thin or dim things the beams mostly cross (walls measure ~0.75, isolated specks ~0.01 on eco_-1_01). Then the map is rasterised (a cell with < 10 % of the points of the densest cell within 10 cm is wall fuzz, not occupied: --halo-radius/--halo-ratio, 0 = off; 0.075/0.06 on 2026-10-30..31) and occupied islands under --min-component cells are freed.
 2. Unknown cells (unless --no-fill): each unknown cell within 8 m of the path, at three heights above the floor (0.3, 0.9, 1.5 m), becomes FREE when it is PASSED >= 3 times at every observed height (at least 2 heights),
    HITs are <= 2 % of the observations (margin 5 cm) and it connects to cells that were already free. Only unknown cells change. Not proof that nothing is there (overhangs, thin objects): it only replaces
    what would stay unknown, and Nav2's live sensors still see obstacles.
-Measured on eco_-1_01: 27 387 cells (7.8 % of the map) freed by step 2. The lidar -> IMU translation is Voxel-SLAM's mid360.yaml (rotation = identity)."""
+3. Swept (--free-swept, off by default; 0.20 m on 2026-10-30): cells that close to the path become FREE: the robot's body was there. Off because the path can cross real structure (a table the robot drove under).
+Measured on eco_-1_01: 27 387 cells (7.8 % of the map) freed by step 2. The lidar -> IMU translation is Voxel-SLAM's mid360.yaml (rotation = identity).
+--engine cpp counts the beams (bag read, range images, hit/pass, 93 % of the run) in libsocialtech_mapping_beams.so (docker/ros_mapper/socialtech_mapping, all cores; MAP_VISIBILITY_LIB = its path
+if it is not on LD_LIBRARY_PATH). Same rules and constants: the counts differ only where float rounding moves a point across a 1 deg bin or a margin."""
 import argparse
+import ctypes
+import os
 import struct
 import sys
 from pathlib import Path
@@ -25,12 +30,14 @@ import ply_to_map as pm
 
 EXTR = (-0.011, -0.02329, 0.04412)      # m, lidar -> IMU translation (mid360.yaml)
 RMAX = 15.0                             # m: beams farther than this from a point are not used
-MIN_RANGE = 0.5                         # m, the nearest returns are not used (Voxel-SLAM's blind zone)
+MIN_RANGE = 0.1                         # m, the nearest returns are not used (the Mid-360 blind zone; Voxel-SLAM blind: 0.1 as well)
 EL_LO, EL_HI = -7.0, 52.0               # deg, the Mid-360's vertical field of view: the range image covers it in 1 deg bins
 NEL = int(EL_HI - EL_LO)
-RATIO_VOX, RATIO_MARGIN, MIN_OBS, MIN_RATIO, MIN_COMPONENT = 0.10, 0.15, 10, 0.10, 10   # ghosts: voxel (m), HIT margin (m), observations needed, hit ratio under which a voxel is a ghost, cells of the smallest island kept
+RATIO_VOX, RATIO_MARGIN, MIN_OBS, MIN_RATIO, MIN_COMPONENT = 0.05, 0.03, 10, 0.10, 10   # ghosts: voxel (m), HIT margin (m), observations needed, hit ratio under which a voxel is a ghost, cells of the smallest island kept
 HEIGHTS = (0.3, 0.9, 1.5)               # m above the floor
-NEAR, FILL_MARGIN = 8.0, 0.05           # m: unknown cells this close to the path are candidates; HIT margin (m)
+NEAR, FILL_MARGIN = 8.0, 0.05
+HALO = (0.10, 0.10)                     # m, ratio (2026-10-31, r03; r02 = 0.075/0.06, r04 = 0.10/0.15 rejected): an occupied cell with < ratio x the points of the densest cell within the radius is wall fuzz (ply_to_map.rasterize)
+SWEPT = 0.0                             # m: cells this close to the path become free (the robot drove there); OFF by default since 2026-10-31 (it cut the part of a table the robot passed under); 0.20 was under the footprint's half-width, 0.29 m
 N_PASS, MIN_HEIGHTS, MAX_HIT_RATIO = 3, 2, 0.02
 MAX_GAP = 0.5                           # s, poses further apart than this are not interpolated
 SCAN_MID = 0.05                         # s after the header stamp: the pose used for a 10 Hz Livox scan
@@ -71,10 +78,34 @@ def range_image(xyz, rng):
     return img
 
 
+class BagScans:
+    """The scans of a bag as the C++ engine reads them itself: count_beams hands it the bag instead of decoded scans."""
+    def __init__(self, bag, poses, topic):
+        self.bag, self.poses, self.topic = str(bag), np.ascontiguousarray(poses[:, :8], float), topic
+
+
+def count_beams_cpp(C, scans, extr, margin):
+    """count_beams in libsocialtech_mapping_beams.so; scans: BagScans."""
+    lib = ctypes.CDLL(os.environ.get("MAP_VISIBILITY_LIB", "libsocialtech_mapping_beams.so"))
+    f, dp, ip = lib.smap_count_beams, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int32)
+    f.restype = ctypes.c_long
+    f.argtypes = [ctypes.c_char_p, ctypes.c_char_p, dp, ctypes.c_long, dp, ctypes.c_long, dp, ip, ip, ctypes.c_char_p, ctypes.c_long]
+    C = np.ascontiguousarray(C, float)
+    params = np.array([*extr, margin, RMAX, MIN_RANGE, EL_LO, EL_HI, SCAN_MID, MAX_GAP], float)
+    hit, passed, err = np.zeros(len(C), np.int32), np.zeros(len(C), np.int32), ctypes.create_string_buffer(512)
+    n = f(scans.bag.encode(), scans.topic.encode(), scans.poses.ctypes.data_as(dp), len(scans.poses), C.ctypes.data_as(dp), len(C), params.ctypes.data_as(dp),
+          hit.ctypes.data_as(ip), passed.ctypes.data_as(ip), err, len(err))
+    if n < 0:
+        raise RuntimeError(f"socialtech_mapping_beams: {err.value.decode()}")
+    return hit, passed
+
+
 def count_beams(C, scans, extr=EXTR, margin=FILL_MARGIN):
     """(hit, passed) per candidate point C (n, 3, PLY frame): in how many scans a beam ended at the point (within margin + 1 % of its range) or went through it and ended farther.
-    scans: iterable of (points in the sensor frame, R, t) with the IMU pose in the PLY frame."""
+    scans: iterable of (points in the sensor frame, R, t) with the IMU pose in the PLY frame, or a BagScans (counted by the C++ engine)."""
     extr = np.asarray(extr, float)
+    if isinstance(scans, BagScans):
+        return count_beams_cpp(C, scans, extr, margin)
     tree = cKDTree(C)
     hit, passed = np.zeros(len(C), np.int32), np.zeros(len(C), np.int32)
     for xyz, R, t in scans:
@@ -98,13 +129,16 @@ def count_beams(C, scans, extr=EXTR, margin=FILL_MARGIN):
     return hit, passed
 
 
-def ghost_points(P, Q, scans, min_ratio=MIN_RATIO, extr=EXTR, ceil=pm.OBST_HI):
-    """bool per cloud point: it lies in an obstacle-band voxel that is a ghost. P: points in the PLY frame, Q: the same points levelled and aligned (z = height above the floor)."""
+def ghost_points(P, Q, scans, min_ratio=MIN_RATIO, extr=EXTR, ceil=pm.OBST_HI, margin=RATIO_MARGIN, vox=RATIO_VOX, centroid=True):
+    """bool per cloud point: it lies in an obstacle-band voxel that is a ghost. P: points in the PLY frame, Q: the same points levelled and aligned (z = height above the floor).
+    margin: HIT margin (m). A wide margin (0.15 was the default until 2026-10-30) counts beams ending up to 15 cm from a voxel centre as hits, so a blob touching a door jamb shares the jamb's hits and stays; the default is RATIO_MARGIN."""
     band = (Q[:, 2] > pm.OBST_LO) & (Q[:, 2] <= ceil)
-    uk, inv = np.unique(np.floor(P[band] / RATIO_VOX).astype(np.int64), axis=0, return_inverse=True)
-    hit, passed = count_beams((uk + 0.5) * RATIO_VOX, scans, extr, RATIO_MARGIN)
+    uk, inv = np.unique(np.floor(P[band] / vox).astype(np.int64), axis=0, return_inverse=True)
+    inv = inv.ravel()
+    cand = (uk + 0.5) * vox if not centroid else np.column_stack([np.bincount(inv, P[band][:, i]) for i in range(3)]) / np.bincount(inv)[:, None]   # centroid = where the surface is, not the voxel centre
+    hit, passed = count_beams(cand, scans, extr, margin)
     out = np.zeros(len(P), bool)
-    out[band] = ghost_voxels(hit, passed, min_ratio)[inv.ravel()]
+    out[band] = ghost_voxels(hit, passed, min_ratio)[inv]
     return out
 
 
@@ -128,14 +162,29 @@ def fill_unknown(grid, res, origin, T, scans, traj, extr=EXTR, heights=HEIGHTS):
     return out
 
 
-def build_map(P, Q, T, scans, traj, res=0.05, min_ratio=MIN_RATIO, min_component=MIN_COMPONENT, fill=True, extr=EXTR, ceil=pm.OBST_HI):
+def free_swept(grid, res, origin, T, traj, radius):
+    """New grid with every cell whose centre is within radius of the path set FREE: the robot's own body was there, so whatever the cloud shows on it was not static.
+    The path is the LiDAR's, taken as the base centre (as planar_odom's base_footprint): keep radius under the footprint's half-width minus the LiDAR's offset."""
+    Rm, tm = T[:3, :3], T[:3, 3]
+    rows, cols = np.nonzero(np.ones(grid.shape, bool))
+    cx, cy = origin[0] + (cols + .5) * res, origin[1] + (grid.shape[0] - 1 - rows + .5) * res
+    on = cKDTree((np.asarray(traj) @ Rm.T + tm)[:, :2]).query(np.c_[cx, cy], distance_upper_bound=radius)[0] < np.inf
+    out = grid.copy()
+    out[rows[on], cols[on]] = pm.FREE
+    return out
+
+
+def build_map(P, Q, T, scans, traj, res=0.05, min_ratio=MIN_RATIO, min_component=MIN_COMPONENT, fill=True, extr=EXTR, ceil=pm.OBST_HI, ghost_margin=RATIO_MARGIN, swept=SWEPT, ghost_vox=RATIO_VOX, ghost_centroid=True, halo=HALO):
     """(grid, origin, Q) of the cleaned map; Q is the cloud without the ghosts. P: SLAM cloud in the PLY frame; Q = the same points levelled and aligned by ply_to_map (T: P -> Q);
-    scans: zero-argument function returning the scans (the bag is read twice); traj: (n, 3) path in the PLY frame. min_ratio 0 skips the ghost step."""
+    scans: zero-argument function returning the scans (the bag is read twice); traj: (n, 3) path in the PLY frame. min_ratio 0 skips the ghost step.
+    ghost_margin: HIT margin of the ghost test (m); swept: radius (m) of the path's free strip, 0 = off."""
     if min_ratio > 0:
-        Q = Q[~ghost_points(P, Q, scans(), min_ratio, extr, ceil)]
-    grid, origin = pm.rasterize(Q, res, ceil=ceil, min_component=min_component)
+        Q = Q[~ghost_points(P, Q, scans(), min_ratio, extr, ceil, ghost_margin, ghost_vox, ghost_centroid)]
+    grid, origin = pm.rasterize(Q, res, ceil=ceil, min_component=min_component, halo=halo)
     if fill:
         grid = fill_unknown(grid, res, origin, T, scans(), traj, extr)
+    if swept > 0:
+        grid = free_swept(grid, res, origin, T, traj, swept)
     return grid, origin, Q
 
 
@@ -199,7 +248,23 @@ def bag_scans(bag, poses, topic="/livox/lidar"):
                 yield xyz[np.isfinite(xyz).all(1)], p[0], p[1]
 
 
+def check_engine(argv):
+    """`--check-engine [--engine py|cpp]`: 0 when the engine can run, 1 (with the way out on stderr) when the C++ library cannot be loaded. make_map.sh asks this
+    before the long Voxel-SLAM stage, so a host without the library fails in a second instead of after the whole replay."""
+    engine = argv[argv.index("--engine") + 1] if "--engine" in argv and argv.index("--engine") + 1 < len(argv) else "py"
+    if engine == "cpp":
+        try:
+            ctypes.CDLL(os.environ.get("MAP_VISIBILITY_LIB", "libsocialtech_mapping_beams.so"))
+        except OSError as e:
+            print(f"map_visibility: the C++ engine is not available here ({e}). Run in the mapper image, set MAP_VISIBILITY_LIB, or use "
+                  f"MAP_VISIBILITY=\"python3 map_visibility.py --engine py\".", file=sys.stderr)
+            return 1
+    return 0
+
+
 def main(argv):
+    if "--check-engine" in argv:
+        sys.exit(check_engine(argv))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("bag")
     ap.add_argument("poses")
@@ -212,6 +277,14 @@ def main(argv):
     ap.add_argument("--min-component", type=int, default=None, help="cells: occupied islands smaller than this are freed (0 = off; default: the size of 10 cells of 5 cm, in cells of --res)")
     ap.add_argument("--no-fill", action="store_true", help="skip freeing the unknown cells the beams crossed")
     ap.add_argument("--ply-out", help="also save the cloud the map shows (obstacle band, over occupied cells, in the map's frame), to inspect it")
+    ap.add_argument("--ghost-margin", type=float, default=RATIO_MARGIN, help="m, HIT margin of the ghost test (default 0.03 since 2026-10-31, on the centroid of the voxel; 0.05 on 2026-10-30; 0.15 = the older maps). 0.05 frees door blobs "
+                    "and wall-end spurs: on mapa_20261028_01, 93 of the 128 hand-erased cells, door gap 82.5 -> 105 cm (notes/mapeo_cpp_2026-10-30.md)")
+    ap.add_argument("--ghost-vox", type=float, default=RATIO_VOX, help="m, voxel of the ghost test")
+    ap.add_argument("--ghost-centre", dest="ghost_centroid", action="store_false", help="test the voxel centre instead of the centroid of its points (the old maps)")
+    ap.add_argument("--halo-radius", type=float, default=HALO[0], help="m: a cell with < --halo-ratio x the points of the densest cell within this radius is not occupied (wall fuzz); 0 = off (the old maps)")
+    ap.add_argument("--halo-ratio", type=float, default=HALO[1])
+    ap.add_argument("--free-swept", type=float, default=SWEPT, help="m: cells this close to the path become FREE (the robot drove there); 0 = off (default since 2026-10-31; 0.20 = the maps of 2026-10-30)")
+    ap.add_argument("--engine", choices=("py", "cpp"), default="py", help="who counts the beams: numpy (rosbags) or the C++ library (all cores; 21x faster on the Orin Nano, same map)")
     a = ap.parse_args(argv)
     P = pm.read_ply(a.world_ply)
     try:
@@ -219,7 +292,7 @@ def main(argv):
     except ValueError as e:
         sys.exit(f"error: {e}")
     poses = np.loadtxt(a.poses, usecols=range(8))
-    grid, origin, Qk = build_map(P, Q, info["T"], lambda: bag_scans(a.bag, poses, a.topic), poses[:, 1:4], res=a.res, min_ratio=a.min_ratio, min_component=default_min_component(a.res) if a.min_component is None else a.min_component, fill=not a.no_fill, ceil=a.ceil)
+    grid, origin, Qk = build_map(P, Q, info["T"], (lambda: BagScans(a.bag, poses, a.topic)) if a.engine == "cpp" else (lambda: bag_scans(a.bag, poses, a.topic)), poses[:, 1:4], res=a.res, min_ratio=a.min_ratio, min_component=default_min_component(a.res) if a.min_component is None else a.min_component, fill=not a.no_fill, ceil=a.ceil, ghost_margin=a.ghost_margin, swept=a.free_swept, ghost_vox=a.ghost_vox, ghost_centroid=a.ghost_centroid, halo=(a.halo_radius, a.halo_ratio))
     pm.write_map(a.out_prefix, grid, a.res, origin, info["T"])
     if a.ply_out:
         pm.write_ply(a.ply_out, occupied_points(Qk, grid, origin, res=a.res, ceil=a.ceil))

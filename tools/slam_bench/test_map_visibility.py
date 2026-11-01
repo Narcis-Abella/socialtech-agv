@@ -169,6 +169,48 @@ def test_the_ghost_band_goes_up_to_ceil():
     assert mv.ghost_points(P, Q, scans, extr=(0, 0, 0), ceil=2.35)[n:].all()
 
 
+def test_a_voxel_centroid_is_tested_where_the_surface_is_not_where_the_voxel_centre_is():
+    scans, _ = drive(planes())
+    P, n, Q = world_cloud(scans)
+    kw = dict(extr=(0, 0, 0), margin=0.02, vox=0.1)
+    centre = mv.ghost_points(P, Q, scans, centroid=False, **kw)
+    centroid = mv.ghost_points(P, Q, scans, **kw)
+    assert centre.mean() > 0.05, centre.mean()                                        # a wall off the voxel centre by more than the margin looks like a phantom
+    assert centroid.mean() < 0.02, centroid.mean()                                    # at its own points it is hit
+    P2, n2, Q2 = world_cloud(scans, PHANTOM)
+    assert mv.ghost_points(P2, Q2, scans, centroid=True, **kw)[n2:].all()             # a phantom is still found
+
+
+def test_the_ghost_margin_reaches_the_beam_test_and_build_map():
+    scans, traj = drive(planes())
+    P, n, Q = world_cloud(scans, PHANTOM)
+    seen, count = [], mv.count_beams
+    mv.count_beams = lambda C, s, extr, margin: (seen.append(margin), count(C, s, extr, margin))[1]
+    try:
+        mv.ghost_points(P, Q, scans, extr=(0, 0, 0))
+        mv.build_map(P, Q, T, lambda: scans, traj, fill=False, extr=(0, 0, 0), ghost_margin=0.05)
+    finally:
+        mv.count_beams = count
+    assert seen == [mv.RATIO_MARGIN, 0.05]
+
+
+def test_free_swept_frees_the_cells_the_robot_drove_over_and_nothing_else():
+    g0, X, Y = corridor_grid()
+    g0[cell_at(5.0, 0.0)] = pm.OCC                         # a speck on the path
+    _, traj = drive(planes())
+    g = mv.free_swept(g0, RES, ORIGIN, T, traj, 0.20)
+    on = (X > 0.1) & (X < LEN - 0.1) & (np.abs(Y) < 0.15)  # within 20 cm of the corridor axis, inside the driven stretch
+    assert (g[on] == pm.FREE).all() and g[cell_at(5.0, 0.0)] == pm.FREE
+    far = (np.abs(Y) > 0.25) | (X < -0.25) | (X > LEN + 0.25)
+    assert (g[far] == g0[far]).all()                       # the walls at |y| = 1 and the unknown sides are untouched
+    scans, _ = drive(planes())
+    P, n, Q = world_cloud(scans)
+    assert mv.SWEPT == 0                                   # off by default: the path can cross real structure (a table the robot drove under)
+    off, _, _ = mv.build_map(P, Q, T, lambda: scans, traj, fill=False, extr=(0, 0, 0))
+    on_, _, _ = mv.build_map(P, Q, T, lambda: scans, traj, fill=False, extr=(0, 0, 0), swept=0.2)
+    assert (on_ == pm.FREE).sum() >= (off == pm.FREE).sum() and ((on_ == pm.OCC) <= (off == pm.OCC)).all()   # build_map applies it, and it only frees
+
+
 def test_voxels_seen_in_few_scans_are_not_flagged():
     scans, _ = drive(planes())
     P, n, Q = world_cloud(scans, PHANTOM)
@@ -227,7 +269,7 @@ def test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag():
             np.savetxt(tmp / "poses.txt", poses)
             args = ["bag", str(tmp / "poses.txt"), str(tmp / "world.ply")]
             mv.main(args + [str(tmp / "a"), "--ply-out", str(tmp / "a.ply")])
-            mv.main(args + [str(tmp / "b"), "--min-ratio", "0", "--no-fill"])
+            mv.main(args + [str(tmp / "b"), "--min-ratio", "0", "--no-fill", "--halo-radius", "0"])     # halo off too: it would also drop the sparse phantom
             assert (tmp / "a.pgm").exists() and (tmp / "a.yaml").exists()
             assert occupied_pixels(tmp / "b.pgm") > occupied_pixels(tmp / "a.pgm")         # the ghosts are gone from a
             assert len(pm.read_ply(tmp / "a.ply")) > 1000
@@ -321,7 +363,66 @@ def test_bag_scans_gives_the_same_scans_from_a_custommsg_bag_and_a_pointcloud2_b
     assert np.allclose(out["custom"][1][2], [(2 + 0.05) * 0.5, 0, 0])                           # the pose at header + 0.05 s
 
 
+def cpp_engine_available():
+    try:
+        mv.count_beams_cpp(np.zeros((0, 3)), mv.BagScans("/nonexistent", np.zeros((1, 8)), "/x"), mv.EXTR, 0.05)
+    except OSError:
+        return False                     # the library is not built here: skipped
+    except RuntimeError:
+        pass                             # it loaded (and refused the missing bag)
+    return True
+
+
+def test_the_cpp_engine_counts_the_same_beams_as_numpy_from_custommsg_and_pointcloud2_bags():
+    if Writer is None or not cpp_engine_available():
+        return
+    ts = livox_typestore()
+    scans, traj = drive(planes(pillar=True))
+    poses = np.c_[np.arange(len(scans)) * 0.1 + 1.0 + mv.SCAN_MID, traj, np.tile(Rotation.from_matrix(scans[0][1]).as_quat(), (len(scans), 1))]   # pose at header + SCAN_MID
+    poses = np.r_[poses[:1] - [0.1, *np.zeros(7)], poses]          # one pose before the first scan, so every scan has one
+    P, n, Q = world_cloud(scans, PHANTOM)
+    cells = np.random.default_rng(0).uniform([-1, -1.5, 0], [11, 1.5, 2], (3000, 3))           # map frame, around the corridor
+    C = np.r_[P[::50], (cells - T[:3, 3]) @ T[:3, :3]]                                         # PLY (SLAM world) frame
+    with tempfile.TemporaryDirectory() as tmp:
+        for kind, build, msgtype in (("custom", custom_msg, "livox_ros_driver2/msg/CustomMsg"), ("pc2", point_cloud2, "sensor_msgs/msg/PointCloud2")):
+            bag = Path(tmp) / kind
+            with Writer(bag, version=8, storage_plugin=StoragePlugin.MCAP) as w:
+                conn = w.add_connection("/livox/lidar", msgtype, typestore=ts)
+                for k, (xyz, _, _) in enumerate(scans):
+                    w.write(conn, k * 10**8 + 10**9, ts.serialize_cdr(build(ts, xyz.astype(np.float32), stamp=(1, k * 10**8)), msgtype))
+            ref = mv.count_beams(C, mv.bag_scans(bag, poses, "/livox/lidar"), mv.EXTR, mv.FILL_MARGIN)
+            got = mv.count_beams(C, mv.BagScans(bag, poses, "/livox/lidar"), mv.EXTR, mv.FILL_MARGIN)
+            assert ref[0].sum() > 100 and ref[1].sum() > 100, kind
+            assert np.array_equal(got[0], ref[0]) and np.array_equal(got[1], ref[1]), kind
+
+
+def test_check_engine_says_so_when_the_cpp_library_is_missing_and_accepts_numpy():
+    import os
+    old = os.environ.get("MAP_VISIBILITY_LIB")
+    os.environ["MAP_VISIBILITY_LIB"] = "/nonexistent/libsocialtech_mapping_beams.so"
+    try:
+        assert mv.check_engine(["--check-engine", "--engine", "py"]) == 0                  # numpy needs no library
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert mv.check_engine(["--check-engine", "--engine", "cpp"]) == 1             # and a missing one is reported, not a traceback
+        assert "--engine py" in err.getvalue() and "MAP_VISIBILITY_LIB" in err.getvalue(), err.getvalue()   # with the way out
+        try:
+            mv.main(["--check-engine", "--engine", "cpp"])
+            raise AssertionError("main should exit")
+        except SystemExit as e:
+            assert e.code == 1
+    finally:
+        if old is None:
+            os.environ.pop("MAP_VISIBILITY_LIB", None)
+        else:
+            os.environ["MAP_VISIBILITY_LIB"] = old
+
+
 if __name__ == "__main__":
+    test_check_engine_says_so_when_the_cpp_library_is_missing_and_accepts_numpy()
+    test_the_cpp_engine_counts_the_same_beams_as_numpy_from_custommsg_and_pointcloud2_bags()
     test_unknown_floor_the_beams_crossed_is_freed_and_the_outside_stays_unknown()
     test_a_cell_the_beams_keep_hitting_is_not_freed()
     test_a_few_stray_hits_are_tolerated_but_a_real_share_is_not()
@@ -331,6 +432,8 @@ if __name__ == "__main__":
     test_the_ghost_rule_needs_enough_observations_and_a_hit_ratio_under_the_threshold()
     test_points_the_beams_pass_through_are_flagged_and_the_walls_are_not()
     test_voxels_seen_in_few_scans_are_not_flagged()
+    test_the_ghost_margin_reaches_the_beam_test_and_build_map()
+    test_free_swept_frees_the_cells_the_robot_drove_over_and_nothing_else()
     test_build_map_drops_the_phantom_and_frees_the_unknown_without_touching_the_rest()
     test_occupied_points_are_the_band_points_over_occupied_cells()
     test_a_higher_ceil_keeps_the_points_between_the_default_ceiling_and_it()

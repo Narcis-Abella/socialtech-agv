@@ -1,10 +1,12 @@
 #!/bin/bash
 # Bag -> 2D map, inside the `mapper` image: Voxel-SLAM -> world PLY -> ply_to_map (floor, levelling, wall alignment; refuses a map whose floor does not fit the trajectory)
-# -> map_visibility (cleans the map with the raw scans; 2.5 cm cells since 2026-10-24: median position error 1 cm lower in 5 real recordings, mapping ~3x slower, AMCL +16 MB) -> map.pgm + map.yaml (with T_map_world) + map_clean.ply (the cloud the PGM was made from) + report.json.
+# -> map_visibility (cleans the map with the raw scans; 2.5 cm cells since 2026-10-24: median position error 1 cm lower in 5 real recordings, mapping ~3x slower, AMCL +16 MB; its defaults and the flags of older maps: tools/slam_bench/README.md) -> map.pgm + map.yaml (with T_map_world) + map_clean.ply (the cloud the PGM was made from) + report.json.
 # world.ply is the raw Voxel-SLAM cloud (final poses, thinned to VOXEL): no levelling, no wall alignment, no floor/ceiling removal, no cleaning.
 # usage: make_map.sh <bag_dir> <out_dir>
 # env:   LIDAR (/livox/lidar)  IMU (/livox/imu)  PLAY_RATE (1.0)  CEIL (1.80, metres above the floor; 30 for outdoor maps)  RES (0.025, m: cell size of the map and, unless VOXEL is set, the thinning of the cloud)  VOXEL (= RES)  DEGRADE_BOUND (100000)
 #        VOXELSLAM_RUN VS_TO_PLY PLY_TO_MAP MAP_VISIBILITY MAP_REPORT: the tool each step runs (default: the one next to this script; the tests swap them)
+#        MAP_VISIBILITY counts the beams in C++ (--engine cpp, libsocialtech_mapping_beams.so of the mapper image; same map as numpy, 24 s instead of ~11 min on the AGX for a 271 s bag).
+#        Outside the mapper image set MAP_VISIBILITY="python3 <this dir>/map_visibility.py --engine py".
 # On any failure it exits non-zero naming the step, and leaves no map.pgm / map.yaml in <out_dir>.
 set -uo pipefail
 [ $# -eq 2 ] || { echo "usage: make_map.sh <bag_dir> <out_dir>" >&2; exit 2; }
@@ -12,12 +14,17 @@ bag=$1; out=$2
 here=$(dirname "$(readlink -f "$0")")
 : "${LIDAR:=/livox/lidar}" "${IMU:=/livox/imu}" "${PLAY_RATE:=1.0}" "${CEIL:=1.80}" "${RES:=0.025}" "${VOXEL:=$RES}" "${DEGRADE_BOUND:=100000}"
 : "${VOXELSLAM_RUN:=$here/voxelslam_run.sh}" "${VS_TO_PLY:=python3 $here/vs_to_ply.py}" "${PLY_TO_MAP:=python3 $here/ply_to_map.py}"
-: "${MAP_VISIBILITY:=python3 $here/map_visibility.py}" "${MAP_REPORT:=python3 $here/map_report.py}"
+default_vis=; [ -n "${MAP_VISIBILITY:-}" ] || default_vis=1      # the default needs the C++ library: asked before the long Voxel-SLAM stage, not after it
+: "${MAP_VISIBILITY:=python3 $here/map_visibility.py --engine cpp}" "${MAP_REPORT:=python3 $here/map_report.py}"
 fail() { echo "make_map: FAILED at step '$1': $2" >&2; exit 1; }
 
 mkdir -p "$out" "$out/.build"
 rm -f "$out/map.pgm" "$out/map.yaml" "$out/map_clean.ply" "$out/report.json" "$out/.build/map.pgm" "$out/.build/map.yaml" "$out/.build/map_clean.ply" "$out/node.log"   # a map of an earlier run must not pass for this one
 [ -e "$out/vs/run" ] && { rm -r "$out/vs/run" || fail cleanup "cannot remove $out/vs/run of an earlier run (made by another user?)"; }   # its poses and scans go too: Voxel-SLAM exits if its save directory exists
+
+if [ -n "$default_vis" ]; then
+  $MAP_VISIBILITY --check-engine 2> "$out/preflight.log" || { cat "$out/preflight.log" >&2; fail preflight "the C++ cleaning engine is not available (see above)"; }
+fi
 
 printf 's/^\\( *\\)degrade_bound:.*/\\1degrade_bound: %s/\n' "$DEGRADE_BOUND" > "$out/voxelslam.sed"
 VS_SED="$out/voxelslam.sed" PLAY_RATE="$PLAY_RATE" $VOXELSLAM_RUN "$bag" "$LIDAR" "$IMU" "$out" > "$out/voxelslam_run.log" 2>&1 \

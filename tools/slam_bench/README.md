@@ -44,6 +44,9 @@ docker run --rm --network host -v <bags>:/bags:ro -v <maps>:/out -v $PWD/tools/s
   /tools/make_map.sh /bags/<bag_dir> /out/<name>
 ```
 
+`make_map.sh` runs the cleaning step with `--engine cpp` by default: it counts the beams on all cores with `libsocialtech_mapping_beams.so` (in the `mapper` image; else `MAP_VISIBILITY_LIB=<path>`). On the Orin Nano 74 s instead of 26 min for a 6 min bag, byte-identical map; on the AGX 24 s instead of ~11 min for a 271 s bag, byte-identical PGM and cleaned PLY. Outside the `mapper` image, or to use the reference engine, set `MAP_VISIBILITY="python3 /tools/map_visibility.py --engine py"`.
+Cleaning defaults since 2026-10-31 (`notes/mapeo_optimizacion_2026-10-30.md`): ghost test on the centroid of 5 cm voxels (margin 3 cm), density halo 0.10 m / 0.10, no swept strip, Voxel-SLAM `blind` 0.1. Old behaviour: `--ghost-margin 0.15 --ghost-vox 0.10 --ghost-centre --halo-radius 0 --free-swept 0.20`; previous halo `--halo-radius 0.075 --halo-ratio 0.06`; rejected stronger halo `--halo-ratio 0.15`.
+
 Running it again into the same `<name>` replaces the earlier run, `vs/run` (poses and scans) included: copy `vs/run/alidarState.txt` away first if you still need it.
 
 `LIDAR` and `IMU` set the topics, `CEIL=30` makes an outdoor map, `PLAY_RATE` sets the replay speed (1.0). Voxel-SLAM follows the timestamps of the data, not the clock, so the speed should not change the result as long as no message is lost: keep the board otherwise idle while mapping (Elevator01 splits its sessions differently at 3x). On an idle Orin NX, eco01 at 0.5x and at 1x gave byte-identical poses and the same PGM; with several jobs on one AGX, pose counts of the same bag varied by up to 12 %, probably from lost messages. Check `report.json` (resets, `end_to_start_m`) before trusting a map. When the robot ends where it started (our bags do), check `end_to_start_m`: 1-2 m is normal.
