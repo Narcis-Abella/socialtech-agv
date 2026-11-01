@@ -1,0 +1,73 @@
+# Over socialtech_nav's nav2_params.yaml (the simulated Tracer), for the real one: merged by ops/merge_params.py. Only what differs.
+# 2026-10-26 (Narcis): the real robot runs the stack tested in the sim, speeds included (0.6 m/s, smoother 0.7, rotate 0.9). The accelerations of that day (0.5 / -1.0 and
+# 1.5 rad/s^2) were replaced later: the velocity_smoother block below has the values in force (linear 0.3 / -1.0, angular 100 / -100 rad/s^2; see its comments and the
+# team ledger NEXT-41). Previous real-robot overrides, replaced by those:
+# desired_linear_vel 0.4 and velocity_smoother max_velocity [0.5, 0.0, 1.2] (2026-10-09). To go back to them, add those two lines here again.
+behavior_server:
+  ros__parameters:
+    robot_base_frame: base_footprint   # the real robot has no base_link in its TF tree (the sim has)
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      footprint: "[[0.33, 0.27], [0.33, -0.27], [-0.33, -0.27], [-0.33, 0.27]]"   # 2026-10-26 (Narcis): half-width 0.29 -> 0.27 (inscribed radius = 0.27)
+      obstacle_layer:
+        # The real odom frame is not at floor level: planar_odom.py sets odom -> base_footprint z = FAST-LIO z - sensor_height, relative to where FAST-LIO started.
+        # Measured -0.51 m and -1.24 m on two boots (the sim: 0). The scan is projected at z = 0 of base_footprint, so in odom (the local costmap frame) every point sits at that z
+        # and the default min_obstacle_height 0.0 drops all of them: the costmap stays empty. The scan is already cut in height (scan.yaml), so the height filters are opened.
+        # Both filters apply (layer level, obstacle_layer.cpp updateBounds; and per source, observation_buffer.cpp). The global costmap works in map (z ~ 0).
+        min_obstacle_height: -100.0
+        max_obstacle_height: 100.0
+        scan:
+          min_obstacle_height: -100.0
+          max_obstacle_height: 100.0
+collision_monitor:
+  ros__parameters:
+    # 2026-10-26 (Narcis): the slowdown zones must not cut in-place rotation. action_type slowdown scales x, y and w alike (collision_monitor_node.cpp processStopSlowdownLimit),
+    # limit scales all by min(1, linear_limit/|v|, angular_limit/|w|): angular_limit above the largest w (smoother 1.2) leaves a pure rotation (v = 0) untouched, while forward
+    # motion is capped as before (0.7 x 0.6 = 0.42 and 0.4 x 0.6 = 0.24 m/s). Not validated in the sim: at commands below the cap, limit slows less than slowdown.
+    ZoneOuter: {action_type: limit, linear_limit: 0.42, angular_limit: 1.2}
+    ZoneInner: {action_type: limit, linear_limit: 0.24, angular_limit: 1.2}
+    # 2026-10-29: true makes every getData ask the TF at curr_time (timeout transform_tolerance); FAST-LIO publishes odom->base_footprint at 10 Hz, 33 ms old, so each process() waits ~100 ms for the next
+    # sample: 1 of 10 cmd_vel messages came out (10 Hz) with ~0.1 s delay (cm_probe.py, 100 Hz in). false uses the latest TF, no wait; the scan is placed with the base pose of its own stamp (error ~ v * scan age, a few cm).
+    base_shift_correction: false
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      footprint: "[[0.33, 0.27], [0.33, -0.27], [-0.33, -0.27], [-0.33, 0.27]]"   # as the local costmap
+velocity_smoother:
+  ros__parameters:
+    # 2026-10-27 (Narcis): linear acceleration 0.5 -> 0.3 m/s^2 (lists are replaced whole, so the other two axes are repeated). A hard start after turning in place leaves the
+    # swivel casters sideways and the drive wheels slip; a gentler ramp avoids it, at the price of ~0.8 s more to reach 0.6 m/s. Angular 1.5 rad/s^2 unchanged.
+    # 2026-10-29 (Narcis): angular accel/decel 1.5 -> 100 rad/s^2 (a pass-through for the turn): RPP already limits its own command (max_angular_accel) and the base accelerates at ~4 rad/s^2 (gyro,
+    # delay_probe.py), so the 1.5 ramp only added ~120 ms before the base reacts and made the turn brake at 1.5. Linear 0.3 / -1.0 unchanged (the casters, 2026-10-27). max_decel is replaced whole.
+    max_accel: [0.3, 0.0, 100.0]
+    max_decel: [-1.0, 0.0, -100.0]
+    # 2026-10-28 (Narcis): smoothing timer 20 -> 100 Hz: a pass-through smoother still waits for its next tick (measured 48 ms median at 20 Hz), 10 ms at 100 Hz.
+    smoothing_frequency: 100.0
+controller_server:
+  ros__parameters:
+    FollowPath:
+      # 2026-10-27 (Narcis): 0.3 -> 0.6. lookahead = clamp(|v| * 1.5, min, max 0.9): at standstill it was 0.3 m, so RPP turned w = v * 2 sin(alpha) / L with gain ~4 1/s and the chain
+      # (smoother ~0.3 s + base) overshot. Cost: cuts corners more at low speed.
+      min_lookahead_dist: 0.6
+      # 2026-10-27 (Narcis): rotate-to-heading speed 0.9 -> 0.6 -> 0.4 rad/s (shared by the turn to the path and the turn to the goal yaw: one parameter). RPP leaves the in-place turn at ~45 deg still spinning, and the overshoot after the handoff grows with w squared.
+      # Cost: the base reports ~73 % of small angular commands (NEXT-41), so the turn in place is slower. Not measured at 0.6: check the first lab turns.
+      rotate_to_heading_angular_vel: 0.4
+      # 2026-10-29 (Narcis): max_angular_accel 5.0 -> 3.0 -> 2.0 (Narcis: neither too high nor too low; 2.0 is above the stall limit ~1.5 and half the base 4 rad/s^2). RPP clamps its command to (measured w +- a * dt) and brakes with sqrt(2 * a * angle). The stall seen with a <= 1.0-1.5 comes from /odom reading
+      # 0.02-0.03 rad/s low at small w (1 rpm resolution): the command stalls while a * dt (0.05 s) < the largest order-/odom gap (~0.07 rad/s), i.e. a < ~1.5. Measured on the robot (rot_ab.py, 120 deg turns):
+      # a 5.0 / 3.0 / 2.0 / 1.5 -> 6.2 / 6.3 / 6.9 / 7.8 s, a 1.0 aborts; the final error does not depend on a. 2.0 costs 0.3-0.5 s per 120 deg turn over 5.0. See notes/nav2_stack_resultados.md.
+      max_angular_accel: 2.0
+      # 2026-10-30 (Narcis): two radii. RPP stops advancing and rotates to the goal heading inside 0.05 m and keeps doing so until it is outside xy_goal_tolerance (0.15 m); upstream flips at the 0.15 m edge and
+      # re-evaluates on every new plan (setPlan resets the latch), which gave 19 sign changes of w in 42 s on the 29 Oct goal. Patched plugin in ~/nav_overlay (nav2 1.3.13 + rpp_two_radii.patch); -1 or >= xy tolerance = upstream.
+      rotate_to_heading_dist_tol: 0.05
+    # 2026-10-28 (Narcis): yaw_goal_tolerance 0.25 -> 0.10 -> 0.05 -> 0.08 rad (14.3 -> 4.6 deg): the robot keeps turning ~4.7 deg after the stop order (rot_chain.py, w 0.4), so the checker fires that much before the goal. The sim showed that tighter yaw tolerance near walls can leave the robot hunting at the goal; rotate-to-heading only
+    # brakes below ~4.6 deg (sqrt(2 * 5.0 * angle) < 0.6 rad/s) while the chain brakes at ~1.5 rad/s^2 with ~0.45 s lag: watch for overshoot and oscillation at the goal.
+    general_goal_checker: {yaw_goal_tolerance: 0.08}
+    # 2026-10-30: SimpleProgressChecker only counts 0.5 m of movement, so a turn in place for >20 s is "no progress" (Failed to make progress at 973.7 and 993.9 s of the 29 Oct bag). PoseProgressChecker (nav2 1.3.13)
+    # also counts a rotation of required_movement_angle (0.5 rad default) as progress: moved > radius OR rotated > angle.
+    progress_checker: {plugin: 'nav2_controller::PoseProgressChecker', required_movement_angle: 0.5}
+bt_navigator:
+  ros__parameters:
+    # 2026-10-28 (Narcis): 20 -> 500 ms. With the 2830x1123 map every goal died on "Timed out while waiting for action server to acknowledge goal request for compute_path_to_pose":
+    # one late acknowledgement (20 ms) fails ComputePathToPose, WouldAPlannerRecoveryHelp says no and the goal is aborted (10 aborts in 58 s, behavior_tree_log). The planner itself takes 2-47 ms.
+    default_server_timeout: 500
