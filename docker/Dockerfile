@@ -96,7 +96,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ros-jazzy-nav2-amcl ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan
+      ros-jazzy-nav2-amcl ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan \
+      ros-jazzy-bondcpp
+
+# docker/ros_loc: gn_loc (Gauss-Newton scan-to-map localizer; ops/nav_live.sh selects it with LOCALIZER=gn, AMCL with LOCALIZER=amcl) and scan_median (the /scan
+# binner, quantile 0 = pointcloud_to_laserscan). Their own colcon build: gn_loc needs the Nav2 packages installed just above, which the first build does not
+# have. Tests and the gn_offline study tool are not built in the image (BUILD_TESTING=OFF, GN_LOC_OFFLINE=OFF); see docker/ros_loc/gn_loc/README.md.
+COPY ros_loc/ /ws/src_loc/
+RUN --mount=type=cache,target=/tmp/build_loc \
+    --mount=type=cache,target=/tmp/log_loc \
+    . /opt/ros/jazzy/setup.sh \
+ && cd /ws && colcon --log-base /tmp/log_loc build --base-paths src_loc --merge-install --install-base /opt/socialtech_loc --build-base /tmp/build_loc \
+      --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DGN_LOC_OFFLINE=OFF
 
 # ROS environment shared by the entrypoint and interactive shells (`docker exec -it ... bash`).
 # Last on purpose: editing these scripts must not invalidate the SDK and colcon layers above.
