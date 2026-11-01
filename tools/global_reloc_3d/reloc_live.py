@@ -40,8 +40,8 @@ class Worker:
         env = {**os.environ, 'LD_LIBRARY_PATH': f"{lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
         cmd = [sys.executable, '-B', str(HERE / 'search_v2.py'), '--run', str(run_dir), '--out', str(out_dir), '--binary', binary,
                '--deadline-s', f'{deadline_s:.3f}']
-        self.p = subprocess.Popen(cmd, stdout=open(Path(run_dir).parent / 'search.stdout', 'w'), stderr=subprocess.STDOUT, env=env,
-                                  start_new_session=True, preexec_fn=_die_with_parent)
+        with open(Path(run_dir).parent / 'search.stdout', 'w') as log:      # the child keeps its own copy of the descriptor
+            self.p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True, preexec_fn=_die_with_parent)
 
     def poll(self):
         return self.p.poll()

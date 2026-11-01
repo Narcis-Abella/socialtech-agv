@@ -4,13 +4,18 @@ In:  gn_loc/status (String, 1 Hz), gn_loc/need_reloc (Bool, latched), amcl_pose 
      /livox/imu, /Odometry, /cloud_registered_body (the robot's FAST-LIO2; clouds are deserialized only while relocalizing), /initialpose (operator),
      <nav action>/_action/status of NavigateToPose and NavigateThroughPoses.
 Out: /initialpose (only a relocalized pose), gn_supervisor/state (String JSON, latched), /diagnostics.
-Stop: CancelGoal with an empty request (= every goal) on both Nav2 actions, again whenever a goal becomes active while navigation is held.
+Stop: CancelGoal with an empty request (= every goal) on both Nav2 actions, again every recancel_s while navigation is held and an action still
+reports an active goal (its status topic is latched: a goal already running when this node starts is seen too).
+Fail-safe: an exception in the relocalizer counts as a failed relocalization; any other exception in the timer cancels and goes FAILED. A node that
+dies holds nothing: run it with respawn (it restarts in CONFIRMING, which holds until GN confirms).
 Nav2 then stops the robot itself (controller_server publishes zero on a cancelled goal; the velocity smoother ramps it down). This node never
 publishes a velocity. Goals are not re-sent after a relocalization: the operator or the mission layer does it (state 'MONITOR', reason says why).
 """
 import json
 import math
+import os
 import time
+import traceback
 
 import numpy as np
 import rclpy
@@ -52,6 +57,11 @@ class SupervisorNode(Node):
                                   P('work_dir', '/tmp/gn_supervisor').value, P('search_deadline_s', 60.).value,
                                   tuple(P('base_from_body_xyyaw', [0., 0., 0.]).value))
         self.init_std, self.init_yaw_std = P('init_std_m', .15).value, P('init_yaw_std_deg', 5.).value
+        binary, lib = self.get_parameter('register_binary').value, self.get_parameter('lib_dir').value
+        missing = [f for f, ok in ((self.reloc.map_xyz, os.path.isfile(self.reloc.map_xyz)), (binary, os.access(binary, os.X_OK)),
+                                   (f'{lib}/libsmall_gicp.so', os.path.isfile(f'{lib}/libsmall_gicp.so'))) if not ok]
+        if missing:                       # refuse to start: a supervisor that cannot relocalize would only find out at the first stop
+            raise SystemExit(f'gn_supervisor: missing {missing} (parameters map_xyz, register_binary, lib_dir)')
         self.mono = time.monotonic
         self.own = None                                   # (pose, mono) of the last /initialpose this node published
         self.init_pub = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
@@ -68,8 +78,8 @@ class SupervisorNode(Node):
         self.create_subscription(Imu, '/livox/imu', self.on_imu, BEST)
         self.create_subscription(Odometry, '/Odometry', self.on_odom, BEST)
         self.create_subscription(PointCloud2, '/cloud_registered_body', self.on_cloud, BEST, raw=True)
-        for a in ACTIONS:
-            self.create_subscription(GoalStatusArray, f'/{a}/_action/status', self.on_goals, 10)
+        for a in ACTIONS:            # rclcpp_action publishes its status transient-local (rcl_action_qos_profile_status_default)
+            self.create_subscription(GoalStatusArray, f'/{a}/_action/status', lambda m, a=a: self.on_goals(a, m), LATCHED)
         self.create_timer(.1, self.tick, clock=Clock(clock_type=ClockType.STEADY_TIME))   # watchdogs on wall time, whatever /clock does
         self.publish_state('CONFIRMING', 'startup', {})
 
@@ -77,7 +87,7 @@ class SupervisorNode(Node):
     def on_status(self, m):
         f = m.data.split()            # "<STATE> inliers <r> tight <c> scans <n>" (gn_loc_node.cpp status())
         try:
-            self.core.on_status(self.mono(), f[0], float(f[2]), float(f[4]))
+            self.core.on_status(self.mono(), f[0], float(f[2]), float(f[4]), int(f[6]))
         except (IndexError, ValueError):
             self.get_logger().warn(f'unparsed gn_loc/status: {m.data!r}', throttle_duration_sec=10.)
 
@@ -91,35 +101,61 @@ class SupervisorNode(Node):
             return                    # our own publication coming back
         self.core.on_operator_pose(self.mono(), pose)
 
-    def on_goals(self, m):
-        if any(s.status in (GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING) for s in m.status_list):
-            self.core.on_goal_active(self.mono())
+    def on_goals(self, action, m):
+        self.core.on_goal_status(self.mono(), action, any(s.status in (GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING) for s in m.status_list))
+
+    def reloc_failed(self, what):
+        """An exception inside the relocalizer: it is stopped and the core sees a failed attempt (retry or FAILED, still holding)."""
+        self.get_logger().error(f'relocalizer exception in {what}: {traceback.format_exc()}')
+        self.reloc.abort()
+        self.core.on_reloc_result(self.mono(), False, None, f'exception_in_{what}')
 
     def on_imu(self, m):
         if self.reloc.active:
             g, a = m.angular_velocity, m.linear_acceleration
-            self.reloc.add_imu(stamp(m), (g.x, g.y, g.z), (a.x, a.y, a.z))
+            try:
+                self.reloc.add_imu(stamp(m), (g.x, g.y, g.z), (a.x, a.y, a.z))
+            except Exception:
+                self.reloc_failed('imu')
 
     def on_odom(self, m):
         if self.reloc.active:
-            self.reloc.add_odom(stamp(m), odom_pose(m))
+            try:
+                self.reloc.add_odom(stamp(m), odom_pose(m))
+            except Exception:
+                self.reloc_failed('odom')
 
     def on_cloud(self, raw):
         if self.reloc.stage == 'expose':          # ~20k points at 10 Hz: never deserialized while not needed
-            m = deserialize_message(raw, PointCloud2)
-            self.reloc.add_cloud(stamp(m), cloud_xyz(m))
+            try:
+                m = deserialize_message(raw, PointCloud2)
+                self.reloc.add_cloud(stamp(m), cloud_xyz(m))
+            except Exception:
+                self.reloc_failed('cloud')
 
     # ------------------------------------------------------------------ outputs
     def tick(self):
         now = self.mono()
-        r = self.reloc.poll()
-        if r is not None:
-            self.get_logger().info(f"relocalization: {r['why']} {r['pose']} {r['info']}")
-            self.last_reloc = r
-            self.core.on_reloc_result(now, r['ok'], r['pose'], r['why'])
-        self.core.tick(now)
-        for a in self.core.drain():
-            self.act(a)
+        try:
+            r = self.reloc.poll()
+        except Exception:
+            r = None
+            self.reloc_failed('poll')
+        try:
+            if r is not None:
+                self.get_logger().info(f"relocalization: {r['why']} {r['pose']} {r['info']}")
+                self.last_reloc = r
+                self.core.on_reloc_result(now, r['ok'], r['pose'], r['why'])
+            self.core.tick(now)
+            for a in self.core.drain():
+                self.act(a)
+        except Exception:                         # a bug here must not leave navigation unsupervised: hold for good
+            self.get_logger().error(f'supervisor exception: {traceback.format_exc()}')
+            self.core.drain()
+            self.core.go(now, 'FAILED', 'internal_error')
+            self.act(('cancel',))
+            self.core.drain()
+            self.publish_state('FAILED', 'internal_error', {})
 
     def act(self, a):
         if a[0] == 'cancel':
@@ -129,7 +165,10 @@ class SupervisorNode(Node):
                 else:
                     self.get_logger().warn(f'{name} cancel service not available', throttle_duration_sec=5.)
         elif a[0] == 'reloc_start':
-            self.reloc.start()
+            try:
+                self.reloc.start()
+            except Exception:
+                self.reloc_failed('start')
         elif a[0] == 'reloc_abort':
             self.reloc.abort()
         elif a[0] == 'initialpose':

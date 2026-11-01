@@ -1,8 +1,8 @@
 """Supervisor of the gn_loc localizer, pure logic (no ROS): when GN cannot be trusted, hold navigation, relocalize with the frozen global search of this
 directory and resume only once GN confirms a pose the relocalizer agrees with. It never commands motion: its only lever is cancelling Nav2 goals.
 
-Inputs (t = monotonic s): GN status (gn_loc/status, 1 Hz), GN pose (/amcl_pose), wheel speeds (Tracer /odom |v|, |w|), relocalizer results, an operator
-/initialpose, a Nav2 goal becoming active. Actions (drain()): ('cancel',) all Nav2 goals; ('reloc_start', reason); ('reloc_abort',);
+Inputs (t = monotonic s): GN status (gn_loc/status, 1 Hz, with its scan counter), GN pose (/amcl_pose), wheel speeds (Tracer /odom |v|, |w|),
+relocalizer results, an operator /initialpose, whether each Nav2 action has an active goal. Actions (drain()): ('cancel',) all Nav2 goals; ('reloc_start', reason); ('reloc_abort',);
 ('initialpose', (x, y, yaw)); ('state', state, reason) on every change.
 
 States: CONFIRMING (start-up, or after a pose: hold until GN fits the map) -> MONITOR -> RELOCALIZING (hold) -> CONFIRMING -> MONITOR; VERIFYING = a
@@ -19,6 +19,11 @@ class Params:
     status_stale_s: float = 3.       # no gn_loc/status (1 Hz) this long -> GN is gone: stop, FAILED
     accept_tight: float = .60        # GN's own acceptance of a recovery candidate (gn_core.hpp Params::accept_tight)
     min_inliers: float = .25         # GN's min_inliers
+    min_tight: float = .50           # GN's min_tight: below it (or below min_inliers) GN counts the scan as bad
+    bad_stop_s: float = 4.           # TRACKING statuses bad this long -> stop. GN itself goes LOST after 3 s of bad scans, except a scan with < 20 valid
+                                     # beams (covered lidar, rmin 0.5 m), which stays TRACKING at 0/0 forever. Clean runs: longest bad span 2.2 s (28 runs)
+    scan_stall_n: int = 2            # consecutive statuses with GN's scan counter unchanged -> stop (no /scan reaches GN: its status repeats old values)
+    recancel_s: float = 1.           # while held, cancel again this often as long as a goal is still active (a cancel request can be lost)
     confirm_n: int = 3               # consecutive good statuses (1 Hz) after a pose
     confirm_lag_s: float = .5        # statuses this soon after the pose may describe a scan before it
     confirm_timeout_s: float = 15.
@@ -68,7 +73,11 @@ class Supervisor:
         self.t_drift = None             # drift beyond the bounds seen since
         self.t_wheel = None
         self.t_verify = -math.inf
-        self.t_cancel = None
+        self.t_cancel = None            # first cancel of the current stop (for the not-stopped report)
+        self.t_sent = None              # newest cancel sent
+        self.goals = {}                 # Nav2 action -> has an active goal
+        self.t_bad = None               # TRACKING but bad since
+        self.scans, self.stall = None, 0
         self.timeout = None
 
     # ------------------------------------------------------------------ outputs
@@ -86,12 +95,19 @@ class Supervisor:
 
     def cancel(self, t):
         self.actions.append(('cancel',))
-        self.t_cancel = t
+        self.t_cancel = self.t_sent = t
 
     # ------------------------------------------------------------------ inputs
-    def on_status(self, t, state, inliers, tight):
+    def on_status(self, t, state, inliers, tight, scans=None):
         self.t_status, self.gn_state = t, state
-        self.gn_good = state == 'TRACKING' and inliers >= self.p.min_inliers and tight >= self.p.accept_tight
+        fresh = scans is None or scans != self.scans          # None: no counter (tests, replays)
+        self.stall = 0 if fresh else self.stall + 1
+        self.scans = scans
+        self.gn_good = state == 'TRACKING' and inliers >= self.p.min_inliers and tight >= self.p.accept_tight and fresh
+        if state == 'TRACKING' and (inliers < self.p.min_inliers or tight < self.p.min_tight):
+            self.t_bad = self.t_bad if self.t_bad is not None else t
+        else:
+            self.t_bad = None
         if state == 'LOST':
             self.t_lost = self.t_lost if self.t_lost is not None else t
         else:
@@ -115,9 +131,10 @@ class Supervisor:
         elif self.t_wheels_still is None:
             self.t_wheels_still = t
 
-    def on_goal_active(self, t):
-        if self.hold:
-            self.cancel(t)
+    def on_goal_status(self, t, action, active):
+        self.goals[action] = active
+        if active and self.hold:
+            self.actions.append(('cancel',)); self.t_sent = t
 
     def on_operator_pose(self, t, pose):
         if self.state in ('RELOCALIZING', 'VERIFYING'):
@@ -160,8 +177,20 @@ class Supervisor:
         self.timeout = t + self.p.confirm_timeout_s
         self.go(t, 'CONFIRMING', why)
 
+    def alarm(self, t):
+        """Why GN cannot be trusted now, or None."""
+        if self.t_lost is not None and t - self.t_lost >= self.p.lost_stop_s:
+            return 'gn_lost'
+        if self.t_bad is not None and t - self.t_bad >= self.p.bad_stop_s:
+            return 'gn_bad_scans'
+        if self.stall >= self.p.scan_stall_n and self.gn_state in ('TRACKING', 'LOST'):
+            return 'gn_no_scans'
+        return None
+
     def tick(self, t):
         p = self.p
+        if self.hold and any(self.goals.values()) and (self.t_sent is None or t - self.t_sent >= p.recancel_s):
+            self.actions.append(('cancel',)); self.t_sent = t
         if self.state != 'CONFIRMING':
             self.status_new = False
         if self.t_status is not None and t - self.t_status > p.status_stale_s and self.state != 'FAILED':
@@ -195,15 +224,16 @@ class Supervisor:
             self.actions.append(('state', self.state, self.reason))
         if self.t_wheel is not None and t - self.t_wheel > p.wheel_stale_s:
             self.t_wheels_still, self.anchor, self.t_drift = None, None, None
-        if self.state == 'VERIFYING' and self.t_lost is not None:     # the parked check does not hold: GN lost meanwhile is a stop
+        why = self.alarm(t)
+        if self.state == 'VERIFYING' and why:                          # the parked check does not hold: an alarm meanwhile is a stop
             self.cancel(t)
             self.attempts = 1                                            # the running relocalization counts as the first attempt
             self.timeout = t + p.reloc_timeout_s
-            return self.go(t, 'RELOCALIZING', 'gn_lost')
+            return self.go(t, 'RELOCALIZING', why)
         if self.state != 'MONITOR':
             return
-        if self.t_lost is not None and t - self.t_lost >= p.lost_stop_s:
-            return self.stop(t, 'gn_lost')
+        if why:
+            return self.stop(t, why)
         parked = self.t_wheels_still is not None and t - self.t_wheels_still >= p.park_arm_s
         if parked and self.gn_good and self.pose is not None:
             if self.anchor is None:

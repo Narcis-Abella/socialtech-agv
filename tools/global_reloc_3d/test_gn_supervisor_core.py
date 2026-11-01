@@ -150,9 +150,9 @@ class FailSafeTest(Fixture):
         s, t = self.new(max_attempts=1)
         run(s, t, ('on_status', 'LOST', .1, .1))
         run(s, t + 1, ('on_reloc_result', False, None, 'reject_geometry'))
-        self.assertIn('cancel', kinds(run(s, t + 2, ('on_goal_active',))))      # an operator goal while FAILED
+        self.assertIn('cancel', kinds(run(s, t + 2, ('on_goal_status', 'navigate_to_pose', True))))      # an operator goal while FAILED
         s2, t2 = self.new()
-        self.assertNotIn('cancel', kinds(run(s2, t2, ('on_goal_active',))))    # never while MONITOR
+        self.assertNotIn('cancel', kinds(run(s2, t2, ('on_goal_status', 'navigate_to_pose', True))))    # never while MONITOR
 
     def test_robot_not_stopping_is_reported(self):
         s, t = self.new(stop_check_s=3.)
@@ -252,6 +252,87 @@ class ParkedDriftTest(Fixture):
         a = run(s, t + 1, ('on_reloc_result', False, None, 'imu_not_stationary'))
         self.assertNotIn('cancel', kinds(a))
         self.assertEqual(s.state, 'MONITOR')
+
+
+class StarvedScanTest(Fixture):
+    """gn_core.hpp update(): a scan with < 20 valid beams (rmin 0.5 m: a covered lidar) returns before counting as bad, so GN stays TRACKING with
+    inliers = tight = 0 and never goes LOST; and with no /scan at all (FAST-LIO publishes nothing) its 1 Hz status repeats the last values."""
+    def statuses(self, s, t, n, inl, tight, scans0=None, step=10):
+        for k in range(n):
+            run(s, t + k, ('on_status', 'TRACKING', inl, tight, None if scans0 is None else scans0 + step * k), ('on_gn_pose', (1., 2., 0.)))
+        return t + n
+
+    def test_tracking_without_valid_beams_stops(self):
+        s, t = self.new(bad_stop_s=4.)
+        self.statuses(s, t, 4, 0., 0.)                       # statuses t .. t+3: 3 s
+        self.assertEqual(s.state, 'MONITOR')
+        a = run(s, t + 4, ('on_status', 'TRACKING', 0., 0.))
+        self.assertEqual(kinds(a)[:2], ['cancel', 'reloc_start'])
+        self.assertEqual(s.reason, 'gn_bad_scans')
+
+    def test_a_short_bad_span_is_not_an_alarm(self):
+        # 28 clean runs (a08, 1 Hz): the longest span of TRACKING statuses below GN's track thresholds is 2.2 s
+        s, t = self.new(bad_stop_s=4.)
+        t = self.statuses(s, t, 3, .9, .45)
+        self.statuses(s, t, 5, .9, .8)
+        self.assertEqual(s.state, 'MONITOR')
+
+    def test_a_frozen_scan_counter_stops(self):
+        s, t = self.new()
+        t = self.statuses(s, t, 2, .9, .8, scans0=100)
+        self.statuses(s, t, 2, .9, .8, scans0=200, step=0)   # 200 at t, t+1: the second status unchanged
+        self.assertEqual(s.state, 'MONITOR')
+        run(s, t + 2, ('on_status', 'TRACKING', .9, .8, 200))
+        self.assertEqual(s.state, 'RELOCALIZING')
+        self.assertEqual(s.reason, 'gn_no_scans')
+
+    def test_confirmation_needs_new_scans(self):
+        s = sc.Supervisor(sc.Params())
+        self.statuses(s, 0., 6, .9, .8, scans0=50, step=0)
+        self.assertEqual(s.state, 'CONFIRMING')
+        self.statuses(s, 6., 4, .9, .8, scans0=60)
+        self.assertEqual(s.state, 'MONITOR')
+
+    def test_bad_scans_during_a_parked_check_stop(self):
+        s, t = self.new(park_arm_s=3., verify_period_s=60., bad_stop_s=4.)
+        for k in range(3):
+            run(s, t + k, ('on_wheel', 0., 0.), ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))
+        t += 3
+        run(s, t, ('on_wheel', 0., 0.))
+        self.assertEqual(s.state, 'VERIFYING')
+        for k in range(6):
+            run(s, t + k, ('on_wheel', 0., 0.), ('on_status', 'TRACKING', 0., 0.))
+        self.assertEqual(s.state, 'RELOCALIZING')
+        self.assertTrue(s.hold)
+
+
+class GoalHoldTest(Fixture):
+    def test_a_goal_active_at_start_up_is_cancelled(self):
+        s = sc.Supervisor(sc.Params())
+        self.assertIn('cancel', kinds(run(s, 0., ('on_goal_status', 'navigate_to_pose', True))))
+
+    def test_an_active_goal_is_cancelled_again_until_it_stops(self):
+        # a cancel can be lost (service not ready, request dropped): while held and a goal is still active, cancel again every recancel_s
+        s, t = self.new(recancel_s=1., max_attempts=1)
+        run(s, t, ('on_status', 'LOST', .1, .1), ('on_goal_status', 'navigate_to_pose', True))
+        self.assertNotIn('cancel', kinds(run(s, t + .5)))
+        self.assertIn('cancel', kinds(run(s, t + 1.1)))
+        self.assertIn('cancel', kinds(run(s, t + 2.2)))
+        run(s, t + 2.5, ('on_goal_status', 'navigate_to_pose', False), ('on_status', 'LOST', .1, .1))
+        self.assertNotIn('cancel', kinds(run(s, t + 4., ('on_status', 'LOST', .1, .1))))
+
+    def test_no_re_cancel_while_monitoring(self):
+        s, t = self.new(recancel_s=1.)
+        run(s, t, ('on_goal_status', 'navigate_to_pose', True))
+        for k in range(1, 4):
+            self.assertNotIn('cancel', kinds(run(s, t + k, ('on_status', 'TRACKING', .9, .8))))
+
+    def test_not_stopped_is_still_reported_while_re_cancelling(self):
+        s, t = self.new(stop_check_s=3., recancel_s=1.)
+        run(s, t, ('on_status', 'LOST', .1, .1), ('on_wheel', .4, 0.), ('on_goal_status', 'navigate_to_pose', True))
+        for k in range(1, 5):
+            run(s, t + k, ('on_status', 'LOST', .1, .1), ('on_wheel', .3, 0.))
+        self.assertIn('not_stopped', s.reason)
 
 
 if __name__ == '__main__':
