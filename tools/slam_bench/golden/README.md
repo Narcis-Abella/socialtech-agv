@@ -13,3 +13,10 @@ Reproduce the old output on the AGX (frozen inputs in `~/exp_fullheight/in`, too
       python3 -B /tools/map_visibility.py /bag /in/alidarState.txt /in/world.ply map --topic /livox/lidar --ceil 1.80 --res 0.025 --ply-out map_clean.ply --engine cpp'
 
 The old tools are deleted at the end of the refactor; this recipe needs the commit `a327b50`.
+
+## Check the new pipeline against it
+
+    docker run --rm -v TOOLS:/t:ro -v BAG:/bag:ro -v IN:/in:ro -v OUT:/out socialtech:mapper bash -c '
+      source /ros_env.sh; python3 -B /t/slam_bench/golden/check.py /bag /in/world.ply /in/alidarState.txt /out'
+
+It runs `make_map.build` with the ghost test limited to the old band (`ghost_band=(0.10, 1.80)`), rebuilds the old `map_clean.ply` from the new whole-height one and prints `GOLDEN OK` when `map.pgm`, `map.yaml` and that cloud have the sha256 of `r03.sha256`. First run 2026-11-01 on the AGX (`make-map-pipeline` branch, `f5b4b56`): all three equal.
