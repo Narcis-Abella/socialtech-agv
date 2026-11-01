@@ -1,0 +1,8 @@
+# Overlay (params_merge.py): the global costmap's obstacle layer forgets cells that no marking observation has hit for 20 s (socialtech_costmap/DecayObstacleLayer; needs an image built with the package).
+# Cells inside the sensor's view are cleared by the rays exactly as before; only cells nobody observes any more age out.
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      obstacle_layer:
+        plugin: socialtech_costmap/DecayObstacleLayer
+        observation_expiry: 20.0
