@@ -60,3 +60,16 @@ def corridor_grid():
 
 def cell_at(x, y):
     return NY - 1 - int((y - ORIGIN[1]) / RES), int((x - ORIGIN[0]) / RES)
+
+
+PHANTOM = np.random.default_rng(3).uniform([4.85, 0.35, 0.8], [5.15, 0.65, 1.1], (300, 3))   # map frame: 30 x 30 cm in the middle of the corridor where nothing is
+
+
+def world_cloud(scans, extra=None):
+    """The SLAM cloud in the SLAM world: every scan point, plus points given in the map frame that no beam ever hit. Also returns the count of real points and Q (the map-frame cloud)."""
+    Rm, tm = T[:3, :3], T[:3, 3]
+    P = np.vstack([pts @ Rm + t for pts, _, t in scans])
+    n = len(P)
+    if extra is not None:
+        P = np.vstack([P, (extra - tm) @ Rm])
+    return P, n, P @ Rm.T + tm
