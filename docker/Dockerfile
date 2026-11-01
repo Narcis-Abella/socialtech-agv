@@ -122,8 +122,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # apt headers of nav2_core, nav2_costmap_2d and the rest, and a newer sync would make that an ABI mismatch that only shows on the robot.
 COPY nav2/ /ws/nav2/
 COPY ros_nav/ /ws/src_nav/
-RUN --mount=type=cache,target=/tmp/build_nav \
-    --mount=type=cache,target=/tmp/log_nav \
+RUN --mount=type=tmpfs,target=/tmp/build_nav \
+    --mount=type=tmpfs,target=/tmp/log_nav \
     python3 fetch_repos.py nav2/nav2.repos src_nav2 \
  && for p in nav2/*.patch; do echo "applying $p"; git -C src_nav2/navigation2 apply "/ws/$p" || exit 1; done \
  && src=$(sed -n 's|.*<version>\(.*\)</version>.*|\1|p' src_nav2/navigation2/nav2_core/package.xml | head -1) \
