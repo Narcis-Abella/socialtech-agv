@@ -176,7 +176,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libgtsam-notbb-dev=4.3.0 libmetis-dev python3-numpy python3-scipy python3-pip \
  && rm /etc/apt/sources.list.d/koide3.list /etc/apt/keyrings/koide3.asc \
  && ldconfig
-# map_visibility.py reads the bag with rosbags (mcap and sqlite3); the version it was written against.
+# rosbags reads bags (mcap and sqlite3) for the bag tools of tools/slam_bench (bag_check.py, ...); the version they were written against.
 RUN pip3 install --no-cache-dir --break-system-packages rosbags==0.11.5
 
 WORKDIR /ws
@@ -191,7 +191,7 @@ RUN python3 fetch_repos.py mapper.repos src_mapper \
  && if grep -E 'not found|undefined symbol' /tmp/ldd.txt; then exit 1; fi \
  && rm /tmp/ldd.txt
 
-# socialtech_mapping: the beam counting of map_visibility.py in C++ (libsocialtech_mapping_beams.so, loaded with --engine cpp). After Voxel-SLAM so a change here does not rebuild it.
+# socialtech_mapping: the beam counting of tools/slam_bench/ghosts.py in C++ (libsocialtech_mapping_beams.so, loaded with ctypes, BEAMS_LIB). After Voxel-SLAM so a change here does not rebuild it.
 COPY ros_mapper/ src_mapper_local/
 RUN . /opt/ros/jazzy/setup.sh \
  && colcon --log-base /tmp/log_mapper_local build --base-paths src_mapper_local --merge-install --install-base /opt/socialtech \

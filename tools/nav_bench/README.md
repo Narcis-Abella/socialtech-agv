@@ -17,7 +17,7 @@ away on purpose so convergence is measured, not just tracking.
 
 ## Inputs per bag
 - `<bag>`: Livox `CustomMsg` bag (FAST-LIO2 ignores per-point time in `PointCloud2`); `/livox/lidar`, `/livox/imu`.
-- `map.yaml` + PGM from `ply_to_map.py`: the YAML must carry the `# T_map_world` comment block (levelling + wall alignment applied to the SLAM PLY).
+- `map.yaml` + PGM from `make_map.sh`: the YAML must carry the `# T_map_world` comment block (levelling + wall alignment applied to the SLAM PLY).
 - `alidarState.txt` of the Voxel-SLAM run **that produced that map's PLY** (`pose_eval.py check`: the path must lie on free cells, not on walls).
 - Sensor height above the floor: `pose_eval.py check` prints it (`sensor_height_m`).
 
@@ -37,7 +37,7 @@ cd tools/nav_bench && for t in test_*.py; do python3 -B $t || break; done   # ne
 
 ## Frames
 FAST-LIO2's world frame is the IMU frame at start, **not** gravity-aligned. `odom` is that frame rotated by `R_L` (`pose_eval.py level`) so the PGM's floor is
-z = 0 and the axes follow the walls. The z cut of `config/scan.yaml` (0.10 - 1.80 m) is the obstacle band of `ply_to_map.py` (`--floor-band`, `--ceil`): keep them in sync.
+z = 0 and the axes follow the walls. The z cut of `config/scan.yaml` (0.10 - 1.80 m) is the obstacle band of the map (`grid2d.rasterize`: floor band 0.10 m, `CEIL` of `make_map.sh`): keep them in sync.
 
 ## AMCL tuning
 `config/amcl.yaml` holds the tuned values; Nav2 defaults (alpha 0.2, `update_min_d` 0.25 m, 500-2000 particles) lose the pose from a 1 m / 20 deg offset. Measured on the

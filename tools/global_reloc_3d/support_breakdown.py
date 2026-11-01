@@ -2,7 +2,7 @@
 
 For each distinct top hypothesis of a search, the check batch is placed in the map
 and split by (a) map-frame height band (0.10-1.80 m: the PGM obstacle band; map
-z = 0 is the floor by construction of ply_to_map) and (b) local surface normal
+z = 0 is the floor by construction of make_map) and (b) local surface normal
 (vertical surface = wall-like, horizontal = floor/ceiling-like). Diagnostic only:
 no threshold here is an acceptance rule.
 """

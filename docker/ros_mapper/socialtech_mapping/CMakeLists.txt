@@ -3,7 +3,7 @@ project(socialtech_mapping)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
-# -ffp-contract=off: no fused multiply-add (GCC fuses by default on aarch64), so the float64 results follow map_visibility.py's numpy arithmetic
+# -ffp-contract=off: no fused multiply-add (GCC fuses by default on aarch64), so the float64 results follow the numpy arithmetic of tools/slam_bench/beams_oracle.py
 add_compile_options(-Wall -Wextra -ffp-contract=off)
 find_package(ament_cmake REQUIRED)
 find_package(OpenMP REQUIRED)
