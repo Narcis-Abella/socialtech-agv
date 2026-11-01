@@ -43,3 +43,8 @@ Model (notes/sim_realism/livox_modelo_matematico.md): slot k, line l = k % 4, t 
 
 Held-out error (own unit, constants re-estimated on 1 s): azimuth x sin(zenith) median 0.33-0.44 deg, zenith 0.26-0.39 deg. Another unit needs its own 2 s fit (the zenith shape does not transfer: 0.75 deg).
 Known limits: no moving objects in the scene, tag always 0 (a real unit flags ~1.3 %), reflectivity constant, range noise 2 cm is the datasheet value, the robot body does not occlude, mechanism is phenomenological.
+
+## FAST-LIO2 in the simulation loop (`tools/nav_sim/lio_sim.sh`)
+`SIM_REALISM=1 SIM_LIO=1` (hospital-agv-sim, branch `sim-realism`): no stand-in odometry; the IMU is 200 Hz and sits at the lidar origin minus FAST-LIO's `extrinsic_T`. `lio_sim.sh` then starts the base/wheel models, `sim_imu_model` (`acc_scale` 1/9.80665: the Livox driver gives g; `frame_id` livox_frame; `/livox/imu`), `livox_mid360_sim` (`/livox/lidar`), FAST-LIO2 with the robot's parameter edits, planar_odom and scan_median, drives out and back (`lio_drive.py`) and reports FAST-LIO2 against the Gazebo pose after one alignment at the start (`lio_eval.py`).
+Pitfall: the model is spawned 0.3 m above the floor and falls; FAST-LIO2 started with the simulator took its gravity from the fall and diverged ("No Effective Points!"). The script starts the LIO nodes after `SIM_WAIT` (30 s).
+

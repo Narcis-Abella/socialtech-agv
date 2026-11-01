@@ -11,19 +11,24 @@ public:
   {
     simreal::ImuParams p;
     const int seed = declare_parameter("seed", -1);
-    dt_ = 1.0 / declare_parameter("rate_hz", 100.0);
+    dt_ = 1.0 / declare_parameter("rate_hz", 100.0);        // the rate of the INPUT (Gazebo's IMU update_rate): the noise is scaled by it
+    acc_scale_ = declare_parameter("acc_scale", 1.0);        // 1/9.80665 = the Livox driver's unit (g); the supervisor's stillness gate and FAST-LIO's covariances are in it
+    frame_ = declare_parameter("frame_id", std::string(""));
     model_ = std::make_unique<simreal::ImuModel>(p, seed < 0 ? -1 : seed + 4);
     sub_ = create_subscription<sensor_msgs::msg::Imu>(declare_parameter("in_topic", "/imu_raw"), 10, [this](sensor_msgs::msg::Imu::ConstSharedPtr m) {
         auto o = *m; double g[3] = {o.angular_velocity.x, o.angular_velocity.y, o.angular_velocity.z}, a[3] = {o.linear_acceleration.x, o.linear_acceleration.y, o.linear_acceleration.z};
         model_->step(g, a, dt_);
-        o.angular_velocity.x = g[0]; o.angular_velocity.y = g[1]; o.angular_velocity.z = g[2]; o.linear_acceleration.x = a[0]; o.linear_acceleration.y = a[1]; o.linear_acceleration.z = a[2];
+        o.angular_velocity.x = g[0]; o.angular_velocity.y = g[1]; o.angular_velocity.z = g[2];
+        o.linear_acceleration.x = a[0] * acc_scale_; o.linear_acceleration.y = a[1] * acc_scale_; o.linear_acceleration.z = a[2] * acc_scale_;
+        if (!frame_.empty()) {o.header.frame_id = frame_;}
         pub_->publish(o);
       });
     pub_ = create_publisher<sensor_msgs::msg::Imu>(declare_parameter("out_topic", "/imu/data"), 10);
   }
 
 private:
-  double dt_;
+  double dt_, acc_scale_;
+  std::string frame_;
   std::unique_ptr<simreal::ImuModel> model_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_;
