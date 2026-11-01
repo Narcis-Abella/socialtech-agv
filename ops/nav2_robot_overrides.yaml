@@ -58,7 +58,7 @@ controller_server:
       # a 5.0 / 3.0 / 2.0 / 1.5 -> 6.2 / 6.3 / 6.9 / 7.8 s, a 1.0 aborts; the final error does not depend on a. 2.0 costs 0.3-0.5 s per 120 deg turn over 5.0. See notes/nav2_stack_resultados.md.
       max_angular_accel: 2.0
       # 2026-10-30 (Narcis): two radii. RPP stops advancing and rotates to the goal heading inside 0.05 m and keeps doing so until it is outside xy_goal_tolerance (0.15 m); upstream flips at the 0.15 m edge and
-      # re-evaluates on every new plan (setPlan resets the latch), which gave 19 sign changes of w in 42 s on the 29 Oct goal. Patched plugin in ~/nav_overlay (nav2 1.3.13 + rpp_two_radii.patch); -1 or >= xy tolerance = upstream.
+      # re-evaluates on every new plan (setPlan resets the latch), which gave 19 sign changes of w in 42 s on the 29 Oct goal. Patched plugin built in the image (docker/nav2/0001-rpp-two-radii.patch on Nav2 1.3.13); -1 or >= xy tolerance = upstream. Set at start-up: the patch reads it in setPlan() without the parameter mutex.
       rotate_to_heading_dist_tol: 0.05
     # 2026-10-28 (Narcis): yaw_goal_tolerance 0.25 -> 0.10 -> 0.05 -> 0.08 rad (14.3 -> 4.6 deg): the robot keeps turning ~4.7 deg after the stop order (rot_chain.py, w 0.4), so the checker fires that much before the goal. The sim showed that tighter yaw tolerance near walls can leave the robot hunting at the goal; rotate-to-heading only
     # brakes below ~4.6 deg (sqrt(2 * 5.0 * angle) < 0.6 rad/s) while the chain brakes at ~1.5 rad/s^2 with ~0.45 s lag: watch for overshoot and oscillation at the goal.

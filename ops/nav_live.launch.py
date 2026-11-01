@@ -27,7 +27,7 @@ def scan_nodes():
 
 
 def localizer_nodes(overrides):
-    """Default: gn_loc (Gauss-Newton scan-to-map, ~/nav_overlay). LOCALIZER=amcl: nav2_amcl in its place. Same /initialpose in, map->odom and /amcl_pose out."""
+    """Default: gn_loc (Gauss-Newton scan-to-map, built in the image). LOCALIZER=amcl: nav2_amcl in its place. Same /initialpose in, map->odom and /amcl_pose out."""
     gn = os.environ.get("LOCALIZER") != "amcl"
     return [Node(package="gn_loc", executable="gn_loc_node", name="gn_loc", output="screen") if gn else
             Node(package="nav2_amcl", executable="amcl", parameters=[os.path.join(NAV_BENCH, "config/amcl.yaml"), overrides]),
