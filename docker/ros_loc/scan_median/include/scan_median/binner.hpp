@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 
 namespace scan_median
@@ -24,7 +25,7 @@ class Binner
 {
 public:
   explicit Binner(const Params & p)
-  : p_(p), bins_(size_t(std::ceil((p.angle_max - p.angle_min) / p.angle_increment))) {}
+  : p_(validated(p)), bins_(size_t(std::ceil((p_.angle_max - p_.angle_min) / p_.angle_increment))) {}
 
   void begin() {for (auto & b : bins_) {b.clear();}}
 
@@ -56,6 +57,16 @@ public:
   size_t size() const {return bins_.size();}
 
 private:
+  /** A launch typo must not become undefined behaviour in the /scan the localizer depends on: bad bins are an error, a quantile outside [0, 1] is the nearest end. */
+  static Params validated(Params p)
+  {
+    if (!(p.angle_increment > 0.0) || !(p.angle_max > p.angle_min)) {
+      throw std::invalid_argument("scan_median: angle_increment must be > 0 and angle_max > angle_min");
+    }
+    p.quantile = std::min(1.0, std::max(0.0, p.quantile));
+    return p;
+  }
+
   Params p_;
   std::vector<std::vector<float>> bins_;
 };

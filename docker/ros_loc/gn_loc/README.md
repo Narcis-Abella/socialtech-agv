@@ -27,4 +27,6 @@ The image builds it in its own colcon step after the Nav2 packages (`/opt/social
 colcon build --packages-select gn_loc --cmake-args -DBUILD_TESTING=ON && ./build/gn_loc/test_gn_core
 ```
 
-`gn_offline` runs the core over a replay bag (study tool, not used by the node).
+`gn_offline` runs the core over a replay bag (study tool, not used by the node). It is built by default (`-DGN_LOC_OFFLINE=ON`) and needs `rosbag2_cpp`, `nav2_map_server` and `tf2_msgs`; the image builds with `-DGN_LOC_OFFLINE=OFF`, so the production localizer does not depend on them.
+
+The node warns when the scan is not in the base frame or an `/initialpose` is not in the map frame (it uses both as they come, unlike `nav2_amcl`, which transforms them).

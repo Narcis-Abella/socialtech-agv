@@ -43,6 +43,19 @@ TEST(Binner, MatchesPythonReferenceOnRandomPoints)   // golden.txt: make_golden.
   EXPECT_EQ(cases, 3);
 }
 
+TEST(Binner, ABadLaunchParameterIsRejectedOrClampedInsteadOfUndefinedBehaviour)
+{
+  Params p;
+  p.angle_increment = 0.0; EXPECT_THROW(Binner{p}, std::invalid_argument);       // zero, negative or inverted bins used to size the vector from inf / NaN
+  p.angle_increment = -0.01; EXPECT_THROW(Binner{p}, std::invalid_argument);
+  p = Params(); p.angle_max = p.angle_min - 1.0; EXPECT_THROW(Binner{p}, std::invalid_argument);
+  p = Params(); p.range_min = 0.5;
+  const std::vector<std::array<double, 3>> col{{7, 0, 0.5}, {3, 0, 0.5}, {5, 0, 0.5}};
+  const size_t k = size_t((0 - p.angle_min) / p.angle_increment);
+  p.quantile = 1.5; EXPECT_FLOAT_EQ(run(p, col)[k], 7.0f);                       // above 1 is the farthest return, not an out-of-bounds nth_element
+  p.quantile = -0.5; EXPECT_FLOAT_EQ(run(p, col)[k], 3.0f);                      // below 0 is the closest one
+}
+
 TEST(Binner, FiltersAndQuantiles)
 {
   Params p; p.range_min = 0.5;

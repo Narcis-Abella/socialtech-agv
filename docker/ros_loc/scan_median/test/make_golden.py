@@ -1,4 +1,4 @@
-"""Writes test/golden.txt: random points (x y z in the target frame, z = height above the floor) and the ranges notes/nav_real_scripts/scan_study.py to_scan gives for three bin rules.
+"""Writes test/golden.txt: random points (x y z in the target frame, z = height above the floor) and the ranges reference_to_scan.to_scan gives for three bin rules.
 to_scan reproduced the recorded /scan from the raw cloud (93-95 % of beams valid in both, median 16-36 mm), so it is the reference the C++ Binner is checked against.
 usage: python3 make_golden.py (from anywhere)"""
 import os
@@ -7,8 +7,8 @@ import sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", ".."))
-import scan_study as ss
+sys.path.insert(0, HERE)
+import reference_to_scan as ss
 
 rng = np.random.default_rng(7)
 n = 4000; ang = rng.uniform(-np.pi, np.pi, n); r = np.where(rng.random(n) < 0.9, rng.uniform(0.2, 12.0, n), rng.uniform(0.02, 80.0, n)); z = rng.uniform(-0.3, 2.2, n)

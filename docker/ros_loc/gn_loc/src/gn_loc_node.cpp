@@ -202,6 +202,9 @@ private:
   void setInitial(const geometry_msgs::msg::PoseWithCovarianceStamped & m)   // mtx_ held
   {
     const double yaw = yawOf(m.pose.pose.orientation);
+    if (!m.header.frame_id.empty() && m.header.frame_id != global_) {   // nav2_amcl transforms it; here it is used as it comes
+      RCLCPP_WARN(get_logger(), "initial pose given in frame '%s', not '%s': used as a '%s' pose", m.header.frame_id.c_str(), global_.c_str(), global_.c_str());
+    }
     const auto & c = m.pose.covariance;
     core_->setInitial({m.pose.pose.position.x, m.pose.pose.position.y, yaw}, std::sqrt(std::max(c[0], c[7])), std::sqrt(c[35]));
     RCLCPP_INFO(get_logger(), "initial pose %.3f %.3f %.1f deg", m.pose.pose.position.x, m.pose.pose.position.y, yaw * 180 / M_PI);
@@ -211,6 +214,9 @@ private:
   {
     std::lock_guard<std::mutex> lk(mtx_);
     if (!active_ || !core_ || core_->state() == gn_loc::State::WaitingPose) {return;}
+    if (m->header.frame_id != base_) {    // the beams are fitted as seen from the base frame (odom->base is what is looked up)
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000, "scan frame '%s' is not the base frame '%s': the fit assumes they are the same", m->header.frame_id.c_str(), base_.c_str());
+    }
     geometry_msgs::msg::TransformStamped tf;
     try {
       tf = tf_buffer_->lookupTransform(odom_, base_, m->header.stamp);
