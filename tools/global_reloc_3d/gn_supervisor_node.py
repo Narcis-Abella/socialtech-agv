@@ -153,9 +153,12 @@ class SupervisorNode(Node):
             self.get_logger().error(f'supervisor exception: {traceback.format_exc()}')
             self.core.drain()
             self.core.go(now, 'FAILED', 'internal_error')
-            self.act(('cancel',))
             self.core.drain()
-            self.publish_state('FAILED', 'internal_error', {})
+            try:
+                self.act(('cancel',))
+                self.publish_state('FAILED', 'internal_error', {})
+            except Exception:                     # the handler itself must not take the node down
+                self.get_logger().error(f'supervisor exception in the handler: {traceback.format_exc()}')
 
     def act(self, a):
         if a[0] == 'cancel':
@@ -190,7 +193,10 @@ class SupervisorNode(Node):
                              values=[KeyValue(key='state', value=state), KeyValue(key='reason', value=reason)])
         arr = DiagnosticArray(); arr.header.stamp = self.get_clock().now().to_msg(); arr.status = [d]
         self.diag_pub.publish(arr)
-        (self.get_logger().error if state == 'FAILED' else self.get_logger().info)(f'{state}: {reason}')
+        if state == 'FAILED':                     # one severity per call site: rclpy raises if the same line logs at another level
+            self.get_logger().error(f'{state}: {reason}')
+        else:
+            self.get_logger().info(f'{state}: {reason}')
 
 
 def main():
