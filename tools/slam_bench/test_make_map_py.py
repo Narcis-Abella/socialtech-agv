@@ -99,7 +99,6 @@ def test_main_runs_end_to_end_from_a_cloud_and_poses_with_the_engine(tmp_path):
     cloud_io.write_ply(tmp_path / "map.ply", P)
     np.savetxt(tmp_path / "alidarState.txt", poses)
     write_bag(tmp_path / "bag", [s[0] for s in scans], "custom")
-    (tmp_path / "bag/metadata.yaml").write_text(f"rosbag2_bagfile_information:\n  topics_with_message_count:\n    - topic_metadata:\n        name: /livox/lidar\n      message_count: {len(scans)}\n")
     rc = make_map.main(["--cloud", str(tmp_path / "map.ply"), "--poses", str(tmp_path / "alidarState.txt"), "--bag", str(tmp_path / "bag"), "--out", str(tmp_path / "out"), "--res", "0.05"])
     assert rc == 0 and all((tmp_path / "out" / f).exists() for f in ("map.ply", "map_clean.ply", "map.pgm", "map.yaml", "report.json"))
     import json
