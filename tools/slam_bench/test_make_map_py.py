@@ -91,6 +91,16 @@ def test_lost_scans_warn_and_recommend_real_time_replay():
     assert "PLAY_RATE=1" not in at_1x and "bag" in at_1x                                      # already real time: the bag itself lost scans
 
 
+def test_reuse_refuses_a_cloud_that_does_not_contain_the_trajectory():
+    cloud = np.random.default_rng(0).uniform([0, 0, 0], [10, 2, 2], (500, 3))
+    inside = np.c_[np.arange(5.0), np.linspace(0, 2, 5), np.ones(5), np.zeros((5, 3)), np.ones(5)]
+    make_map.check_cloud_has_the_trajectory(cloud, inside)                                      # no error
+    elsewhere = inside.copy()
+    elsewhere[:, 1] += 500.0                                                                      # another run: the path is 500 m away from the cloud
+    with pytest.raises(ValueError, match="does not belong"):
+        make_map.check_cloud_has_the_trajectory(cloud, elsewhere)
+
+
 @needs_engine
 def test_main_runs_end_to_end_from_a_cloud_and_poses_with_the_engine(tmp_path):
     scans, traj = drive(planes(pillar=True))

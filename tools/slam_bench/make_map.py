@@ -43,6 +43,14 @@ def build(cloud, poses, bag, out_dir, *, topic="/livox/lidar", res=0.025, ceil=1
             "ghost_points": int(ghost.sum()), "points": len(cloud), "ghost_band": [None if np.isinf(v) else v for v in ghost_band]}
 
 
+def check_cloud_has_the_trajectory(cloud, poses, margin=1.0):
+    """ValueError when the path of `poses` leaves the bounding box of `cloud` (+ margin m): a map.ply of another run next to these alidarState.txt."""
+    lo, hi = cloud.min(0) - margin, cloud.max(0) + margin
+    p = poses[:, 1:4]
+    if ((p < lo) | (p > hi)).any():
+        raise ValueError("the cloud does not belong to these poses: the trajectory leaves its bounding box (a map.ply of another run?)")
+
+
 def scan_warning(poses, scans, play_rate):
     """The warning text when too few scans of the bag got a pose, else None. At a replay faster than real time it recommends relaunching at 1x."""
     if not scans or poses / scans >= LOST_RATIO:
@@ -88,6 +96,8 @@ def main(argv):
         poses_file, cloud = Path(a.poses), cloud_io.read_ply(a.cloud)
         poses = np.loadtxt(poses_file, usecols=range(8), ndmin=2)
     try:
+        if a.cloud:
+            check_cloud_has_the_trajectory(cloud, poses)
         data = build(cloud, poses, a.bag, out, topic=a.topic, res=a.res, ceil=a.ceil)
     except ValueError as e:
         print(f"make_map: {e}", file=sys.stderr)
