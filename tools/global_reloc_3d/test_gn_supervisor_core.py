@@ -116,6 +116,28 @@ class AutoInitTest(Fixture):
         self.assertEqual(s.state, 'FAILED')
         self.assertEqual(s.reason, 'needs_operator:gn_not_confirmed')
 
+    def test_gn_settling_by_itself_is_not_overridden(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        seen = []
+        for k in range(15):                                               # TRACKING since the start, the fit still poor: gn_loc is settling, not waiting
+            seen += kinds(run(s, float(k), ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (1., 2., 0.))))
+        self.assertNotIn('reloc_start', seen)
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'startup'))
+
+    def test_leaving_the_auto_init_through_a_verification_forgets_it(self):
+        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        self.waiting(s, 0, 8)
+        run(s, 9., ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))   # gn_loc got there by itself meanwhile
+        run(s, 10., ('on_reloc_result', True, (1., 2., 0.), 'accepted'))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'verified_gn_agrees'))
+        for k in range(11, 21):                                            # an unrelated loss later, long enough to stop
+            run(s, float(k), ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.state, 'RELOCALIZING')
+        run(s, 21., ('on_reloc_result', False, None, 'x'))
+        run(s, 22., ('on_reloc_result', False, None, 'x'))
+        self.assertEqual(s.state, 'FAILED')
+        self.assertFalse(s.reason.startswith('needs_operator'), s.reason)
+
     def test_a_failure_after_a_stop_keeps_its_own_name(self):
         s, t = self.new()
         run(s, t, ('on_status', 'LOST', 0., 0.))
@@ -393,10 +415,12 @@ class StarvedScanTest(Fixture):
         t += 3
         run(s, t, ('on_wheel', 0., 0.))
         self.assertEqual(s.state, 'VERIFYING')
+        seen = []
         for k in range(6):
-            run(s, t + k, ('on_wheel', 0., 0.), ('on_status', 'TRACKING', 0., 0.))
+            seen += kinds(run(s, t + k, ('on_wheel', 0., 0.), ('on_status', 'TRACKING', 0., 0.)))
         self.assertEqual(s.state, 'RELOCALIZING')
         self.assertTrue(s.hold)
+        self.assertIn('reloc_start', seen)                               # the parked check did not restart FAST-LIO2; the stop that holds Nav2 must
 
 
 class ReviewFixesTest(Fixture):

@@ -120,8 +120,9 @@ class LiveReloc:
         self.restarted = True
         try:
             ok = bool(self.restart_fn())
-        except Exception:
+        except Exception as e:
             ok = False
+            self.info['lio_restart_error'] = repr(e)
         self.info['lio_restart'] = ok
         if not ok:                                                           # go on with the filter it has: worse than a fresh one, better than no answer
             self.t_ready, self.stage = self.gate.ready_stamp, 'expose'

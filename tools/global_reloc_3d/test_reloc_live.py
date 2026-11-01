@@ -157,6 +157,16 @@ class RestartTest(LiveRelocBase):
         self.assertEqual(len(self.restarts), 1)
         self.assertFalse(res['info']['lio_restart'])
 
+    def test_a_restart_that_raises_is_reported_in_the_result(self):
+        def restart():
+            raise PermissionError('not ours')
+        r = rl.LiveReloc(str(self.map), 'unused', '/opt', str(self.work), restart=restart, settle_s=1.,
+                         spawn=lambda run_dir, out_dir, dl: FakeProc(out_dir, 'accepted', planar(3., 1., .5))); r.start(restart=True)
+        res = self.feed(r, 0., 8.)
+        self.assertTrue(res['ok'], res)                                      # it goes on with the filter it has ...
+        self.assertFalse(res['info']['lio_restart'])
+        self.assertIn('PermissionError', res['info']['lio_restart_error'])   # ... and says why it could not do better
+
     def test_no_restart_unless_asked(self):
         r = self.make_restart(); r.start()                                   # a parked verification does not hold Nav2 and must not touch the odometry
         res = self.feed(r, 0., 8.)
