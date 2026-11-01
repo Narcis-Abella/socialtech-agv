@@ -120,7 +120,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # socialtech_nav: params, launch and map. Separate from docker/ros/ (copied into `robot`) so Nav2 stays out of `robot`.
 WORKDIR /ws
 COPY ros_nav/ src_nav/
-RUN . /opt/ros/jazzy/setup.sh \
+# /opt/socialtech too: socialtech_livox_sim needs livox_ros_driver2, which `robot` installed there.
+RUN . /opt/ros/jazzy/setup.sh && . /opt/socialtech/setup.sh \
  && colcon build --base-paths src_nav --merge-install --install-base /opt/socialtech_nav
 # Appended here and not in ros_env.sh: that file is copied in `robot`, and editing it would rebuild the sim and mapper stages.
 RUN echo 'if [[ -f /opt/socialtech_nav/setup.bash ]]; then source /opt/socialtech_nav/setup.bash --; fi' >> /ros_env.sh

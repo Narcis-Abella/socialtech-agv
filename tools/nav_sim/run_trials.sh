@@ -13,7 +13,7 @@ if ! ros2 pkg prefix hospital-agv-sim > /dev/null 2>&1; then
   colcon build --merge-install --install-base /tmp/sim_install > "$out/build.log" 2>&1
   source /tmp/sim_install/setup.bash
 fi
-[ -n "${SIM_REALISM:-}" ] && export SIM_REALISM=1   # hospital-agv-sim 'sim-realism': hands /cmd_vel, /odom, /scan and /imu/data to socialtech_simreal (use SIM_ARGS "odom_source:=ground_truth")
+case "${SIM_REALISM:-}" in ""|0|false|no) unset SIM_REALISM ;; *) export SIM_REALISM=1 ;; esac   # SIM_REALISM=0 means off. hospital-agv-sim 'sim-realism': hands /cmd_vel, /odom, /scan and /imu/data to socialtech_simreal (use SIM_ARGS "odom_source:=ground_truth")
 ros2 launch hospital-agv-sim simulation.launch.py headless:=true $SIM_ARGS > "$out/sim.log" 2>&1 &
 [ -z "${SIM_REALISM:-}" ] || ros2 launch socialtech_simreal sim_realism.launch.py seed:=${REALISM_SEED:--1} $REALISM_ARGS > "$out/realism.log" 2>&1 &   # REALISM_ARGS: outlier_scale:=0 noise_scale:=1 kick:=0.05 deadband:=0.1
 sleep "${SIM_WAIT:-45}"

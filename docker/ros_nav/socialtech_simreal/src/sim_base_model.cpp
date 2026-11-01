@@ -22,10 +22,10 @@ public:
     timeout_ = declare_parameter("timeout", 1.0);
     model_ = std::make_unique<simreal::BaseModel>(p);
     RCLCPP_INFO(get_logger(), "base model: v dead time %.0f ms lag %.0f ms gain %.3f; w dead time %.0f ms lag %.0f ms gain %.3f, in-place deadband %.3f rad/s, kick %.3f", p.td_v * 1e3, p.tau_v * 1e3, p.gain_v, p.td_w * 1e3, p.tau_w * 1e3, p.gain_w, p.deadband, p.kick);
-    sub_ = create_subscription<geometry_msgs::msg::Twist>(declare_parameter("in_topic", "/cmd_vel"), 10, [this](geometry_msgs::msg::Twist::ConstSharedPtr m) {v_ = m->linear.x; w_ = m->angular.z; last_ = now();});
+    sub_ = create_subscription<geometry_msgs::msg::Twist>(declare_parameter("in_topic", "/cmd_vel"), 10, [this](geometry_msgs::msg::Twist::ConstSharedPtr m) {v_ = m->linear.x; w_ = m->angular.z; last_ = now(); got_ = true;});
     pub_ = create_publisher<geometry_msgs::msg::Twist>(declare_parameter("out_topic", "/cmd_vel_gz"), 10);
     timer_ = create_timer(std::chrono::milliseconds(10), [this]() {
-        const bool fresh = last_.nanoseconds() != 0 && (now() - last_).seconds() < timeout_;
+        const bool fresh = got_ && (now() - last_).seconds() < timeout_;   // got_: a first command at sim time 0 is a command too
         const auto [v, w] = model_->step(fresh ? v_ : 0.0, fresh ? w_ : 0.0);
         geometry_msgs::msg::Twist o; o.linear.x = v; o.angular.z = w; pub_->publish(o);
       });
@@ -33,6 +33,7 @@ public:
 
 private:
   double v_ = 0, w_ = 0, timeout_;
+  bool got_ = false;
   rclcpp::Time last_{0, 0, RCL_ROS_TIME};
   std::unique_ptr<simreal::BaseModel> model_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_;

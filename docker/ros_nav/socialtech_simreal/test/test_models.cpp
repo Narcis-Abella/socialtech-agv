@@ -92,6 +92,18 @@ TEST(Scan, SurfaceJumpsHaveTheMeasuredRateAndMagnitude)
   EXPECT_NEAR(double(nearer) / double(out), p.nearer.at(r), 0.06);
 }
 
+TEST(Scan, ABeamPushedBelowRangeMinReturnsNothingInsteadOfAFakeObstacleAtRangeMin)
+{
+  // a 'nearer' jump is sampled with a magnitude that does not depend on the range: at 0.6 m it can be several metres and r - mag is negative
+  ScanParams p; p.noise_scale = 200.0; ScanModel m(p, 5); const double rmin = 0.5; long at_rmin = 0, none = 0;
+  for (int f = 0; f < 100; ++f) {
+    std::vector<float> s(720, 0.6f); m.apply(s, rmin, 60.0);
+    for (float x : s) {if (x == float(rmin)) {++at_rmin;} if (std::isinf(x)) {++none;}}
+  }
+  EXPECT_EQ(at_rmin, 0);                                            // real chain: a return closer than range_min does not exist
+  EXPECT_GT(none, 0);
+}
+
 TEST(Scan, NoOutliersWhenSwitchedOffAndInvalidBeamsUntouched)
 {
   ScanParams p; p.outlier_scale = 0.0; ScanModel m(p, 3); std::vector<float> s(720, 3.0f); s[5] = std::numeric_limits<float>::infinity(); s[6] = 0.0f;

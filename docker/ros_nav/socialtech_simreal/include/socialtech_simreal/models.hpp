@@ -202,7 +202,7 @@ public:
         const double mag = std::exp(std::log(med) + (std::log(p90) - std::log(med)) / 1.2816 * rng_.normal());
         out = rng_.uniform() < p_.nearer.at(r) ? r - mag : r + mag;
       }
-      if (out < range_min) {out = range_min;}
+      if (out < range_min) {ranges[i] = std::numeric_limits<float>::infinity(); continue;}   // no return closer than range_min (clamping it would draw a fake obstacle there)
       ranges[i] = out > range_max ? std::numeric_limits<float>::infinity() : static_cast<float>(out);
     }
   }

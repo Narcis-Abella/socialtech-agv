@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstring>
 #include <random>
+#include <stdexcept>
 
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -26,6 +27,9 @@ public:
     sensor_ = declare_parameter("sensor_xyz", std::vector<double>{0.0, 0.0, 0.28});     // pose frame (base_footprint) -> sensor
     pose_off_ = declare_parameter("pose_offset", std::vector<double>{0.0, 0.0, 0.0});    // world <- pose source frame (x, y, yaw)
     auto static_pose = declare_parameter("static_pose", std::vector<double>{});
+    if (sensor_.size() != 3 || pose_off_.size() != 3 || (!static_pose.empty() && static_pose.size() != 3)) {
+      throw std::invalid_argument("livox_mid360_sim: sensor_xyz, pose_offset and static_pose (if set) need 3 values each");
+    }
     rmin_ = declare_parameter("range_min", 0.1); rmax_ = declare_parameter("range_max", 40.0);
     sigma_ = declare_parameter("range_sigma", 0.02); refl_ = declare_parameter("reflectivity", 100);
     rng_.seed(declare_parameter("seed", 1));

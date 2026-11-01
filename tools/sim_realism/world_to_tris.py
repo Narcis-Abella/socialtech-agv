@@ -45,7 +45,8 @@ def obj(path, scale):
 
 def main():
     world, models, out = sys.argv[1], Path(sys.argv[2]), sys.argv[3]; skip = sys.argv[sys.argv.index("--skip") + 1:] if "--skip" in sys.argv else []
-    w = ET.parse(world).getroot().find("world"); tris = []; n_mesh = 0
+    w = ET.parse(world).getroot().find("world"); tris = []; n_mesh = 0; skipped = []
+    if w.findall("include"): skipped.append(f"{len(w.findall('include'))} <include> (not flattened)")
     for m in w.findall("model"):
         if m.get("name") in skip: continue
         Tm = pose(m)
@@ -53,6 +54,7 @@ def main():
             Tl = Tm @ pose(l)
             for v in l.findall("visual"):
                 g = v.find("geometry"); T = Tl @ pose(v); t = None
+                if g is None: skipped.append(f"visual without <geometry> in {m.get('name')}"); continue
                 if g.find("box") is not None: t = box(*[float(x) for x in g.find("box/size").text.split()])
                 elif g.find("plane") is not None:
                     sx, sy = [float(x) for x in g.find("plane/size").text.split()]; t = box(sx, sy, 1e-3) + np.array([0, 0, -5e-4])   # thin slab, normal +z as in the world
@@ -60,12 +62,13 @@ def main():
                     me = g.find("mesh"); uri = me.findtext("uri"); sc = [float(x) for x in me.findtext("scale", "1 1 1").split()]
                     assert uri.startswith("model://") and uri.endswith(".obj"), uri
                     t = obj(models / uri[len("model://"):], np.array(sc)); n_mesh += 1
-                if t is None: continue
+                if t is None: skipped.append(f"unsupported geometry {[c.tag for c in g]} in {m.get('name')}"); continue
                 tris.append((t.reshape(-1, 3) @ T[:3, :3].T + T[:3, 3]).reshape(-1, 3, 3))
     a = np.concatenate(tris).astype("<f4")
     with open(out, "wb") as f: f.write(b"TRIS"); f.write(struct.pack("<I", len(a))); f.write(a.tobytes())
     lo, hi = a.reshape(-1, 3).min(0), a.reshape(-1, 3).max(0)
     print(f"{len(a)} triangles ({n_mesh} meshes), bounds {np.round(lo, 2)} .. {np.round(hi, 2)} -> {out}")
+    for s in skipped: print(f"WARNING: skipped {s}: the simulated lidar does not see it", file=sys.stderr)
 
 
 if __name__ == "__main__":
