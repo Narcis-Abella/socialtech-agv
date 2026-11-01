@@ -13,6 +13,7 @@ normalize_flags NAV BASE   # NAV=0 / BASE=0 mean off (a non-empty test used to a
 
 if [[ ${1:-} == --inside ]]; then   # runs in the container
   source /ros_env.sh
+  source "$REPO/ops/fastlio_check.sh"
   # ~/nav_overlay: patched RPP (rotate_to_heading_dist_tol), scan_median, gn_loc, built with colcon in this image; not part of it
   if [[ -f /ov/install/setup.bash ]]; then source /ov/install/setup.bash; fi
   export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-53}
@@ -24,13 +25,17 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   h=$(python3 -c "import json; print(json.load(open('/map/report.json'))['sensor_height_m'])")
   read -r qx qy qz qw < <(python3 "$NB/pose_eval.py" level --ref /map/vs/run/alidarState.txt --map /map/map.yaml)
   "$REPO/ops/livox_config.sh" >/tmp/MID360_config.json
+  FSM=${FILTER_SIZE_MAP:-0.25}; PFN=${POINT_FILTER_NUM:-2}   # env, like GYR_COV: FILTER_SIZE_MAP=0.5 POINT_FILTER_NUM=3 are the upstream values
+  [[ $FSM =~ ^[0-9]+(\.[0-9]+)?$ && $FSM != 0 && $PFN =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: FILTER_SIZE_MAP='$FSM' must be a positive number and POINT_FILTER_NUM='$PFN' a positive integer" >&2; exit 1; }
   sed -e "s|pcd_save_en:.*|pcd_save_en: false|" -e "s|map_en:.*|map_en: false|" -e "s|path_en:.*|path_en: false|" \
       -e "s|^\( *\)gyr_cov:.*|\1gyr_cov: ${GYR_COV:-0.01}|" -e "s|^\( *\)acc_cov:.*|\1acc_cov: 1.0|" -e "s|^\( *\)blind:.*|\1blind: 0.1|" \
-      -e "s|^\( *\)filter_size_map:.*|\1filter_size_map: 0.25|" -e "s|^\( *\)point_filter_num:.*|\1point_filter_num: 2|" \
+      -e "s|^\( *\)filter_size_map:.*|\1filter_size_map: $FSM|" -e "s|^\( *\)point_filter_num:.*|\1point_filter_num: $PFN|" \
       "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" >/tmp/fastlio.yaml   # gyr_cov (env GYR_COV, default 0.01: parked yaw drift -25 %, live 2026-10-31; 1.0 = the bench value) / acc_cov 1.0 (upstream 0.1 degrades in featureless corridors)
-  # filter_size_map 0.25 (upstream 0.5) + point_filter_num 2 (upstream 3): the ICP was under-constrained in pitch/roll; on replays of 3 runs the pitch wobble
-  # while driving fell 1.5-2.1 -> 0.2-0.3 deg, isolated /scan flashes -44..-79 %, CPU 17.5 -> 20.3 s per 238 s replay on the AGX (SocialTech notes/ruido_lidar_2026-10-31.md)
-  grep -q "filter_size_map: 0.25" /tmp/fastlio.yaml && grep -q "point_filter_num: 2" /tmp/fastlio.yaml || { echo "FAIL: the FAST-LIO config edit did not apply" >&2; exit 1; }
+  # filter_size_map 0.25 (upstream 0.5) + point_filter_num 2 (upstream 3), env FILTER_SIZE_MAP / POINT_FILTER_NUM (0.5 / 3 go back). Evidence: replays of 3 live passes of
+  # one house (238 s each, deterministic, one replay per condition), not a run on the robot. Hypothesis: the ICP was weakly constrained in pitch/roll. In them the pitch
+  # wobble while driving fell 1.5-2.1 -> 0.2-0.3 deg, isolated /scan flashes -44..-79 %, FAST-LIO CPU 17.5 -> 20.3 s per 238 s replay ON THE AGX ONLY: not measured on
+  # the NX or the Nano, where a denser map and 1 of 2 points may not keep up with the 10 Hz of the lidar (SocialTech notes/ruido_lidar_2026-10-31.md).
+  fastlio_check /tmp/fastlio.yaml filter_size_map="$FSM" point_filter_num="$PFN" gyr_cov="${GYR_COV:-0.01}" acc_cov=1.0 blind=0.1 || { echo "FAIL: the FAST-LIO config edit did not apply" >&2; exit 1; }
   echo "sensor height $h m; level quaternion $qx $qy $qz $qw; DDS $DDS_IFACE -> $PEER (domain $ROS_DOMAIN_ID)"
   launch=nav_live; extra=()
   if [[ -n ${NAV:-} ]]; then   # navigation: Nav2 params of the sim + the real robot's differences
