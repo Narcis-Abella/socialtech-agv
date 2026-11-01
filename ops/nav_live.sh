@@ -11,6 +11,8 @@
 set -eo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 NB=$REPO/tools/nav_bench
+source "$REPO/ops/flags.sh"
+normalize_flags NAV BASE   # NAV=0 / BASE=0 mean off (a non-empty test used to arm Nav2 and the Tracer base)
 
 if [[ ${1:-} == --inside ]]; then   # runs in the container
   source /ros_env.sh
@@ -32,17 +34,30 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   launch=nav_live; extra=()
   if [[ -n ${NAV:-} ]]; then   # navigation: Nav2 params of the sim + the real robot's differences
     python3 "$REPO/ops/merge_params.py" "$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml" "$REPO/ops/nav2_robot_overrides.yaml" >/tmp/nav2_params.yaml
-    python3 "$REPO/ops/nav_start_when_localized.py" &   # lifetime = the container's (the launch below is exec'd)
+    set -m   # job control: a background job of a non-interactive shell ignores SIGINT, and the recorder needs one to write its metadata.yaml
+    python3 "$REPO/ops/nav_start_when_localized.py" &   # lifetime = the container's
     # Everything needed to judge a run offline (and to replay FAST-LIO on it: /Odometry, /livox/lidar, /livox/imu): the three speed stages, what the base reports, AMCL, BT, plans, scan, local costmap, TF, goals. Not the global costmap (static, big).
     ros2 bag record -s mcap -o /runs/bag /cmd_vel_nav /cmd_vel_smoothed /cmd_vel /odom /tracer_status /amcl_pose /behavior_tree_log /collision_monitor_state /diagnostics \
       /goal_pose /plan /local_plan /received_global_plan /speed_limit /scan /local_costmap/costmap /tf /tf_static /navigate_to_pose/_action/status /navigate_to_pose/_action/feedback \
       /Odometry /livox/lidar /livox/imu /gn_loc/status /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status \
       </dev/null >/runs/bag.log 2>&1 &
+    rec=$!
     [[ -z ${BASE:-} ]] || { sleep 12; python3 "$REPO/ops/base_state.py" --require-can || echo "!!! the base IGNORES Nav2's commands until this is fixed" >&2; } &   # tracer_base has asked for CAN mode by then
     launch=nav_robot; extra=(nav2_params:=/tmp/nav2_params.yaml base:=$([[ -n ${BASE:-} ]] && echo true || echo false))
   fi
-  exec ros2 launch "$REPO/ops/$launch.launch.py" livox_config:=/tmp/MID360_config.json fastlio_params:=/tmp/fastlio.yaml map:=/map/map.yaml \
-    overrides:="$REPO/ops/live_overrides.yaml" sensor_height:="$h" level_qx:="$qx" level_qy:="$qy" level_qz:="$qz" level_qw:="$qw" "${extra[@]}"
+  args=("$REPO/ops/$launch.launch.py" livox_config:=/tmp/MID360_config.json fastlio_params:=/tmp/fastlio.yaml map:=/map/map.yaml
+    overrides:="$REPO/ops/live_overrides.yaml" sensor_height:="$h" level_qx:="$qx" level_qy:="$qy" level_qz:="$qz" level_qw:="$qw" "${extra[@]}")
+  [[ -n ${NAV:-} ]] || exec ros2 launch "${args[@]}"
+  # With the recorder running the launch is a child, not exec'd: when it ends (Ctrl-C reaches this script through tini and is forwarded) the recorder gets
+  # its SIGINT and finishes the bag. Exec'd, nobody stopped it and the bag stayed without metadata.yaml (29-31 Oct runs).
+  ros2 launch "${args[@]}" &
+  lp=$!
+  rc=0
+  trap 'kill -INT "$lp" 2>/dev/null || true' INT TERM
+  while kill -0 "$lp" 2>/dev/null; do wait "$lp" || rc=$?; done
+  kill -INT "$rec" 2>/dev/null || true
+  wait "$rec" || true
+  exit "$rc"
 fi
 
 MAP_NAME=${1:?usage: PEER=<laptop IP> nav_live.sh MAP_NAME}
