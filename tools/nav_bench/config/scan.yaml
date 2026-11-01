@@ -10,7 +10,7 @@
     angle_max: 3.14159
     angle_increment: 0.00873   # 0.5 deg
     scan_time: 0.1
-    range_min: 0.5             # FAST-LIO2 already drops points inside blind: 0.5
+    range_min: 0.1             # Mid-360 blind zone is 0.1 m. FAST-LIO2 cuts first at its own `blind`: keep that <= this value in the FAST-LIO config of the run, or this has no effect
     range_max: 60.0
     use_inf: true
     inf_epsilon: 1.0
