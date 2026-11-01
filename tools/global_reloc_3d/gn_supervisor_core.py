@@ -103,7 +103,7 @@ class Supervisor:
     def scans_flowing(self, t):
         """GN's scan counter moved in its last status, and that status is recent. It stands still when the lidar is covered (< 20 valid beams): the three covers of 2026-11-01
         stalled it from 1 s after the cover until 1 s after the uncover. A FAST-LIO2 restarted while it stands still gets no points either."""
-        return self.t_status is not None and t - self.t_status <= self.p.status_stale_s and self.stall == 0
+        return self.t_status is not None and t - self.t_status <= self.p.status_stale_s and (self.stall == 0 or self.gn_state not in ('TRACKING', 'LOST'))   # not processing scans yet (WAITING_POSE): says nothing about the lidar
 
     @property
     def hold(self):

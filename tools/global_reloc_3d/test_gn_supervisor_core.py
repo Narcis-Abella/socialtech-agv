@@ -664,6 +664,16 @@ class ScansFlowingTest(Fixture):
         run(s, t + 2, ('on_status', 'TRACKING', .9, .8, 110))
         self.assertTrue(s.scans_flowing(t + 2))
 
+    def test_a_gn_loc_waiting_for_its_pose_does_not_say_the_lidar_is_covered(self):
+        # gn_loc does not process scans until it has a pose: its counter stands still at start-up (found live, 2026-11-01: it blocked the restart of the start-up localization)
+        s = sc.Supervisor(sc.Params())
+        for k in range(4):
+            run(s, float(k), ('on_status', 'WAITING_POSE', 0., 0., 7))
+        self.assertTrue(s.scans_flowing(3.))
+        for k in range(4, 8):
+            run(s, float(k), ('on_status', 'LOST', 0., 0., 7))               # LOST does process scans: a stand-still there is the covered lidar
+        self.assertFalse(s.scans_flowing(7.))
+
     def test_without_a_recent_status_nothing_is_known_to_flow(self):
         s = sc.Supervisor(sc.Params())
         self.assertFalse(s.scans_flowing(0.))                                # no status ever
