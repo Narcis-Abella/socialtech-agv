@@ -41,9 +41,9 @@ def test_the_steps_run_in_order_with_the_arguments_each_tool_needs_and_the_map_l
         lines = log(tmp).splitlines()
         assert [l.split()[0] for l in lines] == ["run", "vs_to_ply", "ply_to_map", "map_visibility", "report"], lines
         assert lines[0] == f"run bag dir /livox/lidar /livox/imu {out} | sed: s/^\\( *\\)degrade_bound:.*/\\1degrade_bound: 100000/ | rate: 1.0", lines[0]
-        assert lines[1] == f"vs_to_ply {out}/vs/run {out}/world.ply 0.05", lines[1]
-        assert lines[2] == f"ply_to_map {out}/world.ply {out}/base --ceil 1.80 --traj {out}/vs/run/alidarState.txt", lines[2]
-        assert lines[3].startswith(f"map_visibility bag dir {out}/vs/run/alidarState.txt {out}/world.ply ") and lines[3].endswith(f"--topic /livox/lidar --ceil 1.80 --ply-out {out}/.build/map_clean.ply"), lines[3]
+        assert lines[1] == f"vs_to_ply {out}/vs/run {out}/world.ply 0.025", lines[1]
+        assert lines[2] == f"ply_to_map {out}/world.ply {out}/base --ceil 1.80 --res 0.025 --traj {out}/vs/run/alidarState.txt", lines[2]
+        assert lines[3].startswith(f"map_visibility bag dir {out}/vs/run/alidarState.txt {out}/world.ply ") and lines[3].endswith(f"--topic /livox/lidar --ceil 1.80 --res 0.025 --ply-out {out}/.build/map_clean.ply"), lines[3]
         assert (out / "map.pgm").exists() and (out / "map_clean.ply").exists() and (out / "report.json").exists()   # the cleaned cloud is the one that matches the PGM
         assert (out / "map.yaml").read_text().strip() == "image: map.pgm"      # the YAML names the final PGM, not a temporary one
 
@@ -52,6 +52,17 @@ def test_the_replay_rate_defaults_to_1x_and_can_be_changed():
     with tempfile.TemporaryDirectory() as tmp:
         assert run(tmp, Path(tmp) / "o", {"PLAY_RATE": "3"}).returncode == 0
         assert "| rate: 3" in log(tmp)
+
+
+def test_res_sets_the_cloud_thinning_and_the_cell_size_of_every_step_and_voxel_can_still_differ():
+    with tempfile.TemporaryDirectory() as tmp:
+        assert run(tmp, Path(tmp) / "o", {"RES": "0.05"}).returncode == 0
+        by_tool = {l.split()[0]: l for l in log(tmp).splitlines()}
+        assert by_tool["vs_to_ply"].endswith(" 0.05") and " --res 0.05 " in by_tool["ply_to_map"] and " --res 0.05 " in by_tool["map_visibility"], by_tool
+    with tempfile.TemporaryDirectory() as tmp:
+        assert run(tmp, Path(tmp) / "o", {"RES": "0.05", "VOXEL": "0.03"}).returncode == 0
+        by_tool = {l.split()[0]: l for l in log(tmp).splitlines()}
+        assert by_tool["vs_to_ply"].endswith(" 0.03") and " --res 0.05 " in by_tool["map_visibility"], by_tool
 
 
 def test_ceil_for_an_outdoor_map_reaches_ply_to_map_and_the_map_that_is_shipped():

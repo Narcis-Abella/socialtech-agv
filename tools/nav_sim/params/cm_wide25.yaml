@@ -1,0 +1,6 @@
+# Overlay (params_merge.py): lateral slowdown zone of 2.5 m on each side (cm_lat.yaml had 0.8 m, ratio 0.5), speed x0.3 when more than min_points scan points are inside. Upper-bound experiment for crossing pedestrians in an empty hall:
+# in a corridor the walls would keep it triggered, so this is NOT a candidate as it stands (it would need a moving-obstacle filter).
+collision_monitor:
+  ros__parameters:
+    polygons: [FootprintApproach, LateralSlowdown]
+    LateralSlowdown: {type: polygon, points: "[[1.2, 2.5], [1.2, -2.5], [-0.3, -2.5], [-0.3, 2.5]]", action_type: slowdown, slowdown_ratio: 0.3, min_points: 6, visualize: true, enabled: true}

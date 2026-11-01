@@ -1,0 +1,35 @@
+# Overlay (params_merge.py): the 2D ObstacleLayer replaced by the spatio-temporal voxel layer (STVL, ros-jazzy-spatio-temporal-voxel-layer 2.5.5) in both costmaps. Needs the sim-stvl image.
+# Parameters from spatio_temporal_voxel_layer.cpp (jazzy): voxel_decay in seconds (linear decay_model 0), clearing by frustum (model_type 1 = 3D lidar frustum) accelerated by decay_acceleration.
+# Source ranges copied from the packaged obstacle layer (marking 5 m). Frustum angles for a 360 deg 2D scan: horizontal 2*pi, vertical a few degrees (first guess, to be checked on the result).
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      plugins: [static_layer, stvl_layer, inflation_layer]
+      stvl_layer:
+        plugin: spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer
+        enabled: true
+        voxel_decay: 5.0
+        decay_model: 0
+        voxel_size: 0.05
+        combination_method: 1
+        mark_threshold: 0
+        update_footprint_enabled: true
+        observation_sources: scan
+        scan: {data_type: LaserScan, topic: /scan, marking: true, clearing: true, min_obstacle_height: 0.0, max_obstacle_height: 2.0, obstacle_range: 5.0, min_z: 0.0, max_z: 6.0,
+          model_type: 1, horizontal_fov_angle: 6.283, vertical_fov_angle: 0.1, vertical_fov_padding: 0.05, decay_acceleration: 1.0, filter: passthrough, clear_after_reading: true, expected_update_rate: 0.0, observation_persistence: 0.0}
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      plugins: [stvl_layer, inflation_layer]
+      stvl_layer:
+        plugin: spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer
+        enabled: true
+        voxel_decay: 5.0
+        decay_model: 0
+        voxel_size: 0.05
+        combination_method: 1
+        mark_threshold: 0
+        update_footprint_enabled: true
+        observation_sources: scan
+        scan: {data_type: LaserScan, topic: /scan, marking: true, clearing: true, min_obstacle_height: 0.0, max_obstacle_height: 2.0, obstacle_range: 2.5, min_z: 0.0, max_z: 6.0,
+          model_type: 1, horizontal_fov_angle: 6.283, vertical_fov_angle: 0.1, vertical_fov_padding: 0.05, decay_acceleration: 1.0, filter: passthrough, clear_after_reading: true, expected_update_rate: 0.0, observation_persistence: 0.0}

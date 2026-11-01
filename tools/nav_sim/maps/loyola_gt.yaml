@@ -1,0 +1,10 @@
+# Occupancy map of the simulated loyola world built from 184 scans taken at exactly known poses (gt_mapper.py + gt_map.py), so it is registered to the Gazebo world.
+# Rays without a return are ignored (v1 cleared them and marked ~42 m2 of empty space outside the building as free: AMCL cannot localize there). Sim commit 1eda8ea + nav2-eval, 2026-10-23.
+# The SLAM map in socialtech_nav/maps/loyola.* is rotated about 0.8 deg and shifted about (0.1, 0.15) m against that world.
+image: loyola_gt.pgm
+mode: trinary
+resolution: 0.05
+origin: [-17.762, -6.888, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

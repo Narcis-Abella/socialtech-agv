@@ -5,6 +5,7 @@
 # env:   RATE (5)  DIST (1.0 m) and DYAW (20 deg): initial-pose offset  ROS_DOMAIN_ID (79)
 #        WINDOW: WIN_T0 (header time, epoch s, of the pose to start from), WIN_START (bag offset, s) and WIN_DUR (s) replay only that stretch of the bag, with the
 #        initial pose taken from the reference at WIN_T0 (use DIST=0 DYAW=0 and a small INIT_STD): reproduces one failure in isolation
+#        COST=1: CPU (% of one core) and RSS of AMCL and map_server during the replay to <out_dir>/cost.csv and cost_summary.txt (cost_sampler.py); with RATE=1, PAR=1 for a meaningful CPU
 #        INIT_STD (m) and INIT_YAW_STD (deg, 15): publish /initialpose with that covariance instead of the set_initial_pose parameter, which gives AMCL a ZERO
 #        covariance (all particles on one pose, so only the motion noise can pull the filter to the true pose)
 set -eo pipefail
@@ -28,8 +29,10 @@ if [ -n "${INIT_STD:-}" ]; then
   timeout 30 ros2 topic pub --once -w 1 /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$msg" > "$out/initpose.log" 2>&1 \
     || { kill -KILL -- "-$launch" 2>/dev/null; echo "FAIL: /initialpose not delivered in 30 s (AMCL never became active; see $out/launch.log)"; exit 1; }
 fi
+if [ -n "${COST:-}" ]; then python3 "$tools/cost_sampler.py" sample "$out/cost.csv" --every 0.5 > "$out/cost.log" 2>&1 & cost=$!; fi   # CPU and RAM of AMCL and map_server during the replay only; use RATE=1 for CPU that means real time
 # shellcheck disable=SC2086
 ros2 bag play "$bag" --clock --rate "${RATE:-5}" --topics /scan /tf /Odometry ${WIN_START:+--start-offset $WIN_START} ${WIN_DUR:+--playback-duration $WIN_DUR} > "$out/play.log" 2>&1
+if [ -n "${cost:-}" ]; then kill -TERM "$cost" 2>/dev/null || true; wait "$cost" 2>/dev/null || true; python3 "$tools/cost_sampler.py" summarize "$out/cost.csv" > "$out/cost_summary.txt" 2>&1 || true; fi
 sleep 3; kill -TERM "$rec_a" "$rec_o" 2>/dev/null || true; wait "$rec_a" "$rec_o" 2>/dev/null || true   # see run_bench_a.sh: AMCL is silent while the robot is still
 # the launch runs in its own session (setsid): signal the whole group, or a KILLed launch leaves its nodes behind to clash with the next run on the same ROS domain
 kill -TERM -- "-$launch" 2>/dev/null || true   # background jobs ignore SIGINT; see run_bench_a.sh

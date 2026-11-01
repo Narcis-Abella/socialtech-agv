@@ -1,0 +1,37 @@
+{
+ "name": "turn_l",
+ "map": "map.yaml",
+ "world": "world.sdf",
+ "trials": [
+  {
+   "id": "l_out",
+   "start": [
+    1.0,
+    0.8,
+    0.0
+   ],
+   "goal": [
+    11.2,
+    11.0,
+    1.5707963267948966
+   ],
+   "shortest": 19.276,
+   "reachable": true
+  },
+  {
+   "id": "l_back",
+   "start": [
+    11.2,
+    11.0,
+    -1.5707963267948966
+   ],
+   "goal": [
+    1.0,
+    0.8,
+    3.141592653589793
+   ],
+   "shortest": 19.276,
+   "reachable": true
+  }
+ ]
+}

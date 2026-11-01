@@ -1,0 +1,5 @@
+# Overlay (params_merge.py) applied after fast.yaml: velocity_smoother limits, intermediate.
+velocity_smoother:
+  ros__parameters:
+    max_accel: [0.7, 0.0, 2.0]
+    max_decel: [-1.2, 0.0, -2.0]

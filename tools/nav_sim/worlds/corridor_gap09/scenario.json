@@ -1,0 +1,37 @@
+{
+ "name": "corridor_gap09",
+ "map": "map.yaml",
+ "world": "world.sdf",
+ "trials": [
+  {
+   "id": "end_to_end",
+   "start": [
+    2.0,
+    0.0,
+    0.0
+   ],
+   "goal": [
+    22.0,
+    0.0,
+    0.0
+   ],
+   "shortest": 20.0,
+   "reachable": true
+  },
+  {
+   "id": "back",
+   "start": [
+    22.0,
+    0.0,
+    3.141592653589793
+   ],
+   "goal": [
+    2.0,
+    0.0,
+    3.141592653589793
+   ],
+   "shortest": 20.0,
+   "reachable": true
+  }
+ ]
+}

@@ -1,0 +1,5 @@
+# Overlay (params_merge.py): global costmap publication at 4 Hz so every update (2 Hz) is published. With publish = update, Nav2 publishes every other update (measured: one message per 0.91 s). Publication only: what the planner sees does not change.
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      publish_frequency: 4.0
