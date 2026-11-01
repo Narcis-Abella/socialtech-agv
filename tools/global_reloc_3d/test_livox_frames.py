@@ -6,14 +6,14 @@ import numpy as np
 import livox_frames as lf
 
 
-def cdr(points, frame_id=b'livox_frame', sec=1793574000, nsec=123456789):
+def cdr(points, frame_id=b'livox_frame', sec=1793574000, nsec=123456789, pad_last=False):
     """A CustomMsg as the CDR the middleware gives: built the way the layout is documented in livox_frames.py."""
     b = bytearray(b'\x00\x01\x00\x00') + struct.pack('<iI', sec, nsec) + struct.pack('<I', len(frame_id) + 1) + frame_id + b'\x00'
     b += b'\x00' * (-(len(b) - 4) % 8)
     b += struct.pack('<QIB3x', sec * 10**9 + nsec, len(points), 0) + struct.pack('<I', len(points))
     for t, x, y, z, refl, tag, line in points:
         b += struct.pack('<I3fBBB', t, x, y, z, refl, tag, line) + b'\x00'
-    return bytes(b[:-1])                                   # no padding after the last element
+    return bytes(b if pad_last else b[:-1])                # rclpy's serializer leaves no padding after the last element, the C++ one (driver, simulator) does
 
 
 class ParseTest(unittest.TestCase):
@@ -41,6 +41,11 @@ class ParseTest(unittest.TestCase):
         _, valid, xyz = lf.parse(cdr(pts), decimate=2, extrinsic=(0., 0., 0.))
         self.assertEqual(valid, 10)
         self.assertEqual(xyz[:, 0].tolist(), [1., 3., 5., 7., 9.])
+
+    def test_the_padding_byte_after_the_last_element_is_optional(self):
+        pts = [(0, 3. + i, 0., 0., 1, 0, 0) for i in range(7)]
+        for pad in (False, True):
+            self.assertEqual(lf.parse(cdr(pts, pad_last=pad), decimate=1)[1], 7, pad)
 
     def test_a_frame_id_of_any_length_keeps_the_alignment(self):
         pts = [(0, 3., 0., 0., 1, 0, 0)]

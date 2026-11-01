@@ -2,7 +2,7 @@
 
 rclpy takes ~80 ms to deserialize one 20 000-point frame (AGX), a core at 10 Hz. The message is plain CDR (little endian): 4-byte encapsulation header, stamp (i32, u32),
 frame_id (u32 length incl. NUL + bytes), timebase u64 (8-aligned from the stream start), point_num u32, lidar_id u8, rsvd u8[3], points (u32 count, then 20-byte elements:
-offset_time u32, x y z f32, reflectivity u8, tag u8, line u8, 1 pad byte; the last element has no pad). Checked against rclpy's own serializer (test_livox_frames.py, in the image).
+offset_time u32, x y z f32, reflectivity u8, tag u8, line u8, 1 pad byte; the last element has the pad byte or not, by serializer). Checked against rclpy's own serializer and a frame the C++ simulator published (test_livox_frames.py, in the image).
 
 The filters are FAST-LIO2's preprocessing for lidar_type 1 (preprocess.cpp avia_handler): a point counts when its line < 4 and its tag says a normal return ((tag & 0x30) is 0x00 or 0x10), it is kept
 every `decimate`-th (point_filter_num) and farther than `blind` from the sensor. The cloud is moved to FAST-LIO2's body frame (the IMU) by the lidar -> IMU extrinsic (extrinsic_T, extrinsic_R = I)."""
@@ -26,7 +26,7 @@ def parse(raw, blind=.1, decimate=2, extrinsic=(-.011, -.02329, .04412)):
     off += 4 + 4                                    # point_num, lidar_id + rsvd
     n, = struct.unpack_from('<I', b, off)
     off += 4
-    if off + 20 * n - 1 != len(b):                  # the last element has no padding byte
+    if len(b) - off - 20 * n not in (-1, 0):        # the last element's padding byte is there when the C++ serializer wrote the message (the driver, the simulator), not when rclpy's did
         raise ValueError(f'frame layout mismatch: {n} points from offset {off} do not end at byte {len(b)}')
     p = np.frombuffer(b + b'\x00', POINT, n, off)
     xyz = np.stack([p['x'], p['y'], p['z']], axis=1).astype(np.float64)
