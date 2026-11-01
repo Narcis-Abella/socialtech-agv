@@ -1,0 +1,86 @@
+{
+ "map": "loyola.yaml",
+ "n": 5,
+ "seed": 20261023,
+ "clearance": 0.45,
+ "dmin": 4.0,
+ "dmax": 20.0,
+ "trials": [
+  {
+   "id": "p01",
+   "start": [
+    5.763,
+    -2.563,
+    2.783
+   ],
+   "goal": [
+    15.213,
+    1.237,
+    -2.759
+   ],
+   "euclid": 10.185,
+   "shortest": 10.788
+  },
+  {
+   "id": "p04",
+   "start": [
+    -12.087,
+    -2.213,
+    2.1
+   ],
+   "goal": [
+    -16.237,
+    0.087,
+    -0.506
+   ],
+   "euclid": 4.745,
+   "shortest": 6.227
+  },
+  {
+   "id": "p05",
+   "start": [
+    -7.837,
+    1.937,
+    1.895
+   ],
+   "goal": [
+    -13.737,
+    2.737,
+    -0.135
+   ],
+   "euclid": 5.954,
+   "shortest": 7.911
+  },
+  {
+   "id": "p06",
+   "start": [
+    -0.637,
+    0.537,
+    2.651
+   ],
+   "goal": [
+    6.213,
+    -2.413,
+    2.735
+   ],
+   "euclid": 7.458,
+   "shortest": 9.258
+  },
+  {
+   "id": "p09",
+   "start": [
+    -4.787,
+    0.387,
+    -0.835
+   ],
+   "goal": [
+    13.663,
+    -0.613,
+    3.087
+   ],
+   "euclid": 18.477,
+   "shortest": 18.607
+  }
+ ],
+ "note": "first 12 trials of loyola_s0 with the goal yaw flipped to point away from the direction of travel (start -> goal) + pi: the robot must turn ~180 deg after arriving (RPP hunting at the goal, rpp_goal_metrics.py) | debug subset: the trials that hunted in the A/B (p01 p04 p05 p06 p09)"
+}

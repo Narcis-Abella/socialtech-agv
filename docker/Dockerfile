@@ -118,14 +118,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ros-jazzy-nav2-bringup ros-jazzy-nav2-regulated-pure-pursuit-controller ros-jazzy-nav2-smac-planner
+# One RUN: the Nav2 checkout (150 MB) must not stay in a layer. The build fails if the apt Nav2 is not the version of the source: the controller is compiled against the
+# apt headers of nav2_core, nav2_costmap_2d and the rest, and a newer sync would make that an ABI mismatch that only shows on the robot.
 COPY nav2/ /ws/nav2/
-RUN python3 fetch_repos.py nav2/nav2.repos src_nav2 \
- && for p in nav2/*.patch; do echo "applying $p"; git -C src_nav2/navigation2 apply "/ws/$p" || exit 1; done
 COPY ros_nav/ /ws/src_nav/
-RUN . /opt/ros/jazzy/setup.sh \
- && colcon build --base-paths src_nav src_nav2/navigation2/nav2_regulated_pure_pursuit_controller \
+RUN --mount=type=cache,target=/tmp/build_nav \
+    --mount=type=cache,target=/tmp/log_nav \
+    python3 fetch_repos.py nav2/nav2.repos src_nav2 \
+ && for p in nav2/*.patch; do echo "applying $p"; git -C src_nav2/navigation2 apply "/ws/$p" || exit 1; done \
+ && src=$(sed -n 's|.*<version>\(.*\)</version>.*|\1|p' src_nav2/navigation2/nav2_core/package.xml | head -1) \
+ && apt=$(dpkg-query -W -f='${Version}' ros-jazzy-nav2-core | cut -d- -f1) \
+ && { [ "$src" = "$apt" ] || { echo "apt Nav2 is $apt but docker/nav2/nav2.repos pins $src: bump the commit and re-check nav2/*.patch"; exit 1; }; } \
+ && . /opt/ros/jazzy/setup.sh \
+ && colcon --log-base /tmp/log_nav build --base-paths src_nav src_nav2/navigation2/nav2_regulated_pure_pursuit_controller --build-base /tmp/build_nav \
       --packages-select socialtech_nav socialtech_costmap nav2_regulated_pure_pursuit_controller \
-      --merge-install --install-base /opt/socialtech_nav --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+      --merge-install --install-base /opt/socialtech_nav --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+ && rm -r src_nav2
 
 # ROS environment shared by the entrypoint and interactive shells (`docker exec -it ... bash`).
 # Last on purpose: editing these scripts must not invalidate the SDK and colcon layers above.

@@ -4,7 +4,8 @@ Why: with the stock controller a robot that sits at the edge of the goal checker
 rotating towards the goal point (RPP hunting at the goal), because setPlan() resets the xy-tolerance latch on every path the planner republishes.
 New parameter rotate_to_heading_dist_tol (m): when set and smaller than the goal checker's xy tolerance, the robot stops advancing and rotates to the goal
 heading at that distance, and the goal stays accepted inside the checker's tolerance; setPlan() keeps the latch for the same final pose while the
-controller is running. Unset, the behaviour is the stock one. Used by ops/nav2_robot_overrides.yaml (0.05) and tools/nav_sim/params/rpp_two_radii.yaml.
+controller is running. Unset, the behaviour is the stock one. Set it at start-up: setPlan() reads it (and goal_dist_tol_, refreshed only in
+computeVelocityCommands) without the parameter mutex, so a live reconfigure can race with the planner thread. Used by ops/nav2_robot_overrides.yaml (0.05) and tools/nav_sim/params/rpp_two_radii.yaml.
 Measured with tools/nav_sim/rpp_goal_metrics.py (hunting at the goal). Until this patch was in the image the Nano ran it from a hand-built overlay (~/nav_overlay).
 
 diff --git a/nav2_regulated_pure_pursuit_controller/include/nav2_regulated_pure_pursuit_controller/parameter_handler.hpp b/nav2_regulated_pure_pursuit_controller/include/nav2_regulated_pure_pursuit_controller/parameter_handler.hpp
