@@ -23,7 +23,10 @@ def first_per_voxel(p, vox):
     i = np.floor(p / vox).astype(np.int64)
     i -= i.min(0)
     m = i.max(0) + 1
-    _, k = np.unique((i[:, 0] * m[1] + i[:, 1]) * m[2] + i[:, 2], return_index=True)   # return_index sorts stably: k is the first occurrence
+    if int(m[0]) * int(m[1]) * int(m[2]) >= 2 ** 62:       # far outliers: the 1-D key would wrap in int64 and scramble the order
+        _, k = np.unique(i, axis=0, return_index=True)
+    else:
+        _, k = np.unique((i[:, 0] * m[1] + i[:, 1]) * m[2] + i[:, 2], return_index=True)   # return_index sorts stably: k is the first occurrence
     return p[k]
 
 

@@ -134,6 +134,8 @@ def refine_yaw(X, yaw):
     """Turn (deg) within REFINE_SPAN of `yaw` that piles the points X (N, 2) onto the fewest rows and columns: the sum of squared REFINE_BIN histogram
     counts along x and y after the turn. A wall of length L adds about L squared, so the long walls decide and furniture hardly counts; the mean over wall
     normals that gives `yaw` weights every 10 cm voxel the same and lands between walls and furniture (lab_test_01: 1.3 deg turned, 2.5 deg needed)."""
+    if len(X) < 2:
+        return float(yaw)                                         # no wall points to sharpen: keep the turn the normals gave
     X = X[::max(1, len(X) // REFINE_PTS)]
 
     def score(a):

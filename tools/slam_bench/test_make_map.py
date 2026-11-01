@@ -141,6 +141,10 @@ def test_voxel_slam_that_writes_no_poses_fails_at_its_own_step():
 
 VIS_STUB = """import argparse, os, sys
 open(os.environ["LOG"], "a").write("map_visibility_py " + " ".join(sys.argv[1:]) + "\\n")
+if "--check-engine" in sys.argv:
+    if os.environ.get("STUB_CHECK_FAIL"):
+        print("map_visibility: the C++ engine is not available here", file=sys.stderr)
+    sys.exit(1 if os.environ.get("STUB_CHECK_FAIL") else 0)
 ap = argparse.ArgumentParser()
 for name in ("bag", "poses", "ply", "prefix"):
     ap.add_argument(name)
@@ -174,13 +178,24 @@ def test_the_cleaning_step_counts_beams_in_cpp_by_default_and_the_env_can_still_
     with tempfile.TemporaryDirectory() as tmp:
         r = run_default_cleaning(tmp, Path(tmp) / "o")
         assert r.returncode == 0, r.stderr
-        line = [l for l in log(tmp).splitlines() if l.startswith("map_visibility_py")][0]
-        assert line.endswith("--engine cpp") or " --engine cpp " in line, line
+        line = [l for l in log(tmp).splitlines() if l.startswith("map_visibility_py") and "--check-engine" not in l][0]
+        assert " --engine cpp " in line, line
     with tempfile.TemporaryDirectory() as tmp:
         r = run_default_cleaning(tmp, Path(tmp) / "o", {"MAP_VISIBILITY": f"python3 {tmp}/copy/map_visibility.py --engine py"})
         assert r.returncode == 0, r.stderr
-        line = [l for l in log(tmp).splitlines() if l.startswith("map_visibility_py")][0]
-        assert "--engine py" in line and "--engine cpp" not in line, line
+        lines = [l for l in log(tmp).splitlines() if l.startswith("map_visibility_py")]
+        assert len(lines) == 1 and "--check-engine" not in lines[0], lines     # an explicit MAP_VISIBILITY is the user's choice: no preflight
+        assert "--engine py" in lines[0] and "--engine cpp" not in lines[0], lines
+
+
+def test_a_host_without_the_cpp_library_stops_before_voxel_slam_with_the_way_out():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        r = run_default_cleaning(tmp, out, {"STUB_CHECK_FAIL": "1"})
+        assert r.returncode != 0 and "FAILED at step 'preflight'" in r.stderr and "not available" in r.stderr, r.stderr    # the tool's own message reaches the user
+        lines = log(tmp).splitlines()
+        assert [l.split()[0] for l in lines] == ["map_visibility_py"] and "--check-engine" in lines[0], lines      # Voxel-SLAM never started
+        assert not (out / "map.pgm").exists()
 
 
 def test_the_flags_make_map_passes_exist_in_the_real_tools():
@@ -201,5 +216,6 @@ if __name__ == "__main__":
     test_a_failing_report_leaves_no_map()
     test_voxel_slam_that_writes_no_poses_fails_at_its_own_step()
     test_the_cleaning_step_counts_beams_in_cpp_by_default_and_the_env_can_still_choose_numpy()
+    test_a_host_without_the_cpp_library_stops_before_voxel_slam_with_the_way_out()
     test_the_flags_make_map_passes_exist_in_the_real_tools()
     print("ok")

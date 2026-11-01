@@ -396,7 +396,32 @@ def test_the_cpp_engine_counts_the_same_beams_as_numpy_from_custommsg_and_pointc
             assert np.array_equal(got[0], ref[0]) and np.array_equal(got[1], ref[1]), kind
 
 
+def test_check_engine_says_so_when_the_cpp_library_is_missing_and_accepts_numpy():
+    import os
+    old = os.environ.get("MAP_VISIBILITY_LIB")
+    os.environ["MAP_VISIBILITY_LIB"] = "/nonexistent/libsocialtech_mapping_beams.so"
+    try:
+        assert mv.check_engine(["--check-engine", "--engine", "py"]) == 0                  # numpy needs no library
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert mv.check_engine(["--check-engine", "--engine", "cpp"]) == 1             # and a missing one is reported, not a traceback
+        assert "--engine py" in err.getvalue() and "MAP_VISIBILITY_LIB" in err.getvalue(), err.getvalue()   # with the way out
+        try:
+            mv.main(["--check-engine", "--engine", "cpp"])
+            raise AssertionError("main should exit")
+        except SystemExit as e:
+            assert e.code == 1
+    finally:
+        if old is None:
+            os.environ.pop("MAP_VISIBILITY_LIB", None)
+        else:
+            os.environ["MAP_VISIBILITY_LIB"] = old
+
+
 if __name__ == "__main__":
+    test_check_engine_says_so_when_the_cpp_library_is_missing_and_accepts_numpy()
     test_the_cpp_engine_counts_the_same_beams_as_numpy_from_custommsg_and_pointcloud2_bags()
     test_unknown_floor_the_beams_crossed_is_freed_and_the_outside_stays_unknown()
     test_a_cell_the_beams_keep_hitting_is_not_freed()

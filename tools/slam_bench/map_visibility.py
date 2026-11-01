@@ -131,7 +131,7 @@ def count_beams(C, scans, extr=EXTR, margin=FILL_MARGIN):
 
 def ghost_points(P, Q, scans, min_ratio=MIN_RATIO, extr=EXTR, ceil=pm.OBST_HI, margin=RATIO_MARGIN, vox=RATIO_VOX, centroid=True):
     """bool per cloud point: it lies in an obstacle-band voxel that is a ghost. P: points in the PLY frame, Q: the same points levelled and aligned (z = height above the floor).
-    margin: HIT margin (m). The default 0.15 counts beams ending up to 15 cm from a voxel centre as hits, so a blob touching a door jamb shares the jamb's hits and stays."""
+    margin: HIT margin (m). A wide margin (0.15 was the default until 2026-10-30) counts beams ending up to 15 cm from a voxel centre as hits, so a blob touching a door jamb shares the jamb's hits and stays; the default is RATIO_MARGIN."""
     band = (Q[:, 2] > pm.OBST_LO) & (Q[:, 2] <= ceil)
     uk, inv = np.unique(np.floor(P[band] / vox).astype(np.int64), axis=0, return_inverse=True)
     inv = inv.ravel()
@@ -248,7 +248,23 @@ def bag_scans(bag, poses, topic="/livox/lidar"):
                 yield xyz[np.isfinite(xyz).all(1)], p[0], p[1]
 
 
+def check_engine(argv):
+    """`--check-engine [--engine py|cpp]`: 0 when the engine can run, 1 (with the way out on stderr) when the C++ library cannot be loaded. make_map.sh asks this
+    before the long Voxel-SLAM stage, so a host without the library fails in a second instead of after the whole replay."""
+    engine = argv[argv.index("--engine") + 1] if "--engine" in argv and argv.index("--engine") + 1 < len(argv) else "py"
+    if engine == "cpp":
+        try:
+            ctypes.CDLL(os.environ.get("MAP_VISIBILITY_LIB", "libsocialtech_mapping_beams.so"))
+        except OSError as e:
+            print(f"map_visibility: the C++ engine is not available here ({e}). Run in the mapper image, set MAP_VISIBILITY_LIB, or use "
+                  f"MAP_VISIBILITY=\"python3 map_visibility.py --engine py\".", file=sys.stderr)
+            return 1
+    return 0
+
+
 def main(argv):
+    if "--check-engine" in argv:
+        sys.exit(check_engine(argv))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("bag")
     ap.add_argument("poses")
@@ -261,7 +277,7 @@ def main(argv):
     ap.add_argument("--min-component", type=int, default=None, help="cells: occupied islands smaller than this are freed (0 = off; default: the size of 10 cells of 5 cm, in cells of --res)")
     ap.add_argument("--no-fill", action="store_true", help="skip freeing the unknown cells the beams crossed")
     ap.add_argument("--ply-out", help="also save the cloud the map shows (obstacle band, over occupied cells, in the map's frame), to inspect it")
-    ap.add_argument("--ghost-margin", type=float, default=RATIO_MARGIN, help="m, HIT margin of the ghost test (default 0.05 since 2026-10-30; 0.15 = the old maps). 0.05 frees door blobs "
+    ap.add_argument("--ghost-margin", type=float, default=RATIO_MARGIN, help="m, HIT margin of the ghost test (default 0.03 since 2026-10-31, on the centroid of the voxel; 0.05 on 2026-10-30; 0.15 = the older maps). 0.05 frees door blobs "
                     "and wall-end spurs: on mapa_20261028_01, 93 of the 128 hand-erased cells, door gap 82.5 -> 105 cm (notes/mapeo_cpp_2026-10-30.md)")
     ap.add_argument("--ghost-vox", type=float, default=RATIO_VOX, help="m, voxel of the ghost test")
     ap.add_argument("--ghost-centre", dest="ghost_centroid", action="store_false", help="test the voxel centre instead of the centroid of its points (the old maps)")
