@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>scan_median</name>
+  <version>0.1.0</version>
+  <description>drop-in replacement for pointcloud_to_laserscan whose bins keep a quantile (default the median) of the ranges instead of the closest point</description>
+  <maintainer email="narcis.abellallos@gmail.com">Narcis</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>message_filters</depend>
+  <depend>eigen</depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>
