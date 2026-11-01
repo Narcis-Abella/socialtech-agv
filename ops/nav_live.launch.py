@@ -1,13 +1,15 @@
 """Live localization on the robot: Livox driver + FAST-LIO2 + levelled planar odom + /scan + map_server + AMCL, on wall time. Same nodes as the bench
 (tools/nav_bench/launch/bench_a.launch.py, which runs on a bag's sim time) plus the driver; AMCL gets no initial pose (click 2D Pose Estimate in rviz2).
-ros2 launch nav_live.launch.py livox_config:=C.json fastlio_params:=F map:=M.yaml sensor_height:=H level_qx:=.. level_qy:=.. level_qz:=.. level_qw:=.. overrides:=O.yaml"""
+ros2 launch nav_live.launch.py livox_config:=C.json fastlio_params:=F map:=M.yaml sensor_height:=H level_qx:=.. level_qy:=.. level_qz:=.. level_qw:=.. overrides:=O.yaml
+driver:=false sim_time:=true: the simulation (tools/nav_sim/sup_sim.sh) publishes /livox/lidar and /livox/imu itself and runs on /clock; everything else is this same launch."""
 import os
 from typing import List
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration as LC
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetParameter
 from launch_ros.parameter_descriptions import ParameterValue
 
 NAV_BENCH = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "tools/nav_bench")
@@ -51,10 +53,13 @@ def supervisor_nodes():
 
 def generate_launch_description():
     args = [DeclareLaunchArgument(n) for n in ("livox_config", "fastlio_params", "map", "overrides", "sensor_height", "level_qx", "level_qy", "level_qz", "level_qw")]
+    args += [DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false")]
     return LaunchDescription(args + [
+        SetParameter(name="use_sim_time", value=True, condition=IfCondition(LC("sim_time"))),
         Node(package="livox_ros_driver2", executable="livox_ros_driver2_node", name="livox_lidar_publisher", parameters=[{
             "xfer_format": 1, "multi_topic": 0, "data_src": 0, "publish_freq": 10.0, "output_data_type": 0, "frame_id": "livox_frame",
-            "lvx_file_path": "/tmp/none.lvx", "user_config_path": LC("livox_config"), "cmdline_input_bd_code": "livox0000000001"}]),
+            "lvx_file_path": "/tmp/none.lvx", "user_config_path": LC("livox_config"), "cmdline_input_bd_code": "livox0000000001"}],
+            condition=IfCondition(LC("driver"))),
         # respawn: gn_supervisor restarts it by killing it (a fresh filter takes gravity from a still IMU and starts at z = 0, which a long blind period does not leave)
         Node(package="fast_lio", executable="fastlio_mapping", parameters=[LC("fastlio_params")], respawn=True, respawn_delay=1.0),
         Node(package="planar_odom", executable="planar_odom", parameters=[{

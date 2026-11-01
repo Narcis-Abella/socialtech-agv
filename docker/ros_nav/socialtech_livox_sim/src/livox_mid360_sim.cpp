@@ -1,4 +1,5 @@
 // Simulated Livox Mid-360: every point of the closed-form scan model (per-unit constants) is ray cast from the sensor pose at the point's own time,
+#include <atomic>
 #include <algorithm>
 // so the output carries the real motion distortion and per-point offset_time. No-return slots are emitted as zero points (as the driver does).
 #include <chrono>
@@ -34,6 +35,11 @@ public:
     sigma_ = declare_parameter("range_sigma", 0.02); refl_ = declare_parameter("reflectivity", 100);
     rng_.seed(declare_parameter("seed", 1));
     jitter_ = declare_parameter("jitter_std", 0.0);                                         // s; reported packet time vs firing (real driver ~0.0005, AR(1) 0.65), off by default
+    cover_ = declare_parameter("cover", false);                                              // ros2 param set /livox_mid360_sim cover true: a hand over the window, every slot without a return (FAST-LIO2: "No point, skip this scan!")
+    cover_cb_ = add_on_set_parameters_callback([this](const std::vector<rclcpp::Parameter> & ps) {
+        for (const auto & p : ps) {if (p.get_name() == "cover" && p.get_type() == rclcpp::ParameterType::PARAMETER_BOOL) {cover_ = p.as_bool();}}
+        rcl_interfaces::msg::SetParametersResult r; r.successful = true; return r;
+      });
     const auto custom_topic = declare_parameter("custom_topic", std::string("/livox/lidar")), pc2_topic = declare_parameter("pc2_topic", std::string(""));
     if (!custom_topic.empty()) {custom_pub_ = create_publisher<CustomMsg>(custom_topic, 10);}
     if (!pc2_topic.empty()) {pc2_pub_ = create_publisher<PointCloud2>(pc2_topic, 10);}
@@ -80,7 +86,7 @@ private:
       double az, ze; mod_.direction(k0 + i, az, ze);
       const float sze = float(std::sin(ze)), ds[3] = {sze * float(std::cos(az)), sze * float(std::sin(az)), float(std::cos(ze))};
       const float o[3] = {float(p.x) + c * sx - s * sy, float(p.y) + s * sx + c * sy, sz}, d[3] = {c * ds[0] - s * ds[1], s * ds[0] + c * ds[1], ds[2]};
-      float r = scene_.cast(o, d, float(rmin_), float(rmax_));
+      float r = cover_ ? -1.0f : scene_.cast(o, d, float(rmin_), float(rmax_));
       CustomPoint & q = msg.points[i];
       q.offset_time = uint32_t(std::max(0.0, off + jit) * 1e9); q.line = uint8_t((k0 + i) & 3); q.tag = 0;
       if (r >= 0 && (r += noise(rng_)) >= float(rmin_)) {q.x = r * ds[0]; q.y = r * ds[1]; q.z = r * ds[2]; q.reflectivity = uint8_t(refl_); ++nvalid;}
@@ -113,6 +119,7 @@ private:
   }
 
   livoxsim::Model mod_; livoxsim::Scene scene_; livoxsim::PoseTrack track_;
+  std::atomic<bool> cover_{false}; rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr cover_cb_;
   std::string frame_id_; std::vector<double> sensor_, pose_off_, static_; double rmin_, rmax_, sigma_; int refl_;
   std::mt19937_64 rng_; double t_stream_ = -1, jitter_ = 0, jit_ = 0; uint64_t frame_ = 0;
   double sum_ms_ = 0, max_ms_ = 0; uint64_t valid_ = 0, total_ = 0; int n_stat_ = 0;
