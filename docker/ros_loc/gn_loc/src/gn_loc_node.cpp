@@ -1,7 +1,7 @@
 // gn_loc: a lifecycle node (as nav2_amcl) that computes map->odom by Gauss-Newton scan-to-map tracking, standing where nav2_amcl stands.
 // configure: parameters, TF, subscriptions (map, initialpose, scan through the MessageFilter). activate: publishers and the status timer. Scans are ignored while not active.
 // In: scan (LaserScan, in the base frame), map (OccupancyGrid, latched), initialpose (PoseWithCovarianceStamped; its covariance is the prior), TF odom->base.
-// Out: TF map->odom (scan stamp + tf_tolerance), amcl_pose (so listeners of AMCL's pose keep working), gn_loc/status (String, 1 Hz),
+// Out: TF map->odom (scan stamp + tf_tolerance), amcl_pose (so listeners of AMCL's pose keep working), gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, one per scan, same text),
 //      gn_loc/need_reloc (Bool, latched, on change): true after reloc_after_s in LOST, for whoever starts the global relocalizer; its /initialpose ends LOST.
 // Scans wait in a tf2_ros::MessageFilter until odom->base exists at their stamp (as in nav2_amcl); nothing is dropped for being ahead of the odometry.
 #include <atomic>
@@ -123,6 +123,7 @@ protected:
 
     pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("amcl_pose", rclcpp::QoS(1).transient_local().reliable());
     status_pub_ = create_publisher<std_msgs::msg::String>("gn_loc/status", 1);
+    fit_pub_ = create_publisher<std_msgs::msg::String>("gn_loc/scan_fit", 10);
     reloc_pub_ = create_publisher<std_msgs::msg::Bool>("gn_loc/need_reloc", rclcpp::QoS(1).transient_local().reliable());
     map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
       "map", rclcpp::QoS(1).transient_local().reliable(), [this](nav_msgs::msg::OccupancyGrid::ConstSharedPtr m) {onMap(*m);});
@@ -141,6 +142,7 @@ protected:
   {
     pose_pub_->on_activate();
     status_pub_->on_activate();
+    fit_pub_->on_activate();
     reloc_pub_->on_activate();
     publishReloc(false);
     timer_ = create_wall_timer(1s, [this]() {status();});
@@ -156,6 +158,7 @@ protected:
     timer_.reset();
     pose_pub_->on_deactivate();
     status_pub_->on_deactivate();
+    fit_pub_->on_deactivate();
     reloc_pub_->on_deactivate();
     return CallbackReturn::SUCCESS;
   }
@@ -163,7 +166,7 @@ protected:
   CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override
   {
     scan_filter_.reset(); scan_sub_.reset(); init_sub_.reset(); map_sub_.reset();
-    pose_pub_.reset(); status_pub_.reset(); reloc_pub_.reset(); br_.reset(); tf_listener_.reset(); tf_buffer_.reset();
+    pose_pub_.reset(); status_pub_.reset(); fit_pub_.reset(); reloc_pub_.reset(); br_.reset(); tf_listener_.reset(); tf_buffer_.reset();
     std::lock_guard<std::mutex> lk(mtx_);
     core_.reset(); pending_init_.reset(); ratio_ = tight_ = 0; n_ = 0;
     return CallbackReturn::SUCCESS;
@@ -228,6 +231,7 @@ private:
     const double t = rclcpp::Time(m->header.stamp).seconds();
     const auto r = core_->update(t, o, m->ranges, m->angle_min, m->angle_increment);
     ratio_ = r.ratio; tight_ = r.tight;
+    publishFit(r.state);
     if (r.need_reloc != reloc_sent_) {publishReloc(r.need_reloc);}
     if (!r.Tmo) {return;}
     geometry_msgs::msg::TransformStamped out;
@@ -257,15 +261,28 @@ private:
     if (v) {RCLCPP_WARN(get_logger(), "LOST for %.0f s: asking for the global relocalizer (gn_loc/need_reloc)", prm_.reloc_after_s);}
   }
 
+  void publishFit(gn_loc::State state)   // the fit of this scan, in the status text: what the supervisor confirms a pose with (the 1 Hz status is too slow for it)
+  {
+    if (!fit_pub_ || !fit_pub_->is_activated()) {return;}
+    std_msgs::msg::String s;
+    s.data = statusText(gn_loc::name(state));
+    fit_pub_->publish(s);
+  }
+
+  std::string statusText(const char * state) const
+  {
+    char buf[128];
+    std::snprintf(buf, sizeof buf, "%s inliers %.2f tight %.2f scans %d", state, ratio_, tight_, n_);
+    return buf;
+  }
+
   void status()
   {
     // the bond heartbeat shares this executor: never wait for a scan being processed (the initial search can take a while), skip the tick instead
     std::unique_lock<std::mutex> lk(mtx_, std::try_to_lock);
     if (!lk.owns_lock() || !status_pub_ || !status_pub_->is_activated()) {return;}
     std_msgs::msg::String s;
-    char buf[128];
-    std::snprintf(buf, sizeof buf, "%s inliers %.2f tight %.2f scans %d", core_ ? gn_loc::name(core_->state()) : "WAITING_MAP", ratio_, tight_, n_);
-    s.data = buf;
+    s.data = statusText(core_ ? gn_loc::name(core_->state()) : "WAITING_MAP");
     status_pub_->publish(s);
   }
 
@@ -289,6 +306,7 @@ private:
   std::unique_ptr<tf2_ros::MessageFilter<LaserScan>> scan_filter_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr status_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr fit_pub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr reloc_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };

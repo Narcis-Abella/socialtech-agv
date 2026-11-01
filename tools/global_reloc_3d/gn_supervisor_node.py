@@ -1,6 +1,6 @@
 """ROS 2 node: supervisor of gn_loc with on-demand global relocalization (logic in gn_supervisor_core.py, relocalizer in reloc_live.py).
 
-In:  gn_loc/status (String, 1 Hz), gn_loc/need_reloc (Bool, latched), amcl_pose (GN's pose), wheel_topic (Tracer /odom; 'none' = no parked checks),
+In:  gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, per scan: confirms a pose), gn_loc/need_reloc (Bool, latched), amcl_pose (GN's pose), wheel_topic (Tracer /odom; 'none' = no parked checks),
      /livox/imu, /Odometry, /cloud_registered_body (the robot's FAST-LIO2; clouds are deserialized only while relocalizing), /initialpose (operator),
      <nav action>/_action/status of NavigateToPose and NavigateThroughPoses.
 Out: /initialpose (only a relocalized pose), gn_supervisor/state (String JSON, latched), /diagnostics.
@@ -72,6 +72,7 @@ class SupervisorNode(Node):
         self.diag_pub = self.create_publisher(DiagnosticArray, '/diagnostics', 10)
         self.cancel = {a: self.create_client(CancelGoal, f'/{a}/_action/cancel_goal') for a in ACTIONS}
         self.create_subscription(String, 'gn_loc/status', self.on_status, 10)
+        self.create_subscription(String, 'gn_loc/scan_fit', self.on_scan_fit, 10)
         self.create_subscription(Bool, 'gn_loc/need_reloc', lambda m: self.core.on_need_reloc(self.mono(), m.data), LATCHED)
         self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose', self.on_gn_pose, LATCHED)
         self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.on_initialpose, 10)
@@ -93,6 +94,13 @@ class SupervisorNode(Node):
             self.core.on_status(self.mono(), f[0], float(f[2]), float(f[4]), int(f[6]))
         except (IndexError, ValueError):
             self.get_logger().warn(f'unparsed gn_loc/status: {m.data!r}', throttle_duration_sec=10.)
+
+    def on_scan_fit(self, m):
+        f = m.data.split()            # same text as the status
+        try:
+            self.core.on_scan_fit(self.mono(), f[0], float(f[2]), float(f[4]))
+        except (IndexError, ValueError):
+            self.get_logger().warn(f'unparsed gn_loc/scan_fit: {m.data!r}', throttle_duration_sec=10.)
 
     def on_gn_pose(self, m):
         p = m.pose.pose

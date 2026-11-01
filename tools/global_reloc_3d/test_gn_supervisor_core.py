@@ -4,6 +4,15 @@ import unittest
 import gn_supervisor_core as sc
 
 
+class Supervisor(sc.Supervisor):
+    """The node feeds the supervisor two streams from gn_loc: the 1 Hz status (heartbeat, alarms) and one fit sample per scan (confirmation). The tests that only
+    describe 1 Hz statuses mean both: every status that carries a new scan is also one sample."""
+    def on_status(self, t, state, inliers, tight, scans=None):
+        super().on_status(t, state, inliers, tight, scans)
+        if self.stall == 0:
+            self.on_scan_fit(t, state, inliers, tight)
+
+
 def run(s, t, *events):
     """Feed (method, args...) events at time t, then tick; return the actions emitted."""
     for e in events:
@@ -24,7 +33,7 @@ class Fixture(unittest.TestCase):
         return t0 + n
 
     def new(self, **kw):
-        s = sc.Supervisor(sc.Params(**kw))
+        s = Supervisor(sc.Params(**kw))
         t = self.tracking(s, 0.)
         self.assertEqual(s.state, 'MONITOR')
         return s, t
@@ -32,7 +41,7 @@ class Fixture(unittest.TestCase):
 
 class StartupTest(Fixture):
     def test_navigation_is_held_until_gn_confirms_a_pose(self):
-        s = sc.Supervisor(sc.Params())
+        s = Supervisor(sc.Params())
         self.assertTrue(s.hold)
         run(s, 0., ('on_status', 'WAITING_POSE', 0., 0.))
         run(s, 1., ('on_status', 'TRACKING', .9, .3))       # a pose that does not fit the map yet
@@ -56,27 +65,27 @@ class AutoInitTest(Fixture):
             run(s, float(k), ('on_status', 'WAITING_POSE', 0., 0.))
 
     def test_it_localizes_by_itself_after_the_wait_when_nobody_gave_a_pose(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         t, a = self.waiting(s, 0, 20)
         self.assertEqual(t, 8)
         self.assertIn(('reloc_start', 'startup_auto'), a)
         self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'startup_auto'))
 
     def test_it_can_be_switched_off(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=0.))
+        s = Supervisor(sc.Params(auto_init_s=0.))
         t, _ = self.waiting(s, 0, 60)
         self.assertIsNone(t)
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'startup'))
 
     def test_an_operator_pose_given_first_cancels_the_wait(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 3)
         run(s, 3.5, ('on_operator_pose', (1., 2., 0.)))
         t, _ = self.waiting(s, 4, 30)
         self.assertIsNone(t)
 
     def test_an_operator_pose_during_the_auto_init_aborts_it_and_wins(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
         self.hold(s, 9, 11)
         a = run(s, 12., ('on_operator_pose', (1., 2., 0.)))
@@ -84,7 +93,7 @@ class AutoInitTest(Fixture):
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
 
     def test_the_accepted_pose_is_published_and_confirmed_without_the_operator(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
         self.hold(s, 9, 19)
         a = run(s, 20., ('on_reloc_result', True, (1., 2., .3), 'accepted'))
@@ -94,7 +103,7 @@ class AutoInitTest(Fixture):
         self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
 
     def test_two_rejections_ask_the_operator(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
         self.hold(s, 9, 19)
         run(s, 20., ('on_reloc_result', False, None, 'ambiguous'))
@@ -107,7 +116,7 @@ class AutoInitTest(Fixture):
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
 
     def test_a_pose_gn_does_not_confirm_asks_the_operator(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
         self.hold(s, 9, 19)
         run(s, 20., ('on_reloc_result', True, (1., 2., .3), 'accepted'))
@@ -117,7 +126,7 @@ class AutoInitTest(Fixture):
         self.assertEqual(s.reason, 'needs_operator:gn_not_confirmed')
 
     def test_gn_settling_by_itself_is_not_overridden(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         seen = []
         for k in range(15):                                               # TRACKING since the start, the fit still poor: gn_loc is settling, not waiting
             seen += kinds(run(s, float(k), ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (1., 2., 0.))))
@@ -125,7 +134,7 @@ class AutoInitTest(Fixture):
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'startup'))
 
     def test_a_tracking_that_never_confirms_is_localized_after_a_bounded_wait(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         t = None
         for k in range(40):                                               # TRACKING with a poor fit for ever: the start-up has no timeout of its own
             if 'reloc_start' in kinds(run(s, float(k), ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (1., 2., 0.)))):
@@ -134,7 +143,7 @@ class AutoInitTest(Fixture):
         self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'startup_auto'))
 
     def test_leaving_the_auto_init_through_a_verification_forgets_it(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
         run(s, 9., ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))   # gn_loc got there by itself meanwhile
         run(s, 10., ('on_reloc_result', True, (1., 2., 0.), 'accepted'))
@@ -411,7 +420,7 @@ class StarvedScanTest(Fixture):
         self.assertEqual(s.reason, 'gn_no_scans')
 
     def test_confirmation_needs_new_scans(self):
-        s = sc.Supervisor(sc.Params())
+        s = Supervisor(sc.Params())
         self.statuses(s, 0., 6, .9, .8, scans0=50, step=0)
         self.assertEqual(s.state, 'CONFIRMING')
         self.statuses(s, 6., 4, .9, .8, scans0=60)
@@ -517,6 +526,78 @@ class MovedWhileConfirmingTest(Fixture):
         for k in range(2, 6):
             run(s, t + k, ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (3., 4., 0.)))      # moved and GN lost its quality
         self.assertEqual(s.state, 'CONFIRMING')
+
+
+class ScanRateConfirmTest(Fixture):
+    """Confirmation counts one sample per GN scan (~10 Hz): a run of good samples at least confirm_s long, so the relocalized pose is released ~1 s after GN takes it, not after three 1 Hz statuses."""
+    def relocalized(self, pose=(2.5, 2., 0.)):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', .1, .1))
+        run(s, t + 1, ('on_reloc_result', True, pose, 'accepted'))
+        self.assertEqual(s.state, 'CONFIRMING')
+        return s, t + 1
+
+    def scan(self, s, t, pose=(2.5, 2., 0.), tight=.8, state='TRACKING'):
+        self.n = getattr(self, 'n', 0) + 1
+        if self.n % 10 == 1:                                                 # gn_loc keeps publishing its 1 Hz status (silence would be gn_status_stale)
+            sc.Supervisor.on_status(s, t, state, .9, tight, self.n)
+        return run(s, t, ('on_scan_fit', state, .9, tight), ('on_gn_pose', pose))
+
+    def test_a_second_of_good_scans_confirms(self):
+        s, t = self.relocalized()
+        t0 = t + .6                                                          # confirm_lag_s = 0.5
+        for k in range(10):
+            self.scan(s, t0 + .1 * k)
+        self.assertEqual(s.state, 'CONFIRMING')                              # 0.9 s of samples: not yet
+        self.scan(s, t0 + 1.0)
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+
+    def test_confirmation_takes_about_a_second_not_three(self):
+        s, t = self.relocalized()
+        k = 0
+        while s.state == 'CONFIRMING' and k < 100:
+            self.scan(s, t + .1 * k)
+            k += 1
+        self.assertEqual(s.state, 'MONITOR')
+        self.assertLess(.1 * k, 1.8)
+
+    def test_one_bad_scan_restarts_the_run(self):
+        s, t = self.relocalized()
+        t0 = t + .6
+        for k in range(8):
+            self.scan(s, t0 + .1 * k)
+        self.scan(s, t0 + .8, tight=.3)                                      # a poor fit
+        for k in range(9, 19):
+            self.scan(s, t0 + .1 * k)
+        self.assertEqual(s.state, 'CONFIRMING')                              # 1.0 s since the bad one has not passed
+        self.scan(s, t0 + 1.9)
+        self.assertEqual(s.state, 'MONITOR')
+
+    def test_samples_within_the_lag_of_the_pose_do_not_count(self):
+        s, t = self.relocalized()
+        for k in range(1, 5):                                                # 0.1 ... 0.4 s after the pose: they may describe a scan before it
+            self.scan(s, t + .1 * k)
+        self.assertEqual(s.state, 'CONFIRMING')
+        self.assertEqual(s.good, 0)
+
+    def test_a_jump_to_another_pose_restarts_the_run_and_never_confirms(self):
+        s, t = self.relocalized()
+        for k in range(6, 40):
+            self.scan(s, t + .1 * k, pose=(6., 2., 0.))                      # a good fit far from the relocalizer's pose
+        self.assertNotEqual(s.state, 'MONITOR')
+
+    def test_the_1_hz_status_alone_does_not_confirm(self):
+        s, t = self.relocalized()
+        for k in range(1, 10):
+            sc.Supervisor.on_status(s, t + k, 'TRACKING', .9, .8, k)         # the heartbeat, without the scan stream
+            run(s, t + k, ('on_gn_pose', (2.5, 2., 0.)))
+        self.assertNotEqual(s.state, 'MONITOR')
+
+    def test_a_bad_status_alarm_is_still_the_status_stream_s(self):
+        s, t = self.new()
+        for k in range(5):
+            run(s, t + k, ('on_status', 'TRACKING', .9, .2, 100 + k), ('on_gn_pose', (1., 2., 0.)))
+        self.assertEqual(s.state, 'RELOCALIZING')                            # bad_stop_s alarm, unchanged by the scan stream
 
 
 class FailedRetryTest(Fixture):
@@ -666,7 +747,7 @@ class ScansFlowingTest(Fixture):
 
     def test_a_gn_loc_waiting_for_its_pose_does_not_say_the_lidar_is_covered(self):
         # gn_loc does not process scans until it has a pose: its counter stands still at start-up (found live, 2026-11-01: it blocked the restart of the start-up localization)
-        s = sc.Supervisor(sc.Params())
+        s = Supervisor(sc.Params())
         for k in range(4):
             run(s, float(k), ('on_status', 'WAITING_POSE', 0., 0., 7))
         self.assertTrue(s.scans_flowing(3.))
@@ -675,7 +756,7 @@ class ScansFlowingTest(Fixture):
         self.assertFalse(s.scans_flowing(7.))
 
     def test_without_a_recent_status_nothing_is_known_to_flow(self):
-        s = sc.Supervisor(sc.Params())
+        s = Supervisor(sc.Params())
         self.assertFalse(s.scans_flowing(0.))                                # no status ever
         run(s, 0., ('on_status', 'TRACKING', .9, .8, 100))
         self.assertTrue(s.scans_flowing(1.))
@@ -684,7 +765,7 @@ class ScansFlowingTest(Fixture):
 
 class GoalHoldTest(Fixture):
     def test_a_goal_active_at_start_up_is_cancelled(self):
-        s = sc.Supervisor(sc.Params())
+        s = Supervisor(sc.Params())
         self.assertIn('cancel', kinds(run(s, 0., ('on_goal_status', 'navigate_to_pose', True))))
 
     def test_an_active_goal_is_cancelled_again_until_it_stops(self):

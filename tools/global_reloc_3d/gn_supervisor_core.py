@@ -26,7 +26,8 @@ class Params:
                                      # log the real distribution on the robot first (H-plan) and raise it if it stops without cause
     scan_stall_n: int = 2            # consecutive statuses with GN's scan counter unchanged -> stop (no /scan reaches GN: its status repeats old values)
     recancel_s: float = 1.           # while held, cancel again this often as long as a goal is still active (a cancel request can be lost)
-    confirm_n: int = 3               # consecutive good statuses (1 Hz) after a pose
+    confirm_n: int = 3               # a pose is confirmed by a run of at least this many consecutive good GN scans (one sample per scan, ~10 Hz)...
+    confirm_s: float = 1.            # ...that also lasts this long: ~1 s after GN takes the pose (three 1 Hz statuses took 3-4 s)
     confirm_lag_s: float = .5        # statuses this soon after the pose may describe a scan before it
     confirm_timeout_s: float = 15.
     agree_xy: float = .30            # relocalizer vs GN: the wrong-acceptance bounds of the relocalizer's protocol (02-protocolo-evaluacion.md)
@@ -76,7 +77,8 @@ class Supervisor:
         self.gn_state = None
         self.gn_good = False            # last status: TRACKING with the acceptance consistency
         self.t_status = None
-        self.status_new = False
+        self.samples = []               # (t, good) per GN scan, kept while CONFIRMING; counted in tick(), after the pose of the same cycle (fit and pose arrive independently)
+        self.t_good0 = None             # when the current run of good samples began
         self.t_lost = None
         self.pose = None                # newest GN pose and when
         self.t_gn_pose = -math.inf
@@ -141,9 +143,13 @@ class Supervisor:
             self.t_lost = self.t_lost if self.t_lost is not None else t
         else:
             self.t_lost = None
-        self.status_new = True          # counted in tick(), after the pose of the same cycle (status and pose arrive independently)
         if not self.gn_good:
             self.anchor, self.t_drift = None, None
+
+    def on_scan_fit(self, t, state, inliers, tight):
+        """The fit of one GN scan (gn_loc/scan_fit, ~10 Hz): the only input that confirms a pose. The 1 Hz status stays the heartbeat of the alarms."""
+        if self.state == 'CONFIRMING':
+            self.samples.append((t, state == 'TRACKING' and inliers >= self.p.min_inliers and tight >= self.p.accept_tight))
 
     def on_need_reloc(self, t, flag):
         if flag and self.state in ('MONITOR', 'VERIFYING'):      # VERIFYING: a latched edge, not delivered again, the parked check must not swallow it
@@ -207,7 +213,7 @@ class Supervisor:
         self.go(t, state, why)
 
     def confirm(self, t, target, why):
-        self.target, self.t_pose, self.good, self.locked = target, t, 0, False
+        self.target, self.t_pose, self.good, self.locked, self.samples, self.t_good0 = target, t, 0, False, [], None
         self.timeout = t + self.p.confirm_timeout_s
         self.go(t, 'CONFIRMING', why)
 
@@ -240,24 +246,30 @@ class Supervisor:
             self.attempts, self.retries = 0, self.retries + 1
             return self.start_reloc(t, 'failed_retry')
         if self.state != 'CONFIRMING':
-            self.status_new = False
+            self.samples = []
         if self.t_status is not None and t - self.t_status > p.status_stale_s and self.state != 'FAILED':
             if self.state in ('RELOCALIZING', 'VERIFYING'):
                 self.actions.append(('reloc_abort',))
             self.cancel(t)
             return self.go(t, 'FAILED', 'gn_status_stale')
         if self.state == 'CONFIRMING':
-            if self.status_new and self.t_status >= self.t_pose + p.confirm_lag_s:
+            for ts, ok in self.samples:
+                if ts < self.t_pose + p.confirm_lag_s:       # this soon after the pose it may describe a scan before it
+                    continue
                 fresh = self.pose is not None and self.t_gn_pose >= self.t_pose + p.confirm_lag_s
                 xy, yaw = (p.track_xy, p.track_yaw_deg) if self.locked else (p.agree_xy, p.agree_yaw_deg)
                 close = self.target is None or (fresh and agree(self.pose, self.target, xy, yaw))
-                self.good = self.good + 1 if self.gn_good and close else 0
-                if self.good and self.target is not None:
-                    self.target, self.locked = self.pose, True      # GN took the relocalizer's pose: it is followed from here, so a robot pushed meanwhile is not a failure, a jump is
-            self.status_new = False
-            if self.good >= p.confirm_n:
-                self.target = None
-                return self.go(t, 'MONITOR', 'confirmed')
+                if ok and close:
+                    self.t_good0 = ts if not self.good else self.t_good0
+                    self.good += 1
+                    if self.target is not None:
+                        self.target, self.locked = self.pose, True      # GN took the relocalizer's pose: it is followed from here, so a robot pushed meanwhile is not a failure, a jump is
+                    if self.good >= p.confirm_n and ts - self.t_good0 >= p.confirm_s:
+                        self.target = None
+                        return self.go(t, 'MONITOR', 'confirmed')
+                else:
+                    self.good = 0
+            self.samples = []
             if self.reason != 'startup' and t > self.timeout:
                 return self.fail(t, 'gn_not_confirmed')
             return
