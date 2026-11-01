@@ -1,0 +1,10 @@
+# Output of the CURRENT pipeline (ply_to_map.py + map_visibility.py --engine cpp, tools of main a327b50) on the frozen inputs of
+# mapa_20261030_01_opt / bag mapeo_20261030_2110. Two runs on the AGX (2026-11-01, socialtech:mapper-pr2) gave identical hashes.
+# inputs (sha256)
+d21695720c547b30c0b4076fc5f58cb05285f5f3e0400e14f2c2666bfb0ca9a4  world.ply
+c2839121457ac464b07329ced54e4ff3471ac74b4488d80267db3332c853ea4a  alidarState.txt
+# outputs (sha256)
+ebb468e93f8a0497d25dc8e8e1bd680645974bd2afe11a6b30008fee43771243  map.pgm
+fa6bd1f313ef15a111ca836a8eaea3d90fdbacfc61c83f37cca8b4feaf318f5f  map.yaml
+287d822c5219e8d32a617f399d066409cf488db2f3668cb8c5d3e7130d502622  map_clean.ply   (old meaning: obstacle-band points over occupied cells)
+# facts: map.pgm 893x660, occupied 39179, free 105464, unknown 444737; map_clean.ply 592239 points
