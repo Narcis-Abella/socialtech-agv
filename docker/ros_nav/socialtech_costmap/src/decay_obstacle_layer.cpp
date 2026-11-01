@@ -3,7 +3,11 @@
 // Only cells nobody observes any more (out of range, occluded, behind the robot) age out. observation_expiry 0 (default) = the stock ObstacleLayer.
 // How a re-mark is detected without copying the base class's range/height filters: before the base update every lethal cell is demoted to a sentinel; the
 // base writes LETHAL again on the cells it marks and FREE on the ones a ray clears, so a cell still holding the sentinel afterwards was not observed this cycle.
+// It relies on ObstacleLayer of Nav2 1.3.13 (checked in its source): Costmap2D::mutex_t is a recursive_mutex and updateBounds locks it, rays clear before the
+// marking loop writes LETHAL, and rolling_window_ is protected. Re-check those three after a Nav2 upgrade.
 #include <algorithm>
+#include <mutex>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -26,6 +30,9 @@ public:
       throw std::runtime_error{"DecayObstacleLayer: failed to lock node"};
     }
     node->get_parameter(name_ + "." + "observation_expiry", expiry_);
+    if (expiry_ < 0.0) {
+      RCLCPP_WARN(logger_, "%s: observation_expiry %.1f is negative: the layer behaves as the stock ObstacleLayer", name_.c_str(), expiry_);
+    }
     // shortcut: a rolling window shifts the grid under the stamps; only the (static-size) global costmap uses expiry, so refuse it elsewhere
     if (expiry_ > 0.0 && rolling_window_) {
       throw std::runtime_error{"DecayObstacleLayer: observation_expiry needs a non-rolling costmap"};
