@@ -1,6 +1,6 @@
 """The whole post-SLAM pipeline of make_map.sh in one process: the world cloud of a Voxel-SLAM run (or a map.ply and its poses) -> level the floor once -> remove the ghosts
 (beams that go through them) -> map_clean.ply, the whole height -> the 2D map from the band 0.10-ceil of that cloud (+ the unknown cells the beams crossed) -> report.json.
-  make_map.py (--run vs/run | --cloud map.ply --poses alidarState.txt) --bag BAG --out OUT [--res 0.025] [--ceil 1.80] [--topic /livox/lidar] [--node-log OUT/node.log]
+  make_map.py (--run vs/run | --cloud map.ply --poses alidarState.txt) --bag BAG --out OUT [--res 0.025] [--voxel RES] [--ceil 1.80] [--topic /livox/lidar] [--node-log OUT/node.log]
 Outputs in OUT: map.ply (the raw SLAM cloud), map_clean.ply (ghost-free, whole height, map frame, floor z = 0), map.pgm, map.yaml, report.json."""
 import argparse
 import os
@@ -80,7 +80,8 @@ def main(argv):
     ap.add_argument("--poses", help="alidarState.txt that goes with --cloud")
     ap.add_argument("--bag", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--res", type=float, default=0.025, help="m, cell size of the map and voxel of the assembled cloud")
+    ap.add_argument("--res", type=float, default=0.025, help="m, cell size of the map")
+    ap.add_argument("--voxel", type=float, help="m, thinning of the cloud assembled from --run (default: --res)")
     ap.add_argument("--ceil", type=float, default=floor_level.OBST_HI, help="m above the floor: obstacle band ceiling (30 for an outdoor map)")
     ap.add_argument("--topic", default="/livox/lidar")
     ap.add_argument("--node-log", help="node.log of the SLAM run (default: <out>/node.log when it exists)")
@@ -89,7 +90,7 @@ def main(argv):
     out = Path(a.out)
     if a.run:
         poses_file = Path(a.run) / "alidarState.txt"
-        poses, cloud = cloud_io.assemble_world_cloud(a.run, a.res)
+        poses, cloud = cloud_io.assemble_world_cloud(a.run, a.voxel or a.res)
     else:
         if not a.poses:
             ap.error("--cloud needs --poses")
