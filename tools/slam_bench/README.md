@@ -45,6 +45,7 @@ docker run --rm --network host -v <bags>:/bags:ro -v <maps>:/out -v $PWD/tools/s
 ```
 
 `MAP_VISIBILITY="python3 /tools/map_visibility.py --engine cpp"` runs the cleaning step on all cores with `libsocialtech_mapping_beams.so` (in the `mapper` image once rebuilt; else `MAP_VISIBILITY_LIB=<path>`): on the Orin Nano 74 s instead of 26 min for a 6 min bag, byte-identical map.
+Cleaning defaults since 2026-10-31 (`notes/mapeo_optimizacion_2026-10-30.md`): ghost test on the centroid of 5 cm voxels (margin 3 cm), density halo 0.10 m / 0.10, no swept strip, Voxel-SLAM `blind` 0.1. Old behaviour: `--ghost-margin 0.15 --ghost-vox 0.10 --ghost-centre --halo-radius 0 --free-swept 0.20`; previous halo `--halo-radius 0.075 --halo-ratio 0.06`; rejected stronger halo `--halo-ratio 0.15`.
 
 Running it again into the same `<name>` replaces the earlier run, `vs/run` (poses and scans) included: copy `vs/run/alidarState.txt` away first if you still need it.
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Bag -> 2D map, inside the `mapper` image: Voxel-SLAM -> world PLY -> ply_to_map (floor, levelling, wall alignment; refuses a map whose floor does not fit the trajectory)
-# -> map_visibility (cleans the map with the raw scans; 2.5 cm cells since 2026-10-24: median position error 1 cm lower in 5 real recordings, mapping ~3x slower, AMCL +16 MB; since 2026-10-30 door blobs and the strip the robot drove over are freed, MAP_VISIBILITY="... --ghost-margin 0.15 --free-swept 0" for the old maps) -> map.pgm + map.yaml (with T_map_world) + map_clean.ply (the cloud the PGM was made from) + report.json.
+# -> map_visibility (cleans the map with the raw scans; 2.5 cm cells since 2026-10-24: median position error 1 cm lower in 5 real recordings, mapping ~3x slower, AMCL +16 MB; since 2026-10-30 door blobs are freed (and, with --free-swept 0.20, the strip the robot drove over; on until 2026-10-31, off now), MAP_VISIBILITY="... --ghost-margin 0.15 --ghost-vox 0.10 --ghost-centre --halo-radius 0" for the old maps) -> map.pgm + map.yaml (with T_map_world) + map_clean.ply (the cloud the PGM was made from) + report.json.
 # world.ply is the raw Voxel-SLAM cloud (final poses, thinned to VOXEL): no levelling, no wall alignment, no floor/ceiling removal, no cleaning.
 # usage: make_map.sh <bag_dir> <out_dir>
 # env:   LIDAR (/livox/lidar)  IMU (/livox/imu)  PLAY_RATE (1.0)  CEIL (1.80, metres above the floor; 30 for outdoor maps)  RES (0.025, m: cell size of the map and, unless VOXEL is set, the thinning of the cloud)  VOXEL (= RES)  DEGRADE_BOUND (100000)

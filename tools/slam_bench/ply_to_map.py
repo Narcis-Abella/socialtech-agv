@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from scipy.ndimage import binary_closing, label
+from scipy.ndimage import binary_closing, label, maximum_filter
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
@@ -177,11 +177,12 @@ def level_to_floor(P, min_floor=250, max_below=0.10, traj=None, align=True, min_
                                         "traj": checked, "yaw_deg": turn, "manhattan": strength, "T": T}
 
 
-def rasterize(Q, res, ceil=1.80, floor_band=0.10, min_hits=2, fill=0.30, min_component=0):
+def rasterize(Q, res, ceil=1.80, floor_band=0.10, min_hits=2, fill=0.30, min_component=0, halo=(0.0, 0.0)):
     """(grid, origin): grid[row, col] in OCC/FREE/UNK, row 0 = max y (PGM order); origin = (x, y) of the lower-left corner.
     Only floor and obstacle points count; points alone in their 1 m cell (fewer than STRAY_PTS) are dropped: stray points far away would inflate the grid.
     fill (m): free space is closed over gaps up to about this size (the floor is seen sparsely); obstacles are never overwritten, 0 = off.
-    min_component: occupied islands (8-connected) of fewer cells than this are set free (isolated specks of thin or dim objects), 0 = off."""
+    min_component: occupied islands (8-connected) of fewer cells than this are set free (isolated specks of thin or dim objects), 0 = off.
+    halo: (radius m, ratio): an obstacle cell with fewer than ratio x the points of the densest cell within radius is not occupied (the fuzz beside a wall, 100x thinner than the wall), (0, 0) = off."""
     h = Q[:, 2]
     P = Q[(h > -floor_band) & (h <= ceil)]
     ij = np.floor(P[:, :2]).astype(np.int64)
@@ -205,7 +206,12 @@ def rasterize(Q, res, ceil=1.80, floor_band=0.10, min_hits=2, fill=0.30, min_com
         y, x = np.ogrid[-r:r + 1, -r:r + 1]
         closed = binary_closing(grid == FREE, structure=(x * x + y * y <= r * r))
         grid[closed & (grid == UNK)] = FREE
-    grid[obstacle >= min_hits] = OCC
+    occ = obstacle >= min_hits
+    if halo[0] > 0:
+        r = max(1, round(halo[0] / res))
+        y, x = np.ogrid[-r:r + 1, -r:r + 1]
+        occ &= obstacle >= halo[1] * maximum_filter(obstacle, footprint=(x * x + y * y <= r * r))
+    grid[occ] = OCC
     if min_component > 1:
         lab, _ = label(grid == OCC, structure=np.ones((3, 3)))
         grid[(lab > 0) & (np.bincount(lab.ravel())[lab] < min_component)] = FREE

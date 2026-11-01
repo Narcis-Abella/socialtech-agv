@@ -169,6 +169,18 @@ def test_the_ghost_band_goes_up_to_ceil():
     assert mv.ghost_points(P, Q, scans, extr=(0, 0, 0), ceil=2.35)[n:].all()
 
 
+def test_a_voxel_centroid_is_tested_where_the_surface_is_not_where_the_voxel_centre_is():
+    scans, _ = drive(planes())
+    P, n, Q = world_cloud(scans)
+    kw = dict(extr=(0, 0, 0), margin=0.02, vox=0.1)
+    centre = mv.ghost_points(P, Q, scans, centroid=False, **kw)
+    centroid = mv.ghost_points(P, Q, scans, **kw)
+    assert centre.mean() > 0.05, centre.mean()                                        # a wall off the voxel centre by more than the margin looks like a phantom
+    assert centroid.mean() < 0.02, centroid.mean()                                    # at its own points it is hit
+    P2, n2, Q2 = world_cloud(scans, PHANTOM)
+    assert mv.ghost_points(P2, Q2, scans, centroid=True, **kw)[n2:].all()             # a phantom is still found
+
+
 def test_the_ghost_margin_reaches_the_beam_test_and_build_map():
     scans, traj = drive(planes())
     P, n, Q = world_cloud(scans, PHANTOM)
@@ -193,6 +205,7 @@ def test_free_swept_frees_the_cells_the_robot_drove_over_and_nothing_else():
     assert (g[far] == g0[far]).all()                       # the walls at |y| = 1 and the unknown sides are untouched
     scans, _ = drive(planes())
     P, n, Q = world_cloud(scans)
+    assert mv.SWEPT == 0                                   # off by default: the path can cross real structure (a table the robot drove under)
     off, _, _ = mv.build_map(P, Q, T, lambda: scans, traj, fill=False, extr=(0, 0, 0))
     on_, _, _ = mv.build_map(P, Q, T, lambda: scans, traj, fill=False, extr=(0, 0, 0), swept=0.2)
     assert (on_ == pm.FREE).sum() >= (off == pm.FREE).sum() and ((on_ == pm.OCC) <= (off == pm.OCC)).all()   # build_map applies it, and it only frees
@@ -256,7 +269,7 @@ def test_main_builds_the_map_and_the_cloud_from_a_ply_poses_and_a_bag():
             np.savetxt(tmp / "poses.txt", poses)
             args = ["bag", str(tmp / "poses.txt"), str(tmp / "world.ply")]
             mv.main(args + [str(tmp / "a"), "--ply-out", str(tmp / "a.ply")])
-            mv.main(args + [str(tmp / "b"), "--min-ratio", "0", "--no-fill"])
+            mv.main(args + [str(tmp / "b"), "--min-ratio", "0", "--no-fill", "--halo-radius", "0"])     # halo off too: it would also drop the sparse phantom
             assert (tmp / "a.pgm").exists() and (tmp / "a.yaml").exists()
             assert occupied_pixels(tmp / "b.pgm") > occupied_pixels(tmp / "a.pgm")         # the ghosts are gone from a
             assert len(pm.read_ply(tmp / "a.ply")) > 1000

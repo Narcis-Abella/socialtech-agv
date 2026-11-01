@@ -373,3 +373,18 @@ if __name__ == "__main__":
     test_obstacle_islands_smaller_than_min_component_become_free_and_walls_stay()
     test_main_min_component_flag_cleans_the_pgm()
     print("ok")
+
+
+def test_halo_drops_the_thin_fuzz_beside_a_dense_wall_and_nothing_else():
+    rng = np.random.default_rng(5)
+    wall = np.c_[rng.uniform(0, 3, 20000), rng.uniform(-0.01, 0.01, 20000), rng.uniform(0.2, 1.5, 20000)]          # wall along x at y = 0, ~170 points per 2.5 cm cell
+    fuzz = np.c_[rng.uniform(0.5, 2.5, 200), np.full(200, 0.075), rng.uniform(0.3, 1.0, 200)]                     # 200 points 7.5 cm off the wall: ~2.5 per cell
+    lone = np.c_[np.full(8, 2.0), np.full(8, 1.5), np.linspace(0.3, 0.6, 8)]                                  # a thin object far from any wall
+    Q = np.vstack([wall, fuzz, lone, [[0, -1, 0.0], [3, 2, 0.0]]])
+    plain, origin = ply_to_map.rasterize(Q, 0.025, min_hits=2, fill=0)
+    cleaned, _ = ply_to_map.rasterize(Q, 0.025, min_hits=2, fill=0, halo=(0.075, 0.15))
+    at = lambda g, x, y: g[g.shape[0] - 1 - int((y - origin[1]) / 0.025), int((x - origin[0]) / 0.025)] == ply_to_map.OCC
+    assert at(plain, 1.5, 0.075) or at(plain, 1.5, 0.1) or at(plain, 1.5, 0.05)      # the fuzz is occupied without the halo rule
+    assert not any(at(cleaned, x, y) for x in np.arange(0.6, 2.4, 0.025) for y in (0.075, 0.1))
+    assert at(cleaned, 1.5, 0.0) and at(cleaned, 2.0, 1.5)                            # the wall and the lone thin object stay
+    assert ((cleaned == ply_to_map.OCC) <= (plain == ply_to_map.OCC)).all()           # it only removes
