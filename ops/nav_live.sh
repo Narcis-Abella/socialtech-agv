@@ -20,7 +20,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   # ~/nav_overlay: optional, a colcon overlay built in this image that shadows its packages (an image built from this tree already has the patched RPP, scan_median and gn_loc). It is sourced after the image, so an old overlay wins over the image: delete it once the image is rebuilt
   if [[ -f /ov/install/setup.bash ]]; then
     source /ov/install/setup.bash
-    echo "WARN: ~/nav_overlay is sourced after the image: its packages ($(ls /ov/install/share 2>/dev/null | grep -v -E '^(colcon-core|ament_index)$' | tr '\n' ' ')) shadow the ones built in the image"
+    echo "WARN: ~/nav_overlay is sourced after the image: its packages ($(find /ov/install -mindepth 1 -maxdepth 1 -type d -printf '%f ')) shadow the ones built in the image"
   fi
   export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-53}
   # lo first: the stack's own traffic (driver -> FAST-LIO, recorder) must not ride on the link to the laptop. Pinned to DDS_IFACE alone,
