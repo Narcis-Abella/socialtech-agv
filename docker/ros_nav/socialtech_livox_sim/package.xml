@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>socialtech_livox_sim</name>
+  <version>0.1.0</version>
+  <description>Non-repetitive Livox Mid-360 for the Tracer simulation: per-unit scan-pattern table measured on a real unit, ray cast with Embree on the world triangles, CustomMsg / PointCloud2 output with per-point time</description>
+  <maintainer email="narcis.abellallos@gmail.com">Narcis</maintainer>
+  <license>GPL-2.0-only</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>livox_ros_driver2</depend>
+  <depend>libembree-dev</depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

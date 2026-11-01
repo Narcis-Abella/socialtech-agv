@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs a scenario file against Nav2 in the simulation, inside the `sim` image on the board. usage: run_trials.sh <scenario.json> <out dir> [reps]
 #   mounts: the repo tools/ at /tools, the output dir at /out.   env: PARAMS (nav2_params.yaml instead of the packaged one), MERGE (overlay yamls, space-separated, merged into it first in order, may add plugin blocks), SET (comma-separated path=value overrides of it, e.g. "amcl.ros__parameters.alpha1=0.05,amcl.ros__parameters.alpha2=0.05"), MAP (map yaml instead of the packaged loyola.yaml), SIM_SRC (hospital-agv-sim checkout to build),
-#   SIM_ARGS (extra simulation.launch.py arguments: world:=, spawn_x:=, noise_seed:=, odom_source:= ...), ROS_DOMAIN_ID (53), SIM_WAIT (45 s), NAV_TIMEOUT (180 s), EXTRA (command started after Nav2 is active), plus RUNNER (nav_sim/trials.py; nav_sim/plan_bench.py for the planner benchmark) and the env of the runner
+#   SIM_REALISM=1 (realism models of socialtech_simreal; REALISM_SEED, REALISM_ARGS), SIM_ARGS (extra simulation.launch.py arguments: world:=, spawn_x:=, noise_seed:=, odom_source:= ...), ROS_DOMAIN_ID (53), SIM_WAIT (45 s), NAV_TIMEOUT (180 s), EXTRA (command started after Nav2 is active), plus RUNNER (nav_sim/trials.py; nav_sim/plan_bench.py for the planner benchmark) and the env of the runner
 set -eo pipefail
 scenario=${1:?scenario.json}; out=${2:?out dir}; reps=${3:-1}
 source "${ROS_ENV:-/ros_env.sh}"
@@ -13,7 +13,9 @@ if ! ros2 pkg prefix hospital-agv-sim > /dev/null 2>&1; then
   colcon build --merge-install --install-base /tmp/sim_install > "$out/build.log" 2>&1
   source /tmp/sim_install/setup.bash
 fi
+case "${SIM_REALISM:-}" in ""|0|false|no) unset SIM_REALISM ;; *) export SIM_REALISM=1 ;; esac   # SIM_REALISM=0 means off. hospital-agv-sim 'sim-realism': hands /cmd_vel, /odom, /scan and /imu/data to socialtech_simreal (use SIM_ARGS "odom_source:=ground_truth")
 ros2 launch hospital-agv-sim simulation.launch.py headless:=true $SIM_ARGS > "$out/sim.log" 2>&1 &
+[ -z "${SIM_REALISM:-}" ] || ros2 launch socialtech_simreal sim_realism.launch.py seed:=${REALISM_SEED:--1} $REALISM_ARGS > "$out/realism.log" 2>&1 &   # REALISM_ARGS: outlier_scale:=0 noise_scale:=1 kick:=0.05 deadband:=0.1
 sleep "${SIM_WAIT:-45}"
 params=${PARAMS:-$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml}
 if [ -n "$MERGE" ]; then   # overlay that may add plugin blocks (params_merge.py), applied before SET
