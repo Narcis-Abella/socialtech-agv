@@ -63,6 +63,16 @@ def test_ghost_band_limits_the_judgement_and_does_not_change_the_map_above_the_o
     assert (tmp_path / "whole/map.pgm").read_bytes() == (tmp_path / "band/map.pgm").read_bytes()   # and above 1.80 m it does not reach the map
 
 
+def test_a_higher_ceil_keeps_the_corridor_ceiling_as_an_obstacle(tmp_path):
+    """CEIL (30 for an outdoor map) is the top of the obstacle band: what is between 1.80 m and it must reach the map."""
+    scans, traj = drive(planes())
+    P, n, Q = world_cloud(scans)
+    make_map.build(P, poses_of(traj), "unused", tmp_path / "low", res=0.05, count=counter(scans))
+    make_map.build(P, poses_of(traj), "unused", tmp_path / "high", res=0.05, ceil=3.0, count=counter(scans))      # the corridor ceiling is at 2.4 m
+    occupied = lambda d: int((read_pgm(tmp_path / d / "map.pgm") == grid2d.OCC).sum())
+    assert occupied("high") > occupied("low")
+
+
 def test_a_floor_that_is_not_found_stops_the_run_and_leaves_no_file(tmp_path):
     P = room(floor_pts=0)
     with pytest.raises(ValueError, match="floor"):
