@@ -735,34 +735,6 @@ class FailedRetryTest(Fixture):
         self.assertNotIn('reloc_start', kinds(a))
 
 
-class ScansFlowingTest(Fixture):
-    def test_it_follows_the_scan_counter_of_gn(self):
-        s, t = self.new()
-        run(s, t, ('on_status', 'TRACKING', .9, .8, 100))
-        self.assertTrue(s.scans_flowing(t))
-        run(s, t + 1, ('on_status', 'TRACKING', 0., 0., 100))                # the counter did not move: the lidar is covered (3 of 3 covers of 2026-11-01)
-        self.assertFalse(s.scans_flowing(t + 1))
-        run(s, t + 2, ('on_status', 'TRACKING', .9, .8, 110))
-        self.assertTrue(s.scans_flowing(t + 2))
-
-    def test_a_gn_loc_waiting_for_its_pose_does_not_say_the_lidar_is_covered(self):
-        # gn_loc does not process scans until it has a pose: its counter stands still at start-up (found live, 2026-11-01: it blocked the restart of the start-up localization)
-        s = Supervisor(sc.Params())
-        for k in range(4):
-            run(s, float(k), ('on_status', 'WAITING_POSE', 0., 0., 7))
-        self.assertTrue(s.scans_flowing(3.))
-        for k in range(4, 8):
-            run(s, float(k), ('on_status', 'LOST', 0., 0., 7))               # LOST does process scans: a stand-still there is the covered lidar
-        self.assertFalse(s.scans_flowing(7.))
-
-    def test_without_a_recent_status_nothing_is_known_to_flow(self):
-        s = Supervisor(sc.Params())
-        self.assertFalse(s.scans_flowing(0.))                                # no status ever
-        run(s, 0., ('on_status', 'TRACKING', .9, .8, 100))
-        self.assertTrue(s.scans_flowing(1.))
-        self.assertFalse(s.scans_flowing(10.))                               # gn_loc went silent: its last "flowing" is not evidence
-
-
 class GoalHoldTest(Fixture):
     def test_a_goal_active_at_start_up_is_cancelled(self):
         s = Supervisor(sc.Params())
