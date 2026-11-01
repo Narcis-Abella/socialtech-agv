@@ -35,6 +35,17 @@ def localizer_nodes(overrides):
                  parameters=[{"autostart": True, "node_names": ["map_server", "gn_loc" if gn else "amcl"]}])]
 
 
+def supervisor_nodes():
+    """SUPERVISOR=1 (ops/nav_live.sh): gn_supervisor_node.py staged in /greloc. Respawned: a restarted supervisor comes up in CONFIRMING and holds Nav2 until
+    gn_loc confirms its pose. It reads the robot's own FAST-LIO2 (/Odometry, /cloud_registered_body, /livox/imu): no second FAST-LIO (PR #14's reloc_node.py is not used)."""
+    if not os.environ.get("SUPERVISOR"):
+        return []
+    return [ExecuteProcess(name="gn_supervisor", output="screen", respawn=True, respawn_delay=2.0, cmd=[
+        "python3", "-B", "/greloc/tools/global_reloc_3d/gn_supervisor_node.py", "--ros-args",
+        "-p", f"map_xyz:={os.environ['SUP_PRIOR']}", "-p", "register_binary:=/greloc/build/register_v2", "-p", "lib_dir:=/greloc/build",
+        "-p", "wheel_topic:=/odom", "-p", "work_dir:=/runs/gn_supervisor"])]
+
+
 def generate_launch_description():
     args = [DeclareLaunchArgument(n) for n in ("livox_config", "fastlio_params", "map", "overrides", "sensor_height", "level_qx", "level_qy", "level_qz", "level_qw")]
     return LaunchDescription(args + [
@@ -50,4 +61,5 @@ def generate_launch_description():
         *localizer_nodes(LC("overrides")),
         # AMCL trail (/amcl_path) and its particles as a PoseArray (/particle_poses), which rviz2 can draw; "-" = no reference path
         ExecuteProcess(cmd=["python3", os.path.join(NAV_BENCH, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen"),
+        *supervisor_nodes(),
     ])

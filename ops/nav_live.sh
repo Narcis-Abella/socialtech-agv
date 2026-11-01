@@ -4,6 +4,9 @@
 # Keep the robot still while FAST-LIO2 initialises (~5 s); then click "2D Pose Estimate" in rviz2 at the robot's real pose and drag to its heading.
 # The odometry is levelled from the map's own Voxel-SLAM start pose (same IMU mounting, robot on the same floor); the yaw is whatever you click.
 # NAV=1 adds Nav2 (nav_robot.launch.py) with the base OFF: goals plan but nothing moves. NAV=1 BASE=1 also starts the Tracer base: then a goal MOVES THE ROBOT.
+# SUPERVISOR=1 (default off) adds gn_supervisor (branch feat/gn-reloc-supervisor, staged in GRELOC=~/greloc): when gn_loc is lost, starved of scans, silent, or
+# drifts while parked, it cancels every Nav2 goal (never publishes a velocity), relocalizes with the robot's own FAST-LIO2 and the 3D prior
+# GRELOC/prior/MAP_NAME/prior/map.xyz, and publishes /initialpose only if gn_loc disagrees. It never re-sends a goal. State: /gn_supervisor/state.
 # env: DDS_IFACE (interface towards PEER)  ROS_DOMAIN_ID (53, as the laptop scripts)  LIVOX_HOST_IP / LIVOX_LIDAR_IP  IMAGE (socialtech:robot)  MAP_DIR (~/maps)
 set -eo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -33,7 +36,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
     # Everything needed to judge a run offline (and to replay FAST-LIO on it: /Odometry, /livox/lidar, /livox/imu): the three speed stages, what the base reports, AMCL, BT, plans, scan, local costmap, TF, goals. Not the global costmap (static, big).
     ros2 bag record -s mcap -o /runs/bag /cmd_vel_nav /cmd_vel_smoothed /cmd_vel /odom /tracer_status /amcl_pose /behavior_tree_log /collision_monitor_state /diagnostics \
       /goal_pose /plan /local_plan /received_global_plan /speed_limit /scan /local_costmap/costmap /tf /tf_static /navigate_to_pose/_action/status /navigate_to_pose/_action/feedback \
-      /Odometry /livox/lidar /livox/imu \
+      /Odometry /livox/lidar /livox/imu /gn_loc/status /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status \
       </dev/null >/runs/bag.log 2>&1 &
     [[ -z ${BASE:-} ]] || { sleep 12; python3 "$REPO/ops/base_state.py" --require-can || echo "!!! the base IGNORES Nav2's commands until this is fixed" >&2; } &   # tracer_base has asked for CAN mode by then
     launch=nav_robot; extra=(nav2_params:=/tmp/nav2_params.yaml base:=$([[ -n ${BASE:-} ]] && echo true || echo false))
@@ -72,9 +75,19 @@ if [[ -n ${NAV:-} ]]; then
     echo "NAV=1: Nav2 on, base OFF: goals plan and drive nothing. Push the robot by hand."
   fi
 fi
+SUP=()
+if [[ -n ${SUPERVISOR:-} ]]; then
+  [[ ${LOCALIZER:-} != amcl ]] || die "SUPERVISOR=1 supervises gn_loc: unset LOCALIZER=amcl"
+  G=${GRELOC:-$HOME/greloc}
+  for f in tools/global_reloc_3d/gn_supervisor_node.py build/register_v2 build/libsmall_gicp.so prior/$MAP_NAME/prior/map.xyz; do
+    [[ -f $G/$f ]] || die "$G/$f missing: stage it (notes/gn_reloc_scripts/stage_supervisor.sh in the SocialTech repo)"
+  done
+  SUP=(-e SUPERVISOR=1 -e "SUP_PRIOR=/greloc/prior/$MAP_NAME/prior/map.xyz" -v "$G:/greloc:ro")
+  echo "SUPERVISOR=1: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
+fi
 RUN=${NAV_RUNS:-$HOME/nav_runs}/$(date +%Y%m%d_%H%M%S)   # persists after the container is gone: ROS node logs (log/) and, with NAV, the bag (bag/)
 mkdir -p "$RUN/log"
 echo "localizing on $MAP (Ctrl-C to stop). Logs${NAV:+ and bag} in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
 exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e BASE="${BASE:-}" -e LOCALIZER="${LOCALIZER:-}" -e GYR_COV="${GYR_COV:-0.01}" -e SCAN_CONVERTER="${SCAN_CONVERTER:-}" \
   -e DDS_IFACE="$DDS_IFACE" -e PEER="$PEER" -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e LIVOX_HOST_IP="$HOST_IP" -e LIVOX_LIDAR_IP="$LIDAR_IP" \
-  -v "$MAP:/map:ro" -v "$REPO:$REPO:ro" -v "$RUN:/runs" -v "$HOME/nav_overlay:/ov:ro" -w /tmp "$IMAGE" "$REPO/ops/nav_live.sh" --inside
+  -v "$MAP:/map:ro" -v "$REPO:$REPO:ro" -v "$RUN:/runs" -v "$HOME/nav_overlay:/ov:ro" "${SUP[@]}" -w /tmp "$IMAGE" "$REPO/ops/nav_live.sh" --inside
