@@ -5,6 +5,8 @@
 # usage: make_map.sh <bag_dir> <out_dir>
 # env:   LIDAR (/livox/lidar)  IMU (/livox/imu)  PLAY_RATE (1.0)  CEIL (1.80, metres above the floor; 30 for outdoor maps)  RES (0.025, m: cell size of the map and, unless VOXEL is set, the thinning of the cloud)  VOXEL (= RES)  DEGRADE_BOUND (100000)
 #        VOXELSLAM_RUN VS_TO_PLY PLY_TO_MAP MAP_VISIBILITY MAP_REPORT: the tool each step runs (default: the one next to this script; the tests swap them)
+#        MAP_VISIBILITY counts the beams in C++ (--engine cpp, libsocialtech_mapping_beams.so of the mapper image; same map as numpy, 24 s instead of ~11 min on the AGX for a 271 s bag).
+#        Outside the mapper image set MAP_VISIBILITY="python3 <this dir>/map_visibility.py --engine py".
 # On any failure it exits non-zero naming the step, and leaves no map.pgm / map.yaml in <out_dir>.
 set -uo pipefail
 [ $# -eq 2 ] || { echo "usage: make_map.sh <bag_dir> <out_dir>" >&2; exit 2; }
@@ -12,7 +14,7 @@ bag=$1; out=$2
 here=$(dirname "$(readlink -f "$0")")
 : "${LIDAR:=/livox/lidar}" "${IMU:=/livox/imu}" "${PLAY_RATE:=1.0}" "${CEIL:=1.80}" "${RES:=0.025}" "${VOXEL:=$RES}" "${DEGRADE_BOUND:=100000}"
 : "${VOXELSLAM_RUN:=$here/voxelslam_run.sh}" "${VS_TO_PLY:=python3 $here/vs_to_ply.py}" "${PLY_TO_MAP:=python3 $here/ply_to_map.py}"
-: "${MAP_VISIBILITY:=python3 $here/map_visibility.py}" "${MAP_REPORT:=python3 $here/map_report.py}"
+: "${MAP_VISIBILITY:=python3 $here/map_visibility.py --engine cpp}" "${MAP_REPORT:=python3 $here/map_report.py}"
 fail() { echo "make_map: FAILED at step '$1': $2" >&2; exit 1; }
 
 mkdir -p "$out" "$out/.build"

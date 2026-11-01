@@ -139,6 +139,50 @@ def test_voxel_slam_that_writes_no_poses_fails_at_its_own_step():
         assert "vs_to_ply" not in log(tmp)
 
 
+VIS_STUB = """import argparse, os, sys
+open(os.environ["LOG"], "a").write("map_visibility_py " + " ".join(sys.argv[1:]) + "\\n")
+ap = argparse.ArgumentParser()
+for name in ("bag", "poses", "ply", "prefix"):
+    ap.add_argument(name)
+for flag in ("--engine", "--topic", "--ceil", "--res", "--ply-out"):
+    ap.add_argument(flag)
+a = ap.parse_args()
+os.makedirs(os.path.dirname(a.prefix), exist_ok=True)
+open(a.prefix + ".pgm", "w").write("P5\\n")
+open(a.prefix + ".yaml", "w").write("image: " + os.path.basename(a.prefix) + ".pgm\\n")
+open(a.ply_out, "w").close()
+"""
+
+
+def run_default_cleaning(tmp, out, env_extra=None):
+    """make_map.sh copied next to a stand-in map_visibility.py, with MAP_VISIBILITY left unset: runs the script's own default for the cleaning step."""
+    tools = Path(tmp) / "tools"
+    tools.mkdir(exist_ok=True)
+    for name, body in STUBS.items():
+        (tools / name).write_text("#!/bin/bash\n" + body)
+        (tools / name).chmod(0o755)
+    copy = Path(tmp) / "copy"
+    copy.mkdir()
+    (copy / "make_map.sh").write_text(SCRIPT.read_text())
+    (copy / "map_visibility.py").write_text(VIS_STUB)
+    env = {**{k: v for k, v in os.environ.items() if k != "MAP_VISIBILITY"}, "LOG": str(Path(tmp) / "log.txt"), "VOXELSLAM_RUN": str(tools / "run.sh"),
+           "VS_TO_PLY": str(tools / "vs_to_ply.sh"), "PLY_TO_MAP": str(tools / "ply_to_map.sh"), "MAP_REPORT": str(tools / "report.sh"), **(env_extra or {})}
+    return subprocess.run(["bash", str(copy / "make_map.sh"), "bag dir", str(out)], env=env, capture_output=True, text=True)
+
+
+def test_the_cleaning_step_counts_beams_in_cpp_by_default_and_the_env_can_still_choose_numpy():
+    with tempfile.TemporaryDirectory() as tmp:
+        r = run_default_cleaning(tmp, Path(tmp) / "o")
+        assert r.returncode == 0, r.stderr
+        line = [l for l in log(tmp).splitlines() if l.startswith("map_visibility_py")][0]
+        assert line.endswith("--engine cpp") or " --engine cpp " in line, line
+    with tempfile.TemporaryDirectory() as tmp:
+        r = run_default_cleaning(tmp, Path(tmp) / "o", {"MAP_VISIBILITY": f"python3 {tmp}/copy/map_visibility.py --engine py"})
+        assert r.returncode == 0, r.stderr
+        line = [l for l in log(tmp).splitlines() if l.startswith("map_visibility_py")][0]
+        assert "--engine py" in line and "--engine cpp" not in line, line
+
+
 def test_the_flags_make_map_passes_exist_in_the_real_tools():
     ply = subprocess.run([sys.executable, str(HERE / "ply_to_map.py"), "--help"], capture_output=True, text=True).stdout
     vis = subprocess.run([sys.executable, str(HERE / "map_visibility.py"), "--help"], capture_output=True, text=True).stdout
@@ -156,5 +200,6 @@ if __name__ == "__main__":
     test_a_run_directory_that_cannot_be_removed_stops_at_its_own_step()
     test_a_failing_report_leaves_no_map()
     test_voxel_slam_that_writes_no_poses_fails_at_its_own_step()
+    test_the_cleaning_step_counts_beams_in_cpp_by_default_and_the_env_can_still_choose_numpy()
     test_the_flags_make_map_passes_exist_in_the_real_tools()
     print("ok")
