@@ -12,6 +12,7 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | `docker/robot.repos` | Third-party ROS sources, pinned by commit |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
 | `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
+| `docker/ros_mapper/` | Our packages built only into the `mapper` image (`socialtech_mapping`: the beam counting of `map_visibility.py` in C++, `--engine cpp`) |
 | `tools/` | Offline research helpers: SLAM benchmark, 2D map from a PLY, GLIM dump to PLY and config evaluation (see Tools) |
 | `tools/nav_bench/` | Localization bench (stage A): FAST-LIO2 + AMCL over a bag's own map, scored against Voxel-SLAM (see its README) |
 
@@ -65,7 +66,7 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 
 - `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
 - `tools/slam_bench/ply_to_map.py`: levelled, wall-aligned 2D map (`map_server` PGM + YAML) from a PLY of any SLAM; `--ply-out` saves the cloud it was made from; `--min-component N` frees occupied specks smaller than N cells.
-- `tools/slam_bench/map_visibility.py`: the same map cleaned with the raw scans: drops cloud points the beams mostly pass through (thin or dim specks) and frees the unknown cells the beams crossed (needs the bag, as PointCloud2 or Livox CustomMsg, and the SLAM poses).
+- `tools/slam_bench/map_visibility.py`: the same map cleaned with the raw scans: drops cloud points the beams mostly pass through (thin or dim specks) and frees the unknown cells the beams crossed (needs the bag, as PointCloud2 or Livox CustomMsg, and the SLAM poses). `--engine cpp` counts the beams in C++ (`docker/ros_mapper/socialtech_mapping`): 74 s instead of 26 min on the Orin Nano, same map; since 2026-10-30 it also frees door blobs and wall-end spurs (`--ghost-margin 0.05`) and the strip the robot drove over (`--free-swept 0.2`); `--ghost-margin 0.15 --free-swept 0` gives the old maps.
 - `tools/slam_bench/bag_check.py`: gaps in the LiDAR and IMU streams of a bag, from the recording times; run it right after recording (a scan lost while recording is gone for good and nothing warns about it).
 - `tools/slam_bench/make_map.sh`: bag to 2D map in one command inside the `mapper` image (Voxel-SLAM, `vs_to_ply.py`, `ply_to_map.py`, `map_visibility.py`); see `tools/slam_bench/README.md`.
 

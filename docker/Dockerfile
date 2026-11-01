@@ -157,3 +157,10 @@ RUN python3 fetch_repos.py mapper.repos src_mapper \
  && ldd -r /opt/socialtech/lib/voxel_slam/voxelslam > /tmp/ldd.txt \
  && if grep -E 'not found|undefined symbol' /tmp/ldd.txt; then exit 1; fi \
  && rm /tmp/ldd.txt
+
+# socialtech_mapping: the beam counting of map_visibility.py in C++ (libsocialtech_mapping_beams.so, loaded with --engine cpp). After Voxel-SLAM so a change here does not rebuild it.
+COPY ros_mapper/ src_mapper_local/
+RUN . /opt/ros/jazzy/setup.sh \
+ && colcon --log-base /tmp/log_mapper_local build --base-paths src_mapper_local --merge-install --install-base /opt/socialtech \
+      --build-base /tmp/build_mapper_local --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+ && rm -r /tmp/build_mapper_local /tmp/log_mapper_local

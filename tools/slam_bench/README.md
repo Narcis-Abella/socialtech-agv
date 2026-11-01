@@ -44,6 +44,8 @@ docker run --rm --network host -v <bags>:/bags:ro -v <maps>:/out -v $PWD/tools/s
   /tools/make_map.sh /bags/<bag_dir> /out/<name>
 ```
 
+`MAP_VISIBILITY="python3 /tools/map_visibility.py --engine cpp"` runs the cleaning step on all cores with `libsocialtech_mapping_beams.so` (in the `mapper` image once rebuilt; else `MAP_VISIBILITY_LIB=<path>`): on the Orin Nano 74 s instead of 26 min for a 6 min bag, byte-identical map.
+
 Running it again into the same `<name>` replaces the earlier run, `vs/run` (poses and scans) included: copy `vs/run/alidarState.txt` away first if you still need it.
 
 `LIDAR` and `IMU` set the topics, `CEIL=30` makes an outdoor map, `PLAY_RATE` sets the replay speed (1.0). Voxel-SLAM follows the timestamps of the data, not the clock, so the speed should not change the result as long as no message is lost: keep the board otherwise idle while mapping (Elevator01 splits its sessions differently at 3x). On an idle Orin NX, eco01 at 0.5x and at 1x gave byte-identical poses and the same PGM; with several jobs on one AGX, pose counts of the same bag varied by up to 12 %, probably from lost messages. Check `report.json` (resets, `end_to_start_m`) before trusting a map. When the robot ends where it started (our bags do), check `end_to_start_m`: 1-2 m is normal.

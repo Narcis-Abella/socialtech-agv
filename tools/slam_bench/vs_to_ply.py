@@ -19,7 +19,11 @@ def read_pcd_xyz(path):
 
 
 def first_per_voxel(p, vox):
-    _, k = np.unique(np.floor(p / vox).astype(np.int64), axis=0, return_index=True)
+    """The first point of each voxel, in (ix, iy, iz) order. A 1-D key in that same order: np.unique(axis=0) sorts structured rows, 80 % of the run on the Nano."""
+    i = np.floor(p / vox).astype(np.int64)
+    i -= i.min(0)
+    m = i.max(0) + 1
+    _, k = np.unique((i[:, 0] * m[1] + i[:, 1]) * m[2] + i[:, 2], return_index=True)   # return_index sorts stably: k is the first occurrence
     return p[k]
 
 
