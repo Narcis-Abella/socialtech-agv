@@ -315,6 +315,50 @@ class StarvedScanTest(Fixture):
         self.assertTrue(s.hold)
 
 
+class ReviewFixesTest(Fixture):
+    """Found by the code review of the supervisor PR."""
+    def test_an_operator_pose_while_parked_is_not_read_as_drift(self):
+        s, t = self.new(park_arm_s=3., park_drift_xy=.25, park_drift_hold_s=1.)
+        for k in range(6):
+            run(s, t + k, ('on_wheel', 0., 0.), ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))   # parked: the anchor is taken
+        t += 6
+        seen = kinds(run(s, t, ('on_wheel', 0., 0.), ('on_operator_pose', (5., 2., 0.))))
+        for k in range(1, 9):                                            # GN settles on the new pose and the robot stays parked
+            seen += kinds(run(s, t + k, ('on_wheel', 0., 0.), ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (5., 2., 0.))))
+        self.assertEqual(s.state, 'MONITOR')
+        self.assertNotIn('reloc_start', seen)                            # the old anchor (1, 2) must not make the re-pose look like drift
+        self.assertNotIn('cancel', seen)
+
+    def test_a_gn_that_is_neither_tracking_nor_lost_is_not_trusted(self):
+        s, t = self.new()
+        a = run(s, t, ('on_status', 'WAITING_POSE', 0., 0.))             # a restarted gn_loc waits for a pose and publishes no map->odom
+        self.assertEqual(kinds(a)[:2], ['cancel', 'reloc_start'])
+        self.assertEqual(s.reason, 'gn_not_tracking')
+
+    def test_need_reloc_during_a_parked_verification_is_not_lost(self):
+        s, t = self.new(verify_period_s=10., park_arm_s=3.)
+        for k in range(14):
+            run(s, t + k, ('on_wheel', 0., 0.), ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))
+        self.assertEqual(s.state, 'VERIFYING')
+        a = run(s, t + 14, ('on_wheel', 0., 0.), ('on_need_reloc', True))      # latched edge: it is not delivered again
+        self.assertIn('cancel', kinds(a))
+        self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'gn_need_reloc'))
+
+    def test_the_not_stopped_note_does_not_leak_into_the_retry(self):
+        s, t = self.new(stop_check_s=3.)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        run(s, t + 5, ('on_wheel', .5, 0.), ('on_status', 'LOST', 0., 0.))
+        self.assertIn('+not_stopped', s.reason)
+        s.on_reloc_result(t + 6, False, None, 'no_pose')
+        starts = [a for a in s.drain() if a[0] == 'reloc_start']
+        self.assertEqual(starts, [('reloc_start', 'gn_lost')], starts)
+
+    def test_our_own_initialpose_comes_back_as_the_same_pose_also_across_the_yaw_wrap(self):
+        self.assertTrue(sc.same_pose((1., 2., 3.14159), (1., 2., -3.14159)))       # 2 pi apart after the quaternion round trip
+        self.assertFalse(sc.same_pose((1., 2., 0.), (1.5, 2., 0.)))
+        self.assertFalse(sc.same_pose((1., 2., 0.), (1., 2., .5)))
+
+
 class GoalHoldTest(Fixture):
     def test_a_goal_active_at_start_up_is_cancelled(self):
         s = sc.Supervisor(sc.Params())

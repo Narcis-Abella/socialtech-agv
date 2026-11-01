@@ -52,6 +52,11 @@ def agree(a, b, xy, yaw_deg):
     return math.hypot(a[0] - b[0], a[1] - b[1]) <= xy and abs(math.degrees(wrap(a[2] - b[2]))) <= yaw_deg
 
 
+def same_pose(a, b):
+    """The same pose up to the quaternion round trip (yaw compared across the +-pi wrap); how the node recognises its own /initialpose coming back."""
+    return agree(a, b, 1e-3, .1)
+
+
 class Supervisor:
     def __init__(self, p=None):
         self.p = p or Params()
@@ -93,6 +98,7 @@ class Supervisor:
 
     def go(self, t, state, reason):
         self.state, self.reason, self.t_enter = state, reason, t
+        self.anchor, self.t_drift = None, None       # a new pose (operator, relocalizer) or a new phase: the old parked anchor would read the jump as drift
         self.actions.append(('state', state, reason))
 
     def cancel(self, t):
@@ -110,7 +116,7 @@ class Supervisor:
             self.t_bad = self.t_bad if self.t_bad is not None else t
         else:
             self.t_bad = None
-        if state == 'LOST':
+        if state != 'TRACKING':          # LOST, or a restarted gn_loc waiting for a pose: it publishes no map->odom either way
             self.t_lost = self.t_lost if self.t_lost is not None else t
         else:
             self.t_lost = None
@@ -121,6 +127,8 @@ class Supervisor:
     def on_need_reloc(self, t, flag):
         if flag and self.state == 'MONITOR':
             self.stop(t, 'gn_need_reloc')
+        elif flag and self.state == 'VERIFYING':      # a latched edge, not delivered again: the parked check must not swallow it
+            self.escalate(t, 'gn_need_reloc')
 
     def on_gn_pose(self, t, pose):
         self.pose, self.t_gn_pose = tuple(pose), t
@@ -153,7 +161,7 @@ class Supervisor:
             if verifying:                 # a parked check that found no pose says nothing against GN
                 return self.go(t, 'MONITOR', f'verify_no_pose_{why}')
             if self.attempts < self.p.max_attempts:
-                return self.start_reloc(t, self.reason)
+                return self.start_reloc(t, self.reason.split('+')[0])      # the '+not_stopped' note belongs to the attempt that was reported
             return self.go(t, 'FAILED', f'reloc_failed_{why}')
         if self.gn_good and self.pose is not None and agree(self.pose, pose, self.p.agree_xy, self.p.agree_yaw_deg):
             return self.go(t, 'MONITOR', 'verified_gn_agrees')
@@ -174,6 +182,13 @@ class Supervisor:
         self.actions.append(('reloc_start', why))
         self.go(t, state, why)
 
+    def escalate(self, t, why):
+        """A parked verification is running and GN cannot be trusted: stop now; the running relocalization counts as the first attempt."""
+        self.cancel(t)
+        self.attempts = 1
+        self.timeout = t + self.p.reloc_timeout_s
+        self.go(t, 'RELOCALIZING', why)
+
     def confirm(self, t, target, why):
         self.target, self.t_pose, self.good = target, t, 0
         self.timeout = t + self.p.confirm_timeout_s
@@ -182,7 +197,7 @@ class Supervisor:
     def alarm(self, t):
         """Why GN cannot be trusted now, or None."""
         if self.t_lost is not None and t - self.t_lost >= self.p.lost_stop_s:
-            return 'gn_lost'
+            return 'gn_lost' if self.gn_state == 'LOST' else 'gn_not_tracking'
         if self.t_bad is not None and t - self.t_bad >= self.p.bad_stop_s:
             return 'gn_bad_scans'
         if self.stall >= self.p.scan_stall_n and self.gn_state in ('TRACKING', 'LOST'):
@@ -228,10 +243,7 @@ class Supervisor:
             self.t_wheels_still, self.anchor, self.t_drift = None, None, None
         why = self.alarm(t)
         if self.state == 'VERIFYING' and why:                          # the parked check does not hold: an alarm meanwhile is a stop
-            self.cancel(t)
-            self.attempts = 1                                            # the running relocalization counts as the first attempt
-            self.timeout = t + p.reloc_timeout_s
-            return self.go(t, 'RELOCALIZING', why)
+            return self.escalate(t, why)
         if self.state != 'MONITOR':
             return
         if why:

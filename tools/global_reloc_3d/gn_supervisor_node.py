@@ -17,7 +17,6 @@ import os
 import time
 import traceback
 
-import numpy as np
 import rclpy
 from action_msgs.msg import GoalStatus, GoalStatusArray
 from action_msgs.srv import CancelGoal
@@ -97,8 +96,8 @@ class SupervisorNode(Node):
 
     def on_initialpose(self, m):
         p = m.pose.pose; pose = (p.position.x, p.position.y, yaw_of(p.orientation))
-        if self.own and self.mono() - self.own[1] < 2. and np.allclose(pose, self.own[0], atol=1e-4):
-            return                    # our own publication coming back
+        if self.own and self.mono() - self.own[1] < 5. and sc.same_pose(pose, self.own[0]):
+            return                    # our own publication coming back (yaw compared across the +-pi wrap; 5 s: the echo can be late under load)
         self.core.on_operator_pose(self.mono(), pose)
 
     def on_goals(self, action, m):
@@ -159,6 +158,10 @@ class SupervisorNode(Node):
                 self.publish_state('FAILED', 'internal_error', {})
             except Exception:                     # the handler itself must not take the node down
                 self.get_logger().error(f'supervisor exception in the handler: {traceback.format_exc()}')
+            try:
+                self.reloc.abort()                # a search worker must not keep burning CPU (up to 60 s) behind a FAILED supervisor
+            except Exception:
+                self.get_logger().error(f'abort after the internal error failed: {traceback.format_exc()}')
 
     def act(self, a):
         if a[0] == 'cancel':
