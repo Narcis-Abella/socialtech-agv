@@ -7,6 +7,9 @@ import numpy as np
 from bag_speeds import load
 
 d = load(sys.argv[1])
+for topic in ("/cmd_vel_nav", "/odom"):
+    if not d[topic]:
+        sys.exit(f"bag_turns: no {topic} in {sys.argv[1]} (the base was off, or Nav2 never published it): nothing to report")
 cmd = np.array(d["/cmd_vel_nav"])
 odo = np.array(d["/odom"])
 rot = cmd[(np.abs(cmd[:, 1]) < 0.02) & (np.abs(cmd[:, 2]) > 0.05)]

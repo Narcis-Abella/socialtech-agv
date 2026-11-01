@@ -1,12 +1,13 @@
 """Deep-merge ROS 2 parameter YAMLs, later files winning: merge_params.py base.yaml over.yaml ... > merged.yaml (PyYAML is in the ROS image)."""
+import copy
 import sys
 
 import yaml
 
 
 def merge(a, b):
-    for k, v in b.items():
-        a[k] = merge(a[k], v) if isinstance(v, dict) and isinstance(a.get(k), dict) else v
+    for k, v in (b or {}).items():          # an empty or comment-only YAML loads as None
+        a[k] = merge(a[k], v) if isinstance(v, dict) and isinstance(a.get(k), dict) else copy.deepcopy(v)
     return a
 
 

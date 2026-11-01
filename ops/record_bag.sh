@@ -1,7 +1,7 @@
 #!/bin/bash
 # Record a Livox Mid-360 bag (CustomMsg lidar + IMU) with the robot's own driver config, then check it for lost scans.
 #   ops/record_bag.sh [NAME]                 Ctrl-C stops (needs a tty: ssh -t)
-#   DURATION=30 ops/record_bag.sh smoke      stops by itself after 30 s (counted from the start of the recording)
+#   DURATION=30 ops/record_bag.sh smoke      stops by itself 30 s after the STILL phase (so STATIC_SECS + 30 s of bag in total)
 # The first STATIC_SECS (default 5) are announced as "STILL": the robot must not move so FAST-LIO starts from rest.
 set -euo pipefail
 
@@ -31,7 +31,7 @@ free_gb=$(df --output=avail -BG "$BAG_DIR" | tail -1 | tr -dc 0-9)
   || warn "net.core.rmem_max is $(sysctl -n net.core.rmem_max), want $RMEM_WANT: scans may be lost silently. Fix (needs sudo): sudo sysctl -w net.core.rmem_max=$RMEM_WANT"
 
 CFG=$(mktemp -d)
-trap 'rm -rf "$CFG"' EXIT
+trap 'rm -f "$CFG/MID360_config.json"; rmdir "$CFG" 2>/dev/null || true' EXIT   # the dir holds that one file: no recursive delete needed
 LIVOX_HOST_IP=$HOST_IP LIVOX_LIDAR_IP=$LIDAR_IP "$REPO/ops/livox_config.sh" >"$CFG/MID360_config.json"
 
 err_before=$(udp_rcvbuf_errors)

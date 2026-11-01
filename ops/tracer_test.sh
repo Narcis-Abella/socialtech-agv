@@ -1,6 +1,6 @@
 #!/bin/bash
 # Wheels-in-the-air test of the Tracer base over CAN, WITHOUT Nav2: does it obey /cmd_vel, and does it stop by itself when the commands stop?
-#   ops/tracer_test.sh                      LIFT_SECS=5 (time to lift the robot)  SPEED=0.05 (m/s)  RUN_SECS=2 (how long the speed is commanded)  WATCH_SECS=10
+#   ops/tracer_test.sh                      LIFT_SECS=5 (time to lift the robot)  SPEED=0.1 (m/s)  RUN_SECS=3 (how long the speed is commanded)  WATCH_SECS=10
 # Timeline: t=0 the base node starts; LIFT_SECS of countdown (LIFT THE ROBOT: the wheels must be free); SPEED for RUN_SECS; then NOTHING is published for WATCH_SECS
 # (a base with its own command timeout stops by itself; if it does not, the zero at the end does); always a final zero, also on Ctrl-C.
 # The speed the base itself reports on /odom is printed with the time, to read the exact start and stop. Linear motion only, no rotation.
