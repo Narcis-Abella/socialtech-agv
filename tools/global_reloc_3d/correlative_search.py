@@ -34,8 +34,42 @@ def crop_source(points, radius):
     return points[np.hypot(points[:, 0], points[:, 1]) <= radius]
 
 
+def unique_cells(points, res):
+    """Distinct voxels (n, 3) of the points: np.unique on one integer key per voxel, which is several times faster than np.unique(axis=0)."""
+    cells = np.floor(points / res).astype(np.int64)
+    base = cells.min(axis=0)
+    span = cells.max(axis=0) - base + 1
+    key = np.unique(((cells[:, 0] - base[0]) * span[1] + (cells[:, 1] - base[1])) * span[2] + (cells[:, 2] - base[2]))
+    kx, rem = np.divmod(key, span[1] * span[2])
+    ky, kz = np.divmod(rem, span[2])
+    return np.stack([kx, ky, kz], axis=1) + base
+
+
+def yaw_peaks(inside, lo, origin, res, per_yaw, nms_xy):
+    """The per_yaw best voxels of one yaw's score volume, at least nms_xy apart in xy, best first, as (position, score)."""
+    flat = inside.ravel()
+    k = min(per_yaw * 20, flat.size)
+    best = np.argpartition(-flat, k - 1)[:k]
+    best = best[np.argsort(-flat[best])]
+    xyz = origin + (np.stack(np.unravel_index(best, inside.shape), axis=1) + lo) * res
+    kept = np.empty((per_yaw, 3))
+    chosen = []
+    for j in range(k):
+        if not chosen or (np.linalg.norm(kept[:len(chosen), :2] - xyz[j, :2], axis=1) > nms_xy).all():
+            kept[len(chosen)] = xyz[j]
+            chosen.append(j)
+            if len(chosen) == per_yaw:
+                break
+    return [(xyz[j], float(flat[best[j]])) for j in chosen]
+
+
 class MapField:
-    """Likelihood field of the map on a grid padded by the source reach."""
+    """Likelihood field of the map on a grid padded by the source reach.
+
+    The correlation is the sum over the source's z layers of 2D correlations with the matching field layer, which is the 3D correlation with its z axis written
+    out. Only the layers the source occupies are transformed and only the z shifts of the valid window are inverted (the window is 13 of 24 layers and the source
+    6 on a real map). The xy FFT runs on the grid padded again, at the end, to a size the FFT does fast (the 191 of a real map is prime and costs several times
+    more): the extra cells are zero and lie beyond the reach of every valid sensor position, so the scores of the valid window do not change."""
 
     def __init__(self, points, res, sigma, reach_xy, reach_z, workers=2):
         points = np.asarray(points, float)
@@ -53,16 +87,27 @@ class MapField:
         occ[tuple(idx.T)] = True
         d = ndimage.distance_transform_edt(~occ) * res
         self.field = np.exp(-.5 * (d / sigma) ** 2).astype(np.float32)
-        self.spectrum = fft.rfftn(self.field, workers=workers)
+        self.fft_xy = tuple(fft.next_fast_len(n, real=True) for n in self.shape[:2])
+        self.layers = fft.rfft2(np.moveaxis(self.field, 2, 0), s=self.fft_xy, axes=(1, 2), workers=workers)     # (z, x, y spectrum)
 
     def correlate(self, source_points, yaw):
-        """Return (score volume, number of source voxels) for one yaw."""
+        """Return (score volume of the valid window, number of source voxels) for one yaw; the window indexes are field indexes minus valid_lo."""
         rotated = np.asarray(source_points) @ rot_z(yaw).T
-        cells = np.unique(np.floor(rotated / self.res).astype(int), axis=0)
-        S = np.zeros(self.shape, np.float32)
-        S[tuple((cells % np.array(self.shape)).T)] = 1.
-        c = fft.irfftn(self.spectrum * np.conj(fft.rfftn(S, workers=self.workers)), s=self.shape, workers=self.workers)
-        return c / len(cells), len(cells)
+        cells = unique_cells(rotated, self.res)
+        kz = cells[:, 2]
+        k0, k1 = int(kz.min()), int(kz.max())
+        z0 = np.arange(self.valid_lo[2], self.valid_hi[2] + 1)
+        if z0[0] + k0 < 0 or z0[-1] + k1 >= self.shape[2]:
+            raise ValueError('source reaches outside the field in z')
+        S = np.zeros((k1 - k0 + 1, *self.fft_xy), np.float32)
+        S[kz - k0, cells[:, 0] % self.fft_xy[0], cells[:, 1] % self.fft_xy[1]] = 1.
+        spectrum = np.conj(fft.rfft2(S, axes=(1, 2), workers=self.workers))
+        acc = np.empty((len(z0), *self.layers.shape[1:]), self.layers.dtype)
+        for i, z in enumerate(z0):
+            acc[i] = (self.layers[z + k0:z + k1 + 1] * spectrum).sum(axis=0)
+        c = fft.irfft2(acc, s=self.fft_xy, axes=(1, 2), workers=self.workers)
+        lo, hi = self.valid_lo, self.valid_hi
+        return np.moveaxis(c[:, lo[0]:hi[0] + 1, lo[1]:hi[1] + 1], 0, 2) / len(cells), len(cells)
 
     def position(self, index):
         return self.origin + np.asarray(index) * self.res
@@ -87,21 +132,9 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
     peaks = []
     yaws = np.radians(np.arange(0., 360., yaw_step_deg))
     for yaw in yaws:
-        score, n = field.correlate(source, yaw)
-        inside = score[lo[0]:hi[0] + 1, lo[1]:hi[1] + 1, lo[2]:hi[2] + 1]
-        flat = inside.ravel()
-        k = min(per_yaw * 20, flat.size)
-        best = np.argpartition(-flat, k - 1)[:k]
-        kept = []
-        for i in best[np.argsort(-flat[best])]:
-            idx = np.array(np.unravel_index(i, inside.shape)) + lo
-            xyz = field.position(idx)
-            if all(np.linalg.norm(xyz[:2] - other[:2]) > nms_xy for other in kept):
-                kept.append(xyz)
-                peaks.append({'yaw_rad': float(yaw), 'xyz': xyz.tolist(), 'score': float(flat[i]),
-                              'source_voxels': n})
-            if len(kept) == per_yaw:
-                break
+        inside, n = field.correlate(source, yaw)
+        for xyz, sc in yaw_peaks(inside, lo, field.origin, field.res, per_yaw, nms_xy):
+            peaks.append({'yaw_rad': float(yaw), 'xyz': xyz.tolist(), 'score': sc, 'source_voxels': n})
     peaks.sort(key=lambda p: -p['score'])
     selected = []
     for p in peaks:
