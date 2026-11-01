@@ -5,7 +5,7 @@ import numpy as np
 
 from correlative_search import pose
 from make_hole_map import hole
-from search_v2 import rank, tilt_deg
+from search_v2 import rank, source_reach_z, tilt_deg
 from summarize_batch import classify, wilson
 
 
@@ -15,6 +15,12 @@ def row(i, support, T):
 
 
 class SearchV2Test(unittest.TestCase):
+    def test_reach_z_of_an_empty_crop_is_zero_instead_of_a_numpy_error(self):
+        near = np.array([[1., 0., .5], [2., 0., -1.5]])
+        far = np.array([[100., 0., 3.]])                              # outside the 15 m search radius: the crop is empty
+        self.assertEqual(source_reach_z(near, far, 15.), 1.5)
+        self.assertEqual(source_reach_z(far, far, 15.), 0.)           # a near-empty LiDAR frame: the search then rejects it cleanly
+
     def test_rank_keeps_distinct_hypotheses_only(self):
         a = row('a', .9, pose(0., [0, 0, 0]))
         same = row('same', .8, pose(math.radians(2), [.1, 0, 0]))  # within 0.30 m / 8 deg of a

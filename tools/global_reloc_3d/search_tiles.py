@@ -21,6 +21,12 @@ def yaw(T):
     return math.atan2(T[1, 0], T[0, 0])
 
 
+def candidate_key(r):
+    """Best first: support, then the rmse of the matched points (None = nothing matched, sorts last as in search_v2.rank), then the inliers."""
+    rmse = r['geometry']['matched_rmse_m']
+    return (-r['geometry']['support_015'], 9. if rmse is None else rmse, -r['result']['translation_inliers'])
+
+
 def pose_difference(a, b):
     xy = np.linalg.norm(a[:2, 3]-b[:2, 3])
     d = yaw(a)-yaw(b)
@@ -104,8 +110,7 @@ def main():
         if timed_out:
             break
     candidates=[r for r in trials if 'geometry' in r]
-    candidates.sort(key=lambda r:(-r['geometry']['support_015'], r['geometry']['matched_rmse_m'],
-                                  -r['result']['translation_inliers']))
+    candidates.sort(key=candidate_key)
     distinct_top=[]
     for row in candidates:
         if all(distinct(np.array(row['result']['T_map_lidar_refined']), np.array(other['result']['T_map_lidar_refined'])) for other in distinct_top):

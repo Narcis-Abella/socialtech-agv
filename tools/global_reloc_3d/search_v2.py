@@ -77,6 +77,12 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
     return found, rows, False
 
 
+def source_reach_z(fit, check, radius):
+    """Largest |z| of the two source batches inside the search radius; 0 when a batch has no point there (a near-empty frame), so the search rejects cleanly."""
+    zs = [np.abs(crop_source(s, radius)[:, 2]) for s in (fit, check)]
+    return max((float(z.max()) for z in zs if len(z)), default=0.)
+
+
 def rank(rows):
     valid = [r for r in rows if 'geometry' in r and r['geometry']['valid']]
     valid.sort(key=lambda r: (-r['geometry']['support_015'], r['geometry']['matched_rmse_m'] or 9.))
@@ -113,7 +119,7 @@ def main():
     full = np.loadtxt(run / 'map.xyz')
     fit = np.loadtxt(run / 'fit.xyz')
     check = np.loadtxt(run / 'check.xyz')
-    reach_z = max(np.abs(crop_source(fit, a.radius)[:, 2]).max(), np.abs(crop_source(check, a.radius)[:, 2]).max())
+    reach_z = source_reach_z(fit, check, a.radius)
     field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res)
     t_field = time.monotonic() - t0
     temporal_ok, separation = temporal_evidence(manifest['stamps_s'], manifest['start_header_s'], manifest['duration_s'])

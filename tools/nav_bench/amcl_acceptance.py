@@ -105,18 +105,6 @@ def concentration(particles, pose):
     return float(p[close,3].sum()/p[:,3].sum())
 
 
-def _candidate_at(p, seed):
-    dx=p[:,0]-p[seed,0]; dy=p[:,1]-p[seed,1]
-    dyaw=np.arctan2(np.sin(p[:,2]-p[seed,2]),np.cos(p[:,2]-p[seed,2]))
-    members=(np.hypot(dx,dy)<=XY_CLUSTER_M)&(np.abs(dyaw)<=YAW_CLUSTER_RAD)
-    weights=p[members,3]
-    if not len(weights) or weights.sum()==0:
-        return None, members
-    x=float(np.average(p[members,0],weights=weights)); y=float(np.average(p[members,1],weights=weights))
-    s=float(np.sum(weights*np.sin(p[members,2]))); c=float(np.sum(weights*np.cos(p[members,2])))
-    return Candidate(x,y,math.atan2(s,c),float(weights.sum()/p[:,3].sum())),members
-
-
 def particle_modes(particles, max_modes=5):
     """Find deterministic particle modes from high-weight and stratified seeds.
 

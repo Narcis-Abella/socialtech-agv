@@ -2,10 +2,18 @@ import unittest
 import numpy as np
 import tempfile
 from pathlib import Path
-from search_tiles import distinct, agreement, temporal_evidence, run_one
+from search_tiles import distinct, agreement, temporal_evidence, run_one, candidate_key
 
 
 class SearchPolicyTest(unittest.TestCase):
+    def test_a_candidate_without_matched_points_sorts_last_instead_of_raising(self):
+        def cand(support, rmse, inl):
+            return {'geometry': {'support_015': support, 'matched_rmse_m': rmse}, 'result': {'translation_inliers': inl}}
+        rows = [cand(0., None, 5), cand(0., None, 9), cand(0., .05, 1), cand(.4, .2, 1)]
+        ranked = sorted(rows, key=candidate_key)                      # equal support and a None rmse used to raise TypeError
+        self.assertEqual([r['geometry']['support_015'] for r in ranked], [.4, 0., 0., 0.])
+        self.assertEqual(ranked[1]['geometry']['matched_rmse_m'], .05)  # a measured rmse beats a missing one at equal support
+
     def test_distinct_and_agreement(self):
         a = np.eye(4)
         b = np.eye(4)
