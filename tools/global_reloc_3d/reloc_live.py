@@ -78,6 +78,7 @@ class LiveReloc:
         self.spawn = spawn or (lambda run, out, dl: Worker(binary, lib_dir, run, out, dl))
         self.restart_fn, self.settle_s, self.lio_timeout_s = restart, settle_s, lio_timeout_s
         self.stage, self.n, self.proc = None, 0, None
+        self.restarted, self.t_restart, self.t_imu = False, None, None      # the node feeds and polls from boot, before the first start()
 
     # ------------------------------------------------------------------ control
     def start(self, restart=False):

@@ -77,6 +77,13 @@ class LiveRelocTest(LiveRelocBase):
         self.assertEqual(res['why'], 'accepted')
         self.assertGreaterEqual(res['info']['exposure_s'], 2.9)
 
+    def test_inputs_and_polls_before_the_first_start_do_nothing(self):
+        # the node feeds and polls from boot; the first start() comes 8 s later (start-up localization) or at the first loss
+        r = self.make()
+        self.assertIsNone(self.feed(r, 0., 1.))
+        self.assertIsNone(r.poll())
+        self.assertFalse(r.active)
+
     def test_pose_follows_the_odometry_to_the_newest_stamp(self):
         # robot 0.02 m further (inside the stillness bound) when the search answers: the pose is propagated, as reloc_node does
         r = self.make(); r.start()
