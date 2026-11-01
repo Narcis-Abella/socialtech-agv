@@ -174,6 +174,24 @@ class RestartTest(LiveRelocBase):
         self.assertFalse(res['info']['lio_restart'])
         self.assertIn('PermissionError', res['info']['lio_restart_error'])   # ... and says why it could not do better
 
+    def test_the_restart_waits_while_the_lidar_is_covered_and_happens_when_the_scans_flow(self):
+        # a fresh FAST-LIO2 with the lidar covered gets no points: it publishes nothing and the attempt would be wasted
+        r = self.make_restart(); r.start(restart=True)
+        r.restart_ok = False                                                 # the supervisor says GN's scan counter is stalled
+        self.assertIsNone(self.feed(r, 0., 6.))
+        self.assertEqual(self.restarts, [])
+        self.assertEqual(r.stage, 'imu')                                     # the stillness gate is ready: it only waits for the lidar
+        r.restart_ok = True
+        res = self.feed(r, 6., 20., odom=lambda t: planar(50., -30., .7) if t < 6.2 else planar(0., 0., 0.))
+        self.assertEqual(len(self.restarts), 1)
+        self.assertTrue(res['ok'], res)
+        self.assertAlmostEqual(res['pose'][0], 3., 6)
+
+    def test_a_parked_check_does_not_care_whether_the_lidar_is_covered(self):
+        r = self.make_restart(); r.start()                                   # no restart wanted
+        r.restart_ok = False
+        self.assertTrue(self.feed(r, 0., 8.)['ok'])
+
     def test_no_restart_unless_asked(self):
         r = self.make_restart(); r.start()                                   # a parked verification does not hold Nav2 and must not touch the odometry
         res = self.feed(r, 0., 8.)

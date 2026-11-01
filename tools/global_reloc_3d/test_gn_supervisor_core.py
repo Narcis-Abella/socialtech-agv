@@ -477,6 +477,128 @@ class ReviewFixesTest(Fixture):
         self.assertFalse(sc.same_pose((1., 2., 0.), (1., 2., .5)))
 
 
+class MovedWhileConfirmingTest(Fixture):
+    """A robot that is moved right after the relocalizer's pose (a push, a kidnapping) while GN is tracking well is not a failed confirmation."""
+    def relocalized(self, pose=(1., 2., .3)):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))                            # lost_stop_s = 0: the stop and the relocalization start at once
+        for k in range(1, 5):
+            run(s, t + k, ('on_status', 'LOST', 0., 0.))                    # gn_loc keeps publishing its 1 Hz status while the relocalizer works
+        run(s, t + 5, ('on_reloc_result', True, pose, 'accepted'))
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'relocalized_confirming'))
+        return s, t + 5
+
+    def good(self, s, t, pose):
+        return run(s, t, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', pose))
+
+    def test_gn_close_to_the_pose_once_and_then_moved_with_a_good_fit_is_confirmed(self):
+        s, t = self.relocalized()
+        self.good(s, t + 1, (1., 2., .3))                                    # GN took the pose: the lock is the relocalizer's
+        self.good(s, t + 2, (3., 4., .3))                                    # the robot was pushed 2.8 m
+        self.good(s, t + 3, (3.4, 4., .3))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+
+    def test_gn_that_was_never_close_to_the_pose_is_still_not_confirmed(self):
+        s, t = self.relocalized()
+        for k in range(1, 20):
+            self.good(s, t + k, (5., 5., 0.))                                # a good fit somewhere else: a lock on a pose nobody gave
+        self.assertEqual((s.state, s.reason), ('FAILED', 'gn_not_confirmed'))
+
+    def test_a_poor_fit_after_the_close_sample_does_not_confirm(self):
+        s, t = self.relocalized()
+        self.good(s, t + 1, (1., 2., .3))
+        for k in range(2, 6):
+            run(s, t + k, ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (3., 4., 0.)))      # moved and GN lost its quality
+        self.assertEqual(s.state, 'CONFIRMING')
+
+
+class FailedRetryTest(Fixture):
+    """FAILED after a relocalization that did not work retries by itself: the lidar may have been uncovered, the robot parked, since."""
+    def lost(self, s, t0, t1):
+        for k in range(int(t0), int(t1)):
+            run(s, float(k), ('on_status', 'LOST', 0., 0.))                    # gn_loc keeps publishing its 1 Hz status
+
+    def failed(self, **kw):
+        s, t = self.new(**kw)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 5)
+        run(s, t + 5, ('on_reloc_result', False, None, 'x'))
+        self.lost(s, t + 6, t + 9)
+        run(s, t + 9, ('on_reloc_result', False, None, 'x'))
+        self.assertEqual((s.state, s.reason), ('FAILED', 'reloc_failed_x'))
+        return s, t + 9
+
+    def test_it_starts_a_new_relocalization_30_s_after_the_failure(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 30)
+        self.assertEqual(s.state, 'FAILED')
+        a = run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.assertIn(('reloc_start', 'failed_retry'), a)
+        self.assertEqual((s.state, s.reason, s.hold), ('RELOCALIZING', 'failed_retry', True))
+
+    def test_an_accepted_retry_is_confirmed_and_navigation_is_released(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 31, t + 42)
+        a = run(s, t + 42., ('on_reloc_result', True, (1., 2., .3), 'accepted'))
+        self.assertIn(('initialpose', (1., 2., .3)), a)
+        for k in range(1, 5):
+            run(s, t + 42. + k, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., .3)))
+        self.assertEqual((s.state, s.reason, s.hold), ('MONITOR', 'confirmed', False))
+
+    def test_a_retry_that_fails_twice_waits_another_30_s(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 31, t + 35)
+        run(s, t + 35., ('on_reloc_result', False, None, 'x'))
+        self.assertEqual(s.state, 'RELOCALIZING')                           # its second attempt
+        self.lost(s, t + 36, t + 40)
+        run(s, t + 40., ('on_reloc_result', False, None, 'x'))
+        self.assertEqual(s.state, 'FAILED')
+        self.lost(s, t + 41, t + 69)
+        self.assertEqual(s.state, 'FAILED')
+        run(s, t + 70., ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.reason, 'failed_retry')
+
+    def test_a_pose_that_gn_did_not_confirm_is_not_searched_again(self):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 5)
+        run(s, t + 5, ('on_reloc_result', True, (1., 2., .3), 'accepted'))
+        for k in range(1, 20):
+            run(s, t + 5 + k, ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (5., 5., 0.)))
+        self.assertEqual(s.reason, 'gn_not_confirmed')
+        a = []
+        for k in range(20, 90):
+            a += run(s, t + 5 + k, ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (5., 5., 0.)))
+        self.assertNotIn('reloc_start', kinds(a))                            # the search would give the same pose: the operator decides
+
+    def test_it_can_be_switched_off(self):
+        s, t = self.failed(failed_retry_s=0.)
+        self.lost(s, t + 1, t + 100)
+        self.assertEqual(s.state, 'FAILED')
+
+    def test_the_operator_pose_during_the_wait_wins(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 20)
+        a = run(s, t + 20., ('on_operator_pose', (1., 2., 0.)))
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
+        self.assertNotIn('reloc_start', kinds(a))
+
+
+class ScansFlowingTest(Fixture):
+    def test_it_follows_the_scan_counter_of_gn(self):
+        s, t = self.new()
+        run(s, t, ('on_status', 'TRACKING', .9, .8, 100))
+        self.assertTrue(s.scans_flowing)
+        run(s, t + 1, ('on_status', 'TRACKING', 0., 0., 100))                # the counter did not move: the lidar is covered (3 of 3 covers of 2026-11-01)
+        self.assertFalse(s.scans_flowing)
+        run(s, t + 2, ('on_status', 'TRACKING', .9, .8, 110))
+        self.assertTrue(s.scans_flowing)
+
+
 class GoalHoldTest(Fixture):
     def test_a_goal_active_at_start_up_is_cancelled(self):
         s = sc.Supervisor(sc.Params())

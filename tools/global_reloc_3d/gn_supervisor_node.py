@@ -145,6 +145,7 @@ class SupervisorNode(Node):
     # ------------------------------------------------------------------ outputs
     def tick(self):
         now = self.mono()
+        self.reloc.restart_ok = self.core.scans_flowing                    # a covered lidar: the restart of FAST-LIO2 waits for the scans (its filter would get no points)
         try:
             r = self.reloc.poll()
         except Exception:

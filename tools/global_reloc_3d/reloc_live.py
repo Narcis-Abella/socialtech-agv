@@ -78,6 +78,7 @@ class LiveReloc:
         self.spawn = spawn or (lambda run, out, dl: Worker(binary, lib_dir, run, out, dl))
         self.restart_fn, self.settle_s, self.lio_timeout_s = restart, settle_s, lio_timeout_s
         self.stage, self.n, self.proc = None, 0, None
+        self.restart_ok = True       # False while the lidar is covered (set by the node from the supervisor): the restart waits, the filter would get no points
         self.restarted, self.t_restart, self.t_imu = False, None, None      # the node feeds and polls from boot, before the first start()
 
     # ------------------------------------------------------------------ control
@@ -110,8 +111,10 @@ class LiveReloc:
             self.gate, self.stage = rc.ImuGate(), 'imu'                    # the fresh filter must also start from a robot at rest
         if self.stage == 'imu' and self.gate.add(t, gyro, acc_g):
             if self.want_restart and not self.restarted:
-                self.do_restart(t)
-                return
+                if self.restart_ok:
+                    self.do_restart(t)
+                return                                                       # still, but the lidar is covered: wait for the scans
+
             self.t_ready, self.stage = self.gate.ready_stamp, 'expose'
             self.info['imu_wait_s'] = round(time.monotonic() - self.t_start, 3)
         if self.stage == 'expose':
