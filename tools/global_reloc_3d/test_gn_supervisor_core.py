@@ -270,6 +270,15 @@ class StarvedScanTest(Fixture):
         self.assertEqual(kinds(a)[:2], ['cancel', 'reloc_start'])
         self.assertEqual(s.reason, 'gn_bad_scans')
 
+    def test_default_stops_a_covered_lidar_after_3_s(self):
+        # Narcis, 2026-11-01: bad_stop_s 3 s (blind travel ~0.6 m shorter than 4 s); the longest clean-run bad span is 2.2 s
+        s, t = self.new()
+        self.statuses(s, t, 3, 0., 0.)                       # statuses t .. t+2: 2 s
+        self.assertEqual(s.state, 'MONITOR')
+        a = run(s, t + 3, ('on_status', 'TRACKING', 0., 0.))
+        self.assertEqual(kinds(a)[:2], ['cancel', 'reloc_start'])
+        self.assertEqual(s.reason, 'gn_bad_scans')
+
     def test_a_short_bad_span_is_not_an_alarm(self):
         # 28 clean runs (a08, 1 Hz): the longest span of TRACKING statuses below GN's track thresholds is 2.2 s
         s, t = self.new(bad_stop_s=4.)

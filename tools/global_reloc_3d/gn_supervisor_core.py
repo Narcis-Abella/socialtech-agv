@@ -20,8 +20,10 @@ class Params:
     accept_tight: float = .60        # GN's own acceptance of a recovery candidate (gn_core.hpp Params::accept_tight)
     min_inliers: float = .25         # GN's min_inliers
     min_tight: float = .50           # GN's min_tight: below it (or below min_inliers) GN counts the scan as bad
-    bad_stop_s: float = 4.           # TRACKING statuses bad this long -> stop. GN itself goes LOST after 3 s of bad scans, except a scan with < 20 valid
-                                     # beams (covered lidar, rmin 0.5 m), which stays TRACKING at 0/0 forever. Clean runs: longest bad span 2.2 s (28 runs)
+    bad_stop_s: float = 3.           # TRACKING statuses bad this long -> stop. GN itself goes LOST after 3 s of bad scans, except a scan with < 20 valid
+                                     # beams (covered lidar, rmin 0.5 m), which stays TRACKING at 0/0 forever. Clean runs: longest bad span 2.2 s (28 runs).
+                                     # 3 s by Narcis (2026-11-01): ~0.6 m less blind travel than 4 s at 0.6 m/s; margin over the clean spans is only 0.8 s, so
+                                     # log the real distribution on the robot first (H-plan) and raise it if it stops without cause
     scan_stall_n: int = 2            # consecutive statuses with GN's scan counter unchanged -> stop (no /scan reaches GN: its status repeats old values)
     recancel_s: float = 1.           # while held, cancel again this often as long as a goal is still active (a cancel request can be lost)
     confirm_n: int = 3               # consecutive good statuses (1 Hz) after a pose
