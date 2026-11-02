@@ -184,3 +184,26 @@ class LoneRefineTimeoutTest(unittest.TestCase):
             b.chmod(0o755)
             log, result = sv.refine(b, 'm', 's', 'c', np.eye(4), d / 'o', .3, 1)
         self.assertEqual((log['exit_code'], result), (124, None))
+
+
+class StaleBinaryTest(unittest.TestCase):
+    """A register_v2 that does not know --init-list (staged before the tools) must stop the search loudly: 'no candidate survived' would make the supervisor retry for nothing."""
+    def test_a_binary_that_fails_without_any_result_raises_with_its_message(self):
+        import search_v2 as sv
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            b = d / 'old'
+            b.write_text('#!/bin/sh\necho "unknown option --init-list" >&2\nexit 1\n')
+            b.chmod(0o755)
+            with self.assertRaisesRegex(RuntimeError, 'unknown option --init-list'):
+                sv.refine_all(b, 'm', 's', 'c', [np.eye(4)], d, 'cand', .3, 20)
+
+    def test_one_failed_init_among_results_is_not_an_error(self):
+        import search_v2 as sv
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            b = d / 'fake'
+            b.write_text(FAKE_REGISTER + '')
+            b.chmod(0o755)
+            log, results, _ = sv.refine_all(b, 'm', 's', 'c', [np.eye(4)] * 3, d, 'cand', .3, 20)
+        self.assertEqual([r is not None for r in results], [True, False, True])

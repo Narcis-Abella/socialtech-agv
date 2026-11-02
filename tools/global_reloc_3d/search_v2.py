@@ -83,6 +83,8 @@ def refine_all(binary, map_path, source_path, check_path, T_inits, out, prefix, 
             results.append(json.loads((d / 'result.json').read_text()))
         else:
             results.append(None)
+    if not any(results) and log['exit_code'] not in (0, 124):     # not one result and not the deadline: the binary cannot do this (an old one without --init-list), which is not "no hypothesis"
+        raise RuntimeError(f"register_v2 --init-list failed (exit {log['exit_code']}): {log['stderr'].strip()}")
     return log, results, timed_out
 
 
