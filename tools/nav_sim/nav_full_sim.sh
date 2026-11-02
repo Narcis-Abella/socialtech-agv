@@ -25,7 +25,7 @@ if [ "${SCAN_EXTRA:-1}" != 0 ]; then
   ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
 fi
 ros2 launch /ops/nav_robot.launch.py livox_config:=/dev/null fastlio_params:="$out/fastlio.yaml" map:="$share/maps/loyola.yaml" overrides:=/ops/live_overrides.yaml \
-  sensor_height:=0.28 level_qx:=0.0 level_qy:=0.0 level_qz:=0.0 level_qw:=1.0 nav2_params:="$out/nav2_params.yaml" driver:=false sim_time:=true base:=false > "$out/launch.log" 2>&1 &
+  sensor_height:=$SENSOR_H level_qx:=0.0 level_qy:=0.0 level_qz:=0.0 level_qw:=1.0 nav2_params:="$out/nav2_params.yaml" driver:=false sim_time:=true base:=false > "$out/launch.log" 2>&1 &
 sleep 12
 # the robot starts at the spawn pose: tell gn_loc (the operator's 2D Pose Estimate), as trials.py does for every trial
 python3 - "$sx" "$sy" "$sw" <<'P' > "$out/init.log" 2>&1

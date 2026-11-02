@@ -1,8 +1,8 @@
 diff --git a/launch/simulation.launch.py b/launch/simulation.launch.py
-index 7db4a7d..775c1b2 100644
+index 7db4a7d..c0bc685 100644
 --- a/launch/simulation.launch.py
 +++ b/launch/simulation.launch.py
-@@ -85,9 +85,17 @@ def generate_launch_description():
+@@ -85,9 +85,19 @@ def generate_launch_description():
          ),
      )
  
@@ -13,15 +13,17 @@ index 7db4a7d..775c1b2 100644
 +    # SIM_LIO=1 (with SIM_REALISM=1): a real FAST-LIO2 runs on the simulated Mid-360 (socialtech_livox_sim) and the IMU, so the LiDAR-inertial stand-in (noisy_odom, odom -> base_footprint TF)
 +    # is not started (planar_odom publishes that TF), the IMU runs at the Mid-360's 200 Hz and sits where FAST-LIO2 assumes it: the lidar origin minus extrinsic_T (-0.011, -0.02329, 0.04412).
 +    lio = realism and os.environ.get("SIM_LIO", "0") == "1"
++    # LIDAR_Z: height of the Mid-360 over the floor. 0.57 is the real robot's (the relocalizer's 17 saved searches put its IMU at 0.52-0.55 m: SocialTech notes/optimizacion_localizacion_2026-11-02.md); the IMU is extrinsic_T below it.
++    lidar_z = float(os.environ.get("LIDAR_Z", "0.57"))
 +
      # ── 3. ROBOT DESCRIPTION ──────────────────────────────────────────────────
      doc = xacro.parse(open(xacro_file))
 -    xacro.process_doc(doc)
-+    xacro.process_doc(doc, mappings={"max_lin_acc": "20.0", "max_ang_acc": "40.0", **({"imu_rate": "200", "imu_xyz": "0.011 0.02329 0.23588"} if lio else {})} if realism else {})
++    xacro.process_doc(doc, mappings={"max_lin_acc": "20.0", "max_ang_acc": "40.0", **({"imu_rate": "200", "imu_xyz": f"0.011 0.02329 {lidar_z - 0.04412:.5f}", "lidar_z": f"{lidar_z}"} if lio else {})} if realism else {})
      robot_description = {"robot_description": doc.toxml(), "use_sim_time": True}
  
      # ── 4. SIMULATION (IGNITION GAZEBO) ───────────────────────────────────────────
-@@ -157,6 +165,7 @@ def generate_launch_description():
+@@ -157,6 +167,7 @@ def generate_launch_description():
              # Critical routing: Gazebo -> bridge -> *_raw -> noise node -> final topic
              ("/model/tracer_robot/pose", "/gt/pose"),
              ("/imu", "/imu_raw"),
@@ -29,7 +31,7 @@ index 7db4a7d..775c1b2 100644
              ("/odom", "/odom_raw"),
              ("/odom_gt", "/odom_gt_raw"),
              ("/scan", "/scan_raw"),
-@@ -213,7 +222,7 @@ def generate_launch_description():
+@@ -213,7 +224,7 @@ def generate_launch_description():
          package="hospital-agv-sim",
          executable="noisy_odom_cpp",
          name="noisy_odom_node",
@@ -38,7 +40,7 @@ index 7db4a7d..775c1b2 100644
          parameters=[
              {
                  "use_sim_time": True,
-@@ -272,9 +281,8 @@ def generate_launch_description():
+@@ -272,9 +283,8 @@ def generate_launch_description():
              spawn_entity,
              bridge,
              image_bridge,
@@ -102,18 +104,19 @@ index b13e2e4..6a26513 100644
      </plugin>
      
 diff --git a/urdf/tracer2.xacro b/urdf/tracer2.xacro
-index 54af015..fbdc85e 100644
+index 54af015..334a739 100644
 --- a/urdf/tracer2.xacro
 +++ b/urdf/tracer2.xacro
-@@ -5,6 +5,7 @@
+@@ -5,6 +5,8 @@
    <xacro:include filename="$(find hospital-agv-sim)/urdf/tracer2.gazebo" />
    
    <xacro:include filename="$(find hospital-agv-sim)/urdf/sensors/odom.xacro" />
 +  <xacro:arg name="imu_xyz" default="0 0 0.175"/>
++  <xacro:arg name="lidar_z" default="0.28"/>
    <xacro:include filename="$(find hospital-agv-sim)/urdf/sensors/imu.xacro" />
    <xacro:include filename="$(find hospital-agv-sim)/urdf/sensors/lidar.xacro" />
    <xacro:include filename="$(find hospital-agv-sim)/urdf/sensors/camera.xacro" />
-@@ -73,7 +74,7 @@
+@@ -73,11 +75,11 @@
    <xacro:apoyo_macro name="apoyo_derecho_trasero_Link"     x="-0.21" y="-0.1425" rpy_offset="-0.0407"/>
  
    <xacro:tracer_odom parent="base_link" />
@@ -122,3 +125,8 @@ index 54af015..fbdc85e 100644
    <xacro:sensor_lidar parent="base_link"          xyz="0.0 0.0 0.32" rpy="0 0 0"/>
    <xacro:sensor_camera parent="base_link"         xyz="0.213 0 0.215" rpy="0 0 0"/>
    <xacro:sensor_livox_mid70 parent="base_link"    xyz="0.213 0 0.175" rpy="0 -0.2618 0"/>
+-  <xacro:sensor_livox_mid360 parent="base_link"   xyz="0.0 0.0 0.28" rpy="0 0 0"/>
++  <xacro:sensor_livox_mid360 parent="base_link"   xyz="0.0 0.0 $(arg lidar_z)" rpy="0 0 0"/>
+ 
+ 
+ </robot>
