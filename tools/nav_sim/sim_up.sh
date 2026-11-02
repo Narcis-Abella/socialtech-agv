@@ -51,6 +51,7 @@ lio_nodes() {
 # The 2D map the chain localizes on: made from the triangles the simulated Mid-360 sees, in the band /scan uses (the legacy loyola.pgm was surveyed with the simulator's 2D lidar
 # and sits 0.1-0.3 m off what the chain sees: a constant offset of GN against the truth). Seeded at the spawn. Sets $CHAIN_MAP (yaml).
 chain_map() {
-  python3 /tools/sim_realism/tris_to_map.py /pat/loyola.tris "$out/loyola_chain" "$sx,$sy" > "$out/map.log"
+  mkdir -p "$out"
+  [ -f "$out/loyola_chain.yaml" ] || python3 /tools/sim_realism/tris_to_map.py /pat/loyola.tris "$out/loyola_chain" "${1:-$sx,$sy}" > "$out/map.log"
   CHAIN_MAP="$out/loyola_chain.yaml"
 }

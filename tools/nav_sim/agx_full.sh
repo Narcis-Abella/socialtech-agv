@@ -1,6 +1,6 @@
 #!/bin/bash
 # Laptop side: runs the full-chain simulation (simulated Mid-360 + real FAST-LIO2) on the AGX; same conventions as agx_run.sh. No sudo; refuses when the board is busy.
-#   agx_full.sh start <lio|fid|sup|nav> <name> [args of the script]   lio: lio_sim.sh [leg v w]   fid: fid_sim.sh [seconds]   sup: sup_sim.sh [cover_s] [--push-after S | --move-covered M]   nav: nav_full_sim.sh /tools/nav_sim/scenarios/X.json [reps] (Nav2 + trials.py)
+#   agx_full.sh start <lio|fid|sup|nav> <name> [args of the script]   lio: lio_sim.sh [leg v w]   fid: fid_sim.sh [seconds]   sup: sup_sim.sh [cover_s] [--push-after S | --move-covered M]   nav: nav_full_sim.sh <scenario.json or auto[:N] (N pairs on the chain's own map)> [reps] (Nav2 + trials.py)
 #   agx_full.sh wait <remote dir>        blocks until it has ended and prints the last lines of its result
 #   agx_full.sh fetch <remote dir> <local dir>
 # Ships tools/, ops/ and docker/{ros_nav,ros_loc} of this checkout and the committed sim repo (SIM_REPO, ~/Documents/GitHub/hospital-agv-sim). On the board: ~/livox_pat (ours.lvm, loyola.tris), ~/greloc/build (sup only).
@@ -23,7 +23,7 @@ start)
   tar -C "$repo" -c tools ops docker/ros_nav docker/ros_loc | ssh_ "tar -x -C $remote"
   ssh_ "[ -f ~/sim_src/hospital-agv-sim_$hash/package.xml ]" || git -C "$sim" archive HEAD | ssh_ "tar -x -C ~/sim_src/hospital-agv-sim_$hash"
   args="$*"
-  ssh -f -n -i "$KEY" "$HOST" "cd $remote && setsid nohup sh -c 'timeout ${RUN_TIMEOUT:-1800} docker run --rm --name fullsim --network host --user root -e ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-54} -e SIM_SRC=/simsrc -e SCAN_EXTRA=${SCAN_EXTRA:-1} -e SEED=${SEED:-1} ${SPAWN:+-e SPAWN=\"$SPAWN\"} -v \$PWD/tools:/tools:ro -v \$PWD/tools:/greloc/tools:ro -v \$PWD/ops:/ops:ro -v \$PWD/docker/ros_nav:/navsrc:ro -v \$PWD/docker/ros_loc/gn_loc:/locsrc:ro -v \$HOME/greloc/build:/greloc/build:ro -v \$PWD/runs:/runs -v \$PWD/out:/out -v \$HOME/sim_src/hospital-agv-sim_$hash:/simsrc:ro -v \$HOME/livox_pat:/pat:ro ${IMAGE:-socialtech:sim-navtest} bash /tools/nav_sim/$script /out $args > run.log 2>&1; echo rc=\$? >> run.log' > /dev/null 2>&1"
+  ssh -f -n -i "$KEY" "$HOST" "cd $remote && setsid nohup sh -c 'timeout ${RUN_TIMEOUT:-1800} docker run --rm --name fullsim --network host --user root -e ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-54} -e SIM_SRC=/simsrc -e SCAN_EXTRA=${SCAN_EXTRA:-1} -e SEED=${SEED:-1} ${SPAWN:+-e SPAWN=\"$SPAWN\"} -v \$PWD/tools:/tools:ro -v \$PWD/tools:/greloc/tools:ro -v \$PWD/ops:/ops:ro -v \$PWD/docker/ros_nav:/navsrc:ro -v \$PWD/docker/ros_loc/gn_loc:/locsrc:ro -v \$HOME/greloc/build:/greloc/build:ro -v \$PWD/runs:/runs -v \$PWD/out:/out -v \$HOME/sim_src/hospital-agv-sim_$hash:/simsrc:ro -v \$HOME/livox_pat:/pat:ro ${IMAGE:-socialtech:sim-navtest} bash /tools/nav_sim/$script /out $args > run.log 2>&1; echo rc=\$? >> run.log' > /dev/null 2>&1" > /dev/null 2>&1   # the local ssh must not keep the caller's pipe (R=$(agx_full.sh start ...)) open until the run ends
   echo "$remote" ;;
 wait)
   until ssh_ "grep -q '^rc=' ${2:?remote dir}/run.log" 2> /dev/null; do sleep 20; done

@@ -7,6 +7,13 @@ out=${1:?out dir}; scenario=${2:?scenario.json}; reps=${3:-1}
 source "${ROS_ENV:-/ros_env.sh}"
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-57}
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces></General><Discovery><Peers><Peer address="localhost"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+# scenario `auto[:N]`: N start/goal pairs sampled on the chain's own map (the legacy scenarios were made on loyola.pgm: on this map some goals are in closed rooms)
+if [[ $scenario == auto* ]]; then
+  mkdir -p "$out"; n=${scenario#auto}; n=${n#:}
+  python3 /tools/sim_realism/tris_to_map.py /pat/loyola.tris "$out/loyola_chain" -13.0,0.0 > "$out/map.log"
+  (cd /tools/nav_sim && python3 make_scenario.py "$out/loyola_chain.yaml" "$out/scenario.json" "${n:-6}" 20261102)
+  scenario=$out/scenario.json
+fi
 # FAST-LIO2 does not survive a teleport: the robot is spawned at the first start of the scenario and the trials chain from where the previous one ended (trials.py CHAIN=1)
 export SPAWN=$(python3 -c "import json,sys; print(*json.load(open(sys.argv[1]))['trials'][0]['start'])" "$scenario") CHAIN=${CHAIN:-1}
 source /tools/nav_sim/sim_up.sh
