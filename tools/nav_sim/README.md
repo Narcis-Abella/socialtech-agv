@@ -23,4 +23,4 @@ All `*.sh` that run inside the image take the same mounts: this `tools/` at `/to
 AMCL on recorded real inputs (no simulator): `record_real_inputs.sh`, `real_sweeps.sh`, `real_factorial.sh`, `agx_real.sh`, `synth_scan.py`, `scan_quality.py`, `odom_error.py`.
 
 ## Tests
-with ROS sourced (`source /opt/ros/jazzy/setup.bash`): `python3 -m pytest tools/nav_sim` (`test_trials.py` and `test_eval_goals.py` import rclpy / geometry_msgs; without ROS 193 of the others pass).
+with the laptop's ROS sourced: `python3 -m pytest tools/nav_sim --ignore=tools/nav_sim/test_trials.py` (194 pass); `test_trials.py` needs `nav2_msgs`, so run it in the `sim` image.
