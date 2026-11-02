@@ -66,18 +66,16 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   [[ -z ${PROD:-} ]] || extra+=(viz:=false)
   args=("$REPO/ops/$launch.launch.py" livox_config:=/tmp/MID360_config.json fastlio_params:=/tmp/fastlio.yaml map:=/map/map.yaml
     overrides:="$REPO/ops/live_overrides.yaml" sensor_height:="$h" level_qx:="$qx" level_qy:="$qy" level_qz:="$qz" level_qw:="$qw" "${extra[@]}")
-  [[ -n ${NAV:-} ]] || exec ros2 launch "${args[@]}"
-  # With the recorder running the launch is a child, not exec'd: when it ends (Ctrl-C reaches this script through tini and is forwarded) the recorder gets
+  [[ -n ${NAV:-} && -z ${PROD:-} ]] || exec ros2 launch "${args[@]}"   # no recorder (PROD, or no NAV): nothing to stop after the launch
+  # With the recorder running (DEV) the launch is a child, not exec'd: when it ends (Ctrl-C reaches this script through tini and is forwarded) the recorder gets
   # its SIGINT and finishes the bag. Exec'd, nobody stopped it and the bag stayed without metadata.yaml (29-31 Oct runs).
   ros2 launch "${args[@]}" &
   lp=$!
   rc=0
   trap 'kill -INT "$lp" 2>/dev/null || true' INT TERM
   while kill -0 "$lp" 2>/dev/null; do wait "$lp" || rc=$?; done
-  if [[ -n ${rec:-} ]]; then
-    kill -INT "$rec" 2>/dev/null || true
-    wait "$rec" || true
-  fi
+  kill -INT "$rec" 2>/dev/null || true
+  wait "$rec" || true
   exit "$rc"
 fi
 
@@ -123,7 +121,7 @@ if [[ -n ${NAV:-} ]]; then
     echo "NAV=1: Nav2 on, base OFF: goals plan and drive nothing. Push the robot by hand."
   fi
 fi
-RUN=${NAV_RUNS:-$HOME/nav_runs}/$(date +%Y%m%d_%H%M%S)   # persists after the container is gone: ROS node logs (log/) and, with NAV, the bag (bag/)
+RUN=${NAV_RUNS:-$HOME/nav_runs}/$(date +%Y%m%d_%H%M%S)   # persists after the container is gone: ROS node logs (log/) and, with NAV and not PROD, the bag (bag/)
 mkdir -p "$RUN/log"
 echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} ]] && echo " and bag") in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
 exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e PROD="${PROD:-}" -e BASE="${BASE:-}" -e LOCALIZER="${LOCALIZER:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" \
