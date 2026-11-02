@@ -36,3 +36,14 @@ class TestOfflineS2(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class VoxelEquivalenceTest(unittest.TestCase):
+    def test_voxel_equals_the_np_unique_axis0_formula_including_the_order(self):
+        rng = np.random.default_rng(4)
+        pts = np.vstack([rng.normal(0, 6, (4000, 3)), rng.normal(0, 6, (500, 3))[:100], [[-3.3, 0.1, 7.7]]])
+        for size in (.2, .5):
+            _, inv, cnt = np.unique(np.floor(pts / size).astype(np.int64), axis=0, return_inverse=True, return_counts=True)
+            inv = inv.ravel()
+            want = np.column_stack([np.bincount(inv, weights=pts[:, j]) for j in range(3)]) / cnt[:, None]
+            np.testing.assert_allclose(m.voxel(pts, size), want, atol=1e-12)

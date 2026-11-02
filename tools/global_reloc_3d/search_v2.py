@@ -18,6 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 from correlative_search import MapField, crop_source, search
 from search_tiles import agreement, distinct, pose_difference, temporal_evidence
@@ -56,6 +57,17 @@ def refine(binary, map_path, source_path, check_path, T_init, out_dir, voxel, ti
     return log, (json.loads(path.read_text()) if path.exists() else None)
 
 
+MAP_TREE = {}
+
+
+def map_tree(map_points):
+    """One KD-tree per map array for all the candidates of both searches."""
+    with STAGE_LOCK:
+        if id(map_points) not in MAP_TREE:
+            MAP_TREE[id(map_points)] = cKDTree(map_points)
+        return MAP_TREE[id(map_points)]
+
+
 def global_hypotheses(field, map_points, batch, batch_path, other, other_path, map_path, args, out, prefix, t0):
     """Correlative search on one batch, GICP refine, score on the other batch."""
     found = search(map_points, batch, args.res, yaw_step_deg=args.yaw_step, radius=args.radius,
@@ -79,7 +91,7 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
             row['result'] = result
             if result['gicp_converged']:
                 t_s = time.monotonic()
-                row['geometry'] = score(map_points, other, result['T_map_lidar_refined'])
+                row['geometry'] = score(map_points, other, result['T_map_lidar_refined'], tree=map_tree(map_points))
                 with STAGE_LOCK:
                     STAGE_S['score'] += time.monotonic() - t_s
                 row['tilt_deg'] = tilt_deg(result['T_map_lidar_refined'])

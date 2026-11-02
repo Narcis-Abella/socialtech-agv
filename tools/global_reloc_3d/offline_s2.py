@@ -37,8 +37,13 @@ def voxel(points, size):
     points = np.asarray(points, dtype=np.float64)
     if not len(points):
         return points.reshape(0, 3)
-    _, inverse, counts = np.unique(np.floor(points / size).astype(np.int64),
-                                   axis=0, return_inverse=True, return_counts=True)
+    cells = np.floor(points / size).astype(np.int64)
+    base = cells.min(axis=0)
+    span = cells.max(axis=0) - base + 1
+    # one integer key per voxel (x major, so the order is np.unique(axis=0)'s), several times faster than np.unique on rows
+    key = ((cells[:, 0] - base[0]) * span[1] + (cells[:, 1] - base[1])) * span[2] + (cells[:, 2] - base[2])
+    _, inverse, counts = np.unique(key, return_inverse=True, return_counts=True)
+    inverse = inverse.ravel()
     return np.column_stack([np.bincount(inverse, weights=points[:, j]) for j in range(3)]) / counts[:, None]
 
 
