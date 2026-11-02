@@ -48,7 +48,8 @@ def supervisor_nodes():
     return [ExecuteProcess(name="gn_supervisor", output="screen", respawn=True, respawn_delay=2.0, cmd=[
         "python3", "-B", "/greloc/tools/global_reloc_3d/gn_supervisor_node.py", "--ros-args",
         "-p", f"map_xyz:={prior}", "-p", "register_binary:=/greloc/build/register_v2", "-p", "lib_dir:=/greloc/build",
-        "-p", "wheel_topic:=/odom", "-p", "work_dir:=/runs/gn_supervisor"])]
+        "-p", "wheel_topic:=/odom", "-p", "work_dir:=/runs/gn_supervisor",
+        "-p", ["sensor_z:=", LC("sensor_height")]])]     # the mounting height over the floor of the map: the relocalizer searches only +- 0.5 m around it
 
 
 def generate_launch_description():
