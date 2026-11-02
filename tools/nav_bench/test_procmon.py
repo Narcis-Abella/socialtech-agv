@@ -37,8 +37,8 @@ class ProcmonTest(unittest.TestCase):
                       [0, 2, 0, 0, 0, 1024, 1024, 'python3 search_v2.py'], [1, 2, 0, 0, t, 3072, 3072, 'python3 search_v2.py'],
                       [0, 3, 0, 0, 0, 1024, 1024, 'gzserver'], [1, 3, 0, 5 * t, 0, 9999, 9999, 'gzserver']])
         cpu, rss = procmon.stack_total(procmon.series(p))
-        self.assertAlmostEqual(cpu[1], 50. + 100.)        # fastlio half a core + the worker's reaped register_v2; the simulator is out
-        self.assertAlmostEqual(rss[1], 2. + 3.)
+        self.assertAlmostEqual(cpu[(0, 1.0)], 50. + 100.)        # fastlio half a core + the worker's reaped register_v2; the simulator is out
+        self.assertAlmostEqual(rss[(0, 1.0)], 2. + 3.)
 
     def test_sampler_sees_itself_children(self):
         out = tempfile.mktemp(suffix='.csv')
@@ -75,6 +75,19 @@ class ProcmonTest(unittest.TestCase):
         self.assertAlmostEqual(row['cpu'][0], 20.)
         self.assertAlmostEqual(row['rss'][0], 4.)
         self.assertEqual(row['procs'], 2)
+
+    def test_sampling_period_does_not_change_the_numbers(self):
+        # AMCL at a constant 50 % and 100 MB: the same figures at 1 s and at 0.5 s (run_amcl_only.sh samples every 0.5 s)
+        tk = procmon.TICK
+        for period in (1., .5):
+            rows = [[i * period, 7, 0, int(i * period * tk / 2), 0, 102400, 102400, '/opt/ros/jazzy/lib/nav2_amcl/amcl'] for i in range(9)]
+            table = procmon.by_name(procmon.series(self.csv(rows)))
+            row = table[('amcl', 'amcl')]
+            self.assertAlmostEqual(max(row['cpu']), 50., delta=1., msg=f'period {period}')
+            self.assertAlmostEqual(max(row['rss']), 100., delta=.5, msg=f'period {period}')
+            cpu, rss = procmon.stack_total(procmon.series(self.csv(rows)))
+            self.assertAlmostEqual(max(cpu.values()), 50., delta=1., msg=f'period {period} (stack total)')
+            self.assertEqual(row['procs'], 1)
 
 
 if __name__ == '__main__':

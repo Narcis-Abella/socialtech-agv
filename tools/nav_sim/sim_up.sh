@@ -1,4 +1,4 @@
-# sourced by lio_sim.sh and sup_sim.sh (inside the `sim` image): the simulator with the realism models and the simulated Mid-360, no localization yet.
+# sourced by lio_sim.sh, sup_sim.sh, lat_sim.sh and clock_sim.sh (inside the `sim` image): the simulator with the realism models and the simulated Mid-360, no localization yet.
 #   needs: $out; mounts /tools, optionally /navsrc (docker/ros_nav newer than the image's), SIM_SRC (hospital-agv-sim 'sim-realism'), /pat (ours.lvm, loyola.tris)
 #   env: SPAWN ("-13.0 0.0 0.0" x y yaw), SEED (1), SIM_WAIT (30 s: the model falls 0.3 m at spawn and FAST-LIO2 must not take its gravity from that)
 mkdir -p "$out"

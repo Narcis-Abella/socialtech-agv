@@ -67,6 +67,11 @@ def main():
     if n.state != 'MONITOR':                                             # a stack that never localized says nothing about a search disturbing it
         sys.exit(f'lat_ab: no MONITOR after 300 s (state {n.state})')
     res = {'state': n.state}
+
+    def fail(msg):                                                       # keep what was measured before the failure
+        res['error'] = msg
+        json.dump(res, open(out, 'w'), indent=1)
+        sys.exit(f'lat_ab: {msg}')
     n.spin_for(15.)                                                      # settle
     a = n.sim(); n.spin_for(idle_s)
     res['idle'] = n.window(a, n.sim())
@@ -83,7 +88,7 @@ def main():
                     rclpy.spin_once(n, timeout_sec=.05)
                     states.add(n.state)
             if p.returncode != 0:                                        # a search that died at once (missing input, wrong binary) is not an idle window
-                sys.exit(f'lat_ab: the {mode} search {k} exited with {p.returncode}: see {out}.{mode}{k}.log')
+                fail(f'the {mode} search {k} exited with {p.returncode}: see {out}.{mode}{k}.log')
             wall.append(round(time.monotonic() - w0, 2)); wins.append((s0, n.sim()))
             n.spin_for(8.)
         res[mode] = {'search_wall_s': wall, 'supervisor_states': sorted(states), **summarize([x[1] for s, e in wins for x in n.rows if s <= x[0] <= e], [x[2] for s, e in wins for x in n.rows if s <= x[0] <= e])}

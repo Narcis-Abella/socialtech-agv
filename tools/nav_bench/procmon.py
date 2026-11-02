@@ -90,14 +90,14 @@ def series(*paths):
 
 
 def stack_total(ser):
-    """Per sample time: stack CPU (own ticks of the stack processes, register_v2 replaced by the worker's reaped children) and stack RSS."""
+    """Per sampling pass, keyed (run, wall time): stack CPU (own ticks of the stack processes, register_v2 replaced by the worker's reaped children) and stack RSS."""
     cpu, rss = {}, {}
-    for (pid, cmd, _), pts in ser.items():
+    for (pid, cmd, run), pts in ser.items():
         g = group(cmd)
         if g in ('sim', 'other', 'register_v2'):
             continue
         for t, c, ch, r, _ in pts:
-            k = round(t)
+            k = (run, t)                                    # one sampling pass = one instant for every process: any period gives the same sums
             cpu[k] = cpu.get(k, 0.) + c + (ch if g == 'search_worker' else 0.)
             rss[k] = rss.get(k, 0.) + r
     return cpu, rss
@@ -125,14 +125,14 @@ def name_of(cmd):
 
 
 def by_name(ser):
-    """{(group, name): {'cpu': [% per second], 'rss': [MB per second], 'hwm': MB, 'procs': most processes at once}}: the processes that share a name (the localization and the navigation
-    lifecycle_manager) are SUMMED at each second, as in STACK TOTAL; the worker's CPU includes its reaped children (register_v2)."""
+    """{(group, name): {'cpu': [% per pass], 'rss': [MB per pass], 'hwm': MB, 'procs': most processes at once}}: the processes that share a name (the localization and the navigation
+    lifecycle_manager) are SUMMED at each sampling pass, as in STACK TOTAL; the worker's CPU includes its reaped children (register_v2)."""
     acc, hwm, procs = {}, {}, {}
     for (pid, cmd, run), pts in ser.items():
         g = group(cmd)
         k = (g, name_of(cmd))
         for t, c, ch, r, h in pts:
-            sec = acc.setdefault(k, {}).setdefault((run, round(t)), [0., 0., 0])
+            sec = acc.setdefault(k, {}).setdefault((run, t), [0., 0., 0])
             sec[0] += c + (ch if g == 'search_worker' else 0.)
             sec[1] += r
             sec[2] += 1
@@ -144,7 +144,7 @@ def report(paths, scn=None):
     ser = series(*paths)
     table = by_name(ser)
     cpu, rss = stack_total(ser)
-    print(f'samples {len(cpu)} s of stack; CPU in % of one core, RSS in MB (hwm = VmHWM); processes with the same name are summed; a short-lived process (search worker) averages over its own lifetime, the STACK TOTAL is per second')
+    print(f'{len(cpu)} samples of the stack; CPU in % of one core, RSS in MB (hwm = VmHWM); processes with the same name are summed; a short-lived process (search worker) averages over its own lifetime, the STACK TOTAL is per sampling pass')
     print(f'{"process":34s} {"procs":>5s} {"cpu avg":>8s} {"p95":>7s} {"max":>7s} {"rss avg":>8s} {"rss max":>8s} {"hwm":>7s}')
     for g in [g for g, _ in STACK] + ['other']:
         for (_, name), v in sorted(((k, v) for k, v in table.items() if k[0] == g), key=lambda kv: -sum(kv[1]['cpu'])):
@@ -155,9 +155,9 @@ def report(paths, scn=None):
     print(f'STACK TOTAL rss  {stats(list(rss.values()))}   MB')
     if scn:
         for n, a, b in phases(scn):
-            ks = [k for k in cpu if a <= k < b]
+            ks = [k for k in cpu if a <= k[1] < b]
             if ks:
-                print(f'  phase {n:20s} {len(ks):4d} s  cpu {stats([cpu[k] for k in ks])}  rss max {max(rss[k] for k in ks):6.0f} MB')
+                print(f'  phase {n:20s} {len(ks):4d} samples  cpu {stats([cpu[k] for k in ks])}  rss max {max(rss[k] for k in ks):6.0f} MB')
 
 
 if __name__ == '__main__':
