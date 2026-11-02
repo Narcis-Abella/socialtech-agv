@@ -37,6 +37,17 @@ def localizer_nodes(overrides):
                  parameters=[{"autostart": True, "node_names": ["map_server", "gn_loc" if gn else "amcl"]}])]
 
 
+HEAVY_URI = ('<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><MaxMessageSize>65500B</MaxMessageSize><FragmentSize>64000B</FragmentSize></General>'
+             '<Discovery><Peers><Peer address="localhost"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery><Internal><SocketReceiveBufferSize min="10485760B"/></Internal></Domain></CycloneDDS>')
+
+
+def heavy_env():
+    """HEAVY_DDS=1: the driver and FAST-LIO2 (the two ends of the 400 kB x 10 Hz lidar topic) talk on loopback with 64 kB datagrams instead of 1344 B fragments: ~45 % less transport CPU on
+    that hop and 73 % fewer sendmsg (laptop microbenchmark, notes/optimizacion_localizacion_2026-11-02.md; NOT measured on the Nano, hence off by default). Readers on the default URI still receive them.
+    Their topics and FAST-LIO2's TF are then not visible from the laptop's rviz2 (the configs in tools/ do not use them). The rcvbuf line is explicit: the entrypoint never sees a per-node env."""
+    return {"additional_env": {"CYCLONEDDS_URI": HEAVY_URI}} if os.environ.get("HEAVY_DDS", "").lower() not in ("", "0", "false", "no", "off") else {}
+
+
 def supervisor_nodes():
     """SUPERVISOR=1 (ops/nav_live.sh): gn_supervisor_node.py staged in /greloc. Respawned: a restarted supervisor comes up in CONFIRMING and holds Nav2 until
     gn_loc confirms its pose. It reads the robot's own FAST-LIO2 (/Odometry for "is the restarted filter publishing", plus the raw /livox/lidar and /livox/imu): no second FAST-LIO (PR #14's reloc_node.py is not used)."""
@@ -60,9 +71,9 @@ def generate_launch_description():
         Node(package="livox_ros_driver2", executable="livox_ros_driver2_node", name="livox_lidar_publisher", parameters=[{
             "xfer_format": 1, "multi_topic": 0, "data_src": 0, "publish_freq": 10.0, "output_data_type": 0, "frame_id": "livox_frame",
             "lvx_file_path": "/tmp/none.lvx", "user_config_path": LC("livox_config"), "cmdline_input_bd_code": "livox0000000001"}],
-            condition=IfCondition(LC("driver"))),
+            condition=IfCondition(LC("driver")), **heavy_env()),
         # respawn: gn_supervisor restarts it by killing it (a fresh filter takes gravity from a still IMU and starts at z = 0, which a long blind period does not leave)
-        Node(package="fast_lio", executable="fastlio_mapping", parameters=[LC("fastlio_params")], respawn=True, respawn_delay=1.0),
+        Node(package="fast_lio", executable="fastlio_mapping", parameters=[LC("fastlio_params")], respawn=True, respawn_delay=1.0, **heavy_env()),
         Node(package="planar_odom", executable="planar_odom", parameters=[{
             "sensor_height": ParameterValue(LC("sensor_height"), value_type=float),
             "level": ParameterValue(["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])}]),

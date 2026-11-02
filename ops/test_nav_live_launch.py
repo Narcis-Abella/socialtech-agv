@@ -29,3 +29,20 @@ assert respawns(node("fastlio_mapping")), "fastlio_mapping is not respawned"
 # the others keep their behaviour: a dying Livox driver must stay visible, not be restarted silently under a moving robot
 assert not respawns(node("livox_ros_driver2_node")), "the Livox driver must not respawn"
 print("ok")
+
+# HEAVY_DDS: off by default (nothing changes for the driver and FAST-LIO2), on = a per-node loopback URI with 64 kB fragments for exactly those two nodes
+def env_of(executable):
+    return node(executable).additional_env
+
+
+os.environ.pop("HEAVY_DDS", None)
+assert not launch.heavy_env(), "HEAVY_DDS must be off by default"
+os.environ["HEAVY_DDS"] = "1"
+heavy = launch.heavy_env()
+assert "FragmentSize>64000B" in heavy["additional_env"]["CYCLONEDDS_URI"] and "SocketReceiveBufferSize" in heavy["additional_env"]["CYCLONEDDS_URI"]
+for exe in ("fastlio_mapping", "livox_ros_driver2_node"):
+    assert env_of(exe), f"{exe} does not get the heavy URI"
+assert not env_of("planar_odom"), "only the two ends of the lidar topic get it"
+os.environ["HEAVY_DDS"] = "0"
+assert not launch.heavy_env()
+print("ok heavy")
