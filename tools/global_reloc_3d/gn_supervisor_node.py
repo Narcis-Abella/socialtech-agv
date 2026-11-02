@@ -247,8 +247,16 @@ class SupervisorNode(Node):
 def main():
     rclpy.init()
     n = SupervisorNode()
+    # the default executor costs ~1 ms of CPU per wakeup and this node wakes ~280 times a second (IMU 200 Hz, wheels 50 Hz, lidar and scan_fit 10 Hz): the events executor
+    # takes the same work with a third of the CPU (laptop rclpy 7.1.12). SUP_EXECUTOR=default goes back.
+    if os.environ.get('SUP_EXECUTOR', 'events') == 'events':
+        from rclpy.experimental import EventsExecutor
+        ex = EventsExecutor()
+    else:
+        ex = rclpy.executors.SingleThreadedExecutor()
+    ex.add_node(n)
     try:
-        rclpy.spin(n)
+        ex.spin()
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
