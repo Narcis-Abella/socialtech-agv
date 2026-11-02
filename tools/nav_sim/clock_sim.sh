@@ -1,7 +1,7 @@
 #!/bin/bash
 # What does the simulated clock cost? Gazebo publishes /clock at every physics step; every use_sim_time node pays for it. Two idle rclpy nodes (idle_node.py sim / wall) in the running simulator:
 # their CPU difference is the overhead each sim-time node of the stack carries on the robot-less side. usage: clock_sim.sh <out dir> [seconds=60]
-# mounts: repo tools/ at /tools and /greloc/tools, ops/ at /ops, docker/ros_loc/gn_loc at /locsrc (optional), GRELOC_BUILD (register_v2, libsmall_gicp.so) at /greloc/build, out at /out, as lio_sim.sh (SIM_SRC, /pat, /navsrc)
+# mounts: repo tools/ at /tools, out at /out, as lio_sim.sh (SIM_SRC, /pat, /navsrc); no stack runs, only the simulator
 # env: ROS_DOMAIN_ID (55), SPAWN, SEED, SIM_WAIT
 set -eo pipefail
 out=${1:?out dir}; secs=${2:-60}

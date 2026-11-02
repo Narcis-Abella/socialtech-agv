@@ -15,6 +15,7 @@ SIM = re.compile(r'gz|ruby|livox_mid360_sim|sim_base_model|sim_wheel_odom|sim_im
 STACK = [('register_v2', r'^\S*/register_v2 '), ('search_worker', r'^\S*python\S* (-\S+ )*\S*search_v2'),          # first: their paths contain /runs/gn_supervisor/
          ('fastlio', r'fastlio_mapping'), ('planar_odom', r'planar_odom'), ('scan_converter', r'pointcloud_to_laserscan'), ('gn_loc', r'gn_loc_node'),
          ('supervisor', r'gn_supervisor_node'), ('live_paths', r'live_paths'),
+         ('driver', r'livox_ros_driver2'), ('base', r'tracer_base'), ('recorder', r'ros2 bag record'), ('amcl', r'nav2_amcl'),     # the robot; before nav2, whose `nav2_` would take amcl
          ('nav2', r'controller_server|planner_server|bt_navigator|behavior_server|smoother_server|velocity_smoother|collision_monitor|lifecycle_manager|map_server|waypoint_follower|route_server|nav2_'),
          ('launch', r'ros2 launch|launch_ros|/ops/')]
 
@@ -45,7 +46,8 @@ def read(pid):
 def sample(out, period):
     stop = []
     signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
-    w = csv.writer(open(out, 'w', newline=''))
+    f = open(out, 'w', newline='')
+    w = csv.writer(f)
     w.writerow(['wall', 'pid', 'ppid', 'ticks', 'child_ticks', 'rss_kb', 'hwm_kb', 'cmd'])
     me = os.getpid()
     while not stop:
@@ -57,6 +59,7 @@ def sample(out, period):
                 except (OSError, ValueError):               # gone between listdir and read
                     continue
                 w.writerow([f'{t:.3f}', p, ppid, tk, ctk, rss, hwm, cmd])
+        f.flush()                                           # a killed sampler leaves every finished sample on disk
         time.sleep(max(period - (time.time() - t), 0))
 
 
@@ -111,22 +114,38 @@ def stats(xs):
     return f'avg {sum(xs) / len(xs):6.1f}  p95 {pct(xs, .95):6.1f}  max {max(xs):6.1f}' if xs else 'no samples'
 
 
+def name_of(cmd):
+    argv = [a for a in cmd.split() if not a.startswith('-')]
+    return argv[1 if argv[0].split('/')[-1].startswith('python') and len(argv) > 1 else 0].split('/')[-1] if argv else cmd
+
+
+def by_name(ser):
+    """{(group, name): {'cpu': [% per second], 'rss': [MB per second], 'hwm': MB, 'procs': most processes at once}}: the processes that share a name (the localization and the navigation
+    lifecycle_manager) are SUMMED at each second, as in STACK TOTAL; the worker's CPU includes its reaped children (register_v2)."""
+    acc, hwm, procs = {}, {}, {}
+    for (pid, cmd, run), pts in ser.items():
+        g = group(cmd)
+        k = (g, name_of(cmd))
+        for t, c, ch, r, h in pts:
+            sec = acc.setdefault(k, {}).setdefault((run, round(t)), [0., 0., 0])
+            sec[0] += c + (ch if g == 'search_worker' else 0.)
+            sec[1] += r
+            sec[2] += 1
+            hwm[k] = max(hwm.get(k, 0.), h)
+    return {k: {'cpu': [v[0] for v in secs.values()], 'rss': [v[1] for v in secs.values()], 'hwm': hwm[k], 'procs': max(v[2] for v in secs.values())} for k, secs in acc.items()}
+
+
 def report(paths, scn=None):
     ser = series(*paths)
-    byg = {}
-    for (pid, cmd, run), pts in ser.items():
-        argv = [a for a in cmd.split() if not a.startswith('-')]
-        name = argv[1 if argv[0].split('/')[-1].startswith('python') and len(argv) > 1 else 0].split('/')[-1] if argv else cmd
-        byg.setdefault(group(cmd), {}).setdefault(name, []).extend(pts)
+    table = by_name(ser)
     cpu, rss = stack_total(ser)
-    print(f'samples {len(cpu)} s of stack; CPU in % of one core, RSS in MB (hwm = VmHWM); a short-lived process (search worker) averages over its own lifetime, the STACK TOTAL is per second')
-    print(f'{"process":34s} {"cpu avg":>8s} {"p95":>7s} {"max":>7s} {"rss avg":>8s} {"rss max":>8s} {"hwm":>7s}')
+    print(f'samples {len(cpu)} s of stack; CPU in % of one core, RSS in MB (hwm = VmHWM); processes with the same name are summed; a short-lived process (search worker) averages over its own lifetime, the STACK TOTAL is per second')
+    print(f'{"process":34s} {"procs":>5s} {"cpu avg":>8s} {"p95":>7s} {"max":>7s} {"rss avg":>8s} {"rss max":>8s} {"hwm":>7s}')
     for g in [g for g, _ in STACK] + ['other']:
-        for name, pts in sorted(byg.get(g, {}).items(), key=lambda kv: -sum(p[1] for p in kv[1])):
-            c = [p[1] + (p[2] if g == 'search_worker' else 0) for p in pts]
-            r = [p[3] for p in pts]
-            if g == 'other' or g == 'register_v2' or sum(c) / len(c) > .05 or max(r) > 20:
-                print(f'{g[:10] + ":" + name:34.34s} {sum(c) / len(c):8.1f} {pct(c, .95):7.1f} {max(c):7.1f} {sum(r) / len(r):8.1f} {max(r):8.1f} {max(p[4] for p in pts):7.1f}')
+        for (_, name), v in sorted(((k, v) for k, v in table.items() if k[0] == g), key=lambda kv: -sum(kv[1]['cpu'])):
+            c, r = v['cpu'], v['rss']
+            if g in ('other', 'register_v2') or sum(c) / len(c) > .05 or max(r) > 20:
+                print(f'{g[:10] + ":" + name:34.34s} {v["procs"]:5d} {sum(c) / len(c):8.1f} {pct(c, .95):7.1f} {max(c):7.1f} {sum(r) / len(r):8.1f} {max(r):8.1f} {v["hwm"]:7.1f}')
     print(f'\nSTACK TOTAL cpu  {stats(list(cpu.values()))}   (% of one core)')
     print(f'STACK TOTAL rss  {stats(list(rss.values()))}   MB')
     if scn:

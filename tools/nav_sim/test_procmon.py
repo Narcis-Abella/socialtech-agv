@@ -54,6 +54,23 @@ class ProcmonTest(unittest.TestCase):
         self.addCleanup(os.unlink, f.name)
         self.assertEqual([(n, a, b) for n, a, b in procmon.phases(f.name)][1:4], [('monitor', 10, 20), ('covered', 20, 40), ('reloc_after_uncover', 40, 50)])
 
+    def test_robot_processes_are_stack(self):
+        for cmd, g in (('/opt/ws/lib/livox_ros_driver2/livox_ros_driver2_node --ros-args', 'driver'), ('/opt/ws/lib/tracer_base/tracer_base_node', 'base'),
+                       ('/usr/bin/python3 /opt/ros/jazzy/bin/ros2 bag record -s mcap -o /runs/bag /scan', 'recorder'), ('/opt/ros/jazzy/lib/nav2_amcl/amcl --ros-args', 'amcl'),
+                       ('/opt/ros/jazzy/lib/nav2_controller/controller_server', 'nav2')):
+            self.assertEqual(procmon.group(cmd), g, cmd)
+
+    def test_same_name_is_summed_per_second(self):
+        t = procmon.TICK
+        rows = []
+        for pid in (1, 2):                                     # two lifecycle_manager processes (localization, navigation): 10 % each
+            rows += [[0, pid, 0, 0, 0, 1024, 1024, '/opt/ros/jazzy/lib/nav2_lifecycle_manager/lifecycle_manager'], [1, pid, 0, t // 10, 0, 2048, 2048, '/opt/ros/jazzy/lib/nav2_lifecycle_manager/lifecycle_manager']]
+        table = procmon.by_name(procmon.series(self.csv(rows)))
+        row = table[('nav2', 'lifecycle_manager')]
+        self.assertAlmostEqual(row['cpu'][0], 20.)
+        self.assertAlmostEqual(row['rss'][0], 4.)
+        self.assertEqual(row['procs'], 2)
+
 
 if __name__ == '__main__':
     unittest.main()

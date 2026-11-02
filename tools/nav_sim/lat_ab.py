@@ -1,5 +1,5 @@
 """Does a relocalizer search disturb FAST-LIO? Latency and gaps of /Odometry while the search worker runs, against the idle stack (lat_sim.sh).
-usage: lat_ab.py OUT.json INPUT_DIR [reps=4] [idle_s=30] [--z-band LO HI]   INPUT_DIR: a prepared search input (map/fit/check.xyz, manifest.json) such as runs/gn_supervisor/reloc*/input
+usage: lat_ab.py OUT.json INPUT_DIR [reps=4] [idle_s=30] [--z-band LO HI]   exits non-zero when the stack never reaches MONITOR or a search fails; the search logs go to OUT.<mode><k>.log; supervisor_states lists what the supervisor did meanwhile.   INPUT_DIR: a prepared search input (map/fit/check.xyz, manifest.json) such as runs/gn_supervisor/reloc*/input
 Modes: idle (no search), search (as gn_supervisor starts it), nice (the same under `nice -n 10`). Latency = sim clock at arrival - header stamp of the odometry (it includes the 0.1 s scan period);
 a gap is the sim time between two consecutive messages (nominal 0.1 s). The simulator runs at ~0.95 real time, so all numbers are in sim seconds."""
 import json
@@ -64,23 +64,29 @@ def main():
     t0 = n.sim()
     while rclpy.ok() and n.state != 'MONITOR' and n.sim() - t0 < 300:
         rclpy.spin_once(n, timeout_sec=.1)
+    if n.state != 'MONITOR':                                             # a stack that never localized says nothing about a search disturbing it
+        sys.exit(f'lat_ab: no MONITOR after 300 s (state {n.state})')
     res = {'state': n.state}
     n.spin_for(15.)                                                      # settle
     a = n.sim(); n.spin_for(idle_s)
     res['idle'] = n.window(a, n.sim())
     for mode in ('search', 'nice'):
-        wins, wall = [], []
+        wins, wall, states = [], [], set()
         for k in range(reps):
             cmd = ['nice', '-n', '10'] if mode == 'nice' else []
             cmd += [sys.executable, '-B', '/greloc/tools/global_reloc_3d/search_v2.py', '--run', inp, '--out', f'{out}.{mode}{k}', '--binary', '/greloc/build/register_v2',
                     '--deadline-s', '60', '--threads', '2'] + zb
             w0, s0 = time.monotonic(), n.sim()
-            p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            while p.poll() is None:
-                rclpy.spin_once(n, timeout_sec=.05)
+            with open(f'{out}.{mode}{k}.log', 'w') as log:
+                p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+                while p.poll() is None:
+                    rclpy.spin_once(n, timeout_sec=.05)
+                    states.add(n.state)
+            if p.returncode != 0:                                        # a search that died at once (missing input, wrong binary) is not an idle window
+                sys.exit(f'lat_ab: the {mode} search {k} exited with {p.returncode}: see {out}.{mode}{k}.log')
             wall.append(round(time.monotonic() - w0, 2)); wins.append((s0, n.sim()))
             n.spin_for(8.)
-        res[mode] = {'search_wall_s': wall, **summarize([x[1] for s, e in wins for x in n.rows if s <= x[0] <= e], [x[2] for s, e in wins for x in n.rows if s <= x[0] <= e])}
+        res[mode] = {'search_wall_s': wall, 'supervisor_states': sorted(states), **summarize([x[1] for s, e in wins for x in n.rows if s <= x[0] <= e], [x[2] for s, e in wins for x in n.rows if s <= x[0] <= e])}
     json.dump(res, open(out, 'w'), indent=1)
     print(json.dumps(res, indent=1))
     rclpy.shutdown()
