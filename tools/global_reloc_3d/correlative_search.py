@@ -109,8 +109,13 @@ class MapField:
         spectrum = fft.rfft2(S, axes=(1, 2), workers=self.workers)
         np.conjugate(spectrum, out=spectrum)
         acc = np.empty((len(z0), *self.layers.shape[1:]), self.layers.dtype)
-        for i, z in enumerate(z0):
-            acc[i] = (self.layers[z + k0:z + k1 + 1] * spectrum).sum(axis=0)
+        tmp = np.empty(self.layers.shape[1:], self.layers.dtype)
+        for i, z in enumerate(z0):       # the sum over the source's layers, one layer at a time and in place, in the order of .sum(axis=0): no (layers x spectrum) temporary
+            layers = self.layers[z + k0:z + k1 + 1]
+            np.multiply(layers[0], spectrum[0], out=acc[i])
+            for k in range(1, len(spectrum)):
+                np.multiply(layers[k], spectrum[k], out=tmp)
+                acc[i] += tmp
         c = fft.irfft2(acc, s=self.fft_xy, axes=(1, 2), workers=self.workers)
         lo, hi = self.valid_lo, self.valid_hi
         return np.moveaxis(c[:, lo[0]:hi[0] + 1, lo[1]:hi[1] + 1], 0, 2) / len(cells), len(cells)
