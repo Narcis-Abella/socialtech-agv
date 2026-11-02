@@ -84,6 +84,24 @@ class AutoInitTest(Fixture):
         t, _ = self.waiting(s, 4, 30)
         self.assertIsNone(t)
 
+    def test_an_operator_pose_before_any_status_means_no_start_up_localization(self):
+        s = Supervisor(sc.Params(auto_init_s=8.))
+        run(s, 0., ('on_operator_pose', (1., 2., 0.)))
+        t, _ = self.waiting(s, 1, 5)
+        self.assertIsNone(t)
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
+
+    def test_a_stale_waiting_status_does_not_start_it(self):
+        s = Supervisor(sc.Params(auto_init_s=8.))
+        s.gn_state, s.t_status = 'WAITING_POSE', 0.                 # gn_loc said it waits, then went silent for longer than the stale limit
+        self.assertNotIn('reloc_start', kinds(run(s, 5.)))
+
+    def test_a_silent_gn_loc_is_waited_for_before_localizing(self):
+        s = Supervisor(sc.Params(auto_init_s=8.))
+        seen = [k for k in range(7) if 'reloc_start' in kinds(run(s, float(k)))]
+        self.assertEqual(seen, [])
+        self.assertIn('reloc_start', kinds(run(s, 8.)))
+
     def test_an_operator_pose_during_the_auto_init_aborts_it_and_wins(self):
         s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)

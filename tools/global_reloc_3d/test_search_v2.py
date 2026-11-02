@@ -203,7 +203,18 @@ class StaleBinaryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             b = d / 'fake'
-            b.write_text(FAKE_REGISTER + '')
+            b.write_text(FAKE_REGISTER)
             b.chmod(0o755)
             log, results, _ = sv.refine_all(b, 'm', 's', 'c', [np.eye(4)] * 3, d, 'cand', .3, 20)
         self.assertEqual([r is not None for r in results], [True, False, True])
+
+    def test_every_init_failing_is_no_hypothesis_not_a_broken_binary(self):
+        import search_v2 as sv
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            b = d / 'failing'
+            b.write_text('#!/bin/sh\necho "init 0: degenerate" >&2\nexit 1\n')
+            b.chmod(0o755)
+            log, results, timed_out = sv.refine_all(b, 'm', 's', 'c', [np.eye(4)] * 2, d, 'cand', .3, 20)
+        self.assertEqual((results, timed_out, log['exit_code']), ([None, None], False, 1))
+

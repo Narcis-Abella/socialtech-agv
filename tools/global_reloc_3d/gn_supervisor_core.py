@@ -48,9 +48,8 @@ class Params:
     park_drift_hold_s: float = 1.    # ... for this long with the wheels still (the scan sees a turn ~0.1-1 s before the wheel speed does: 140131)
     wheel_stale_s: float = .5        # no wheel message this long: stillness unknown, the parked check disarms (131206: 7 s gap in /odom)
     verify_period_s: float = 0.      # > 0: also relocalize (without holding) when parked and the last check is this old
-    auto_init_s: float = 8.          # start-up: localize by itself as soon as gn_loc reports WAITING_POSE (no pose yet). If gn_loc is not waiting (silent, or TRACKING from before the supervisor
-                                     # started) it waits this long first (twice for TRACKING). 0 = wait for the operator only. It only
-                                     # asks the operator (FAILED needs_operator:...) when the relocalizer does not accept or gn_loc does not confirm its pose
+    auto_init_s: float = 8.          # start-up localization by itself when gn_loc is not waiting for a pose (see auto_init_due); 0 = wait for the operator only. It only asks the operator
+                                     # (FAILED needs_operator:...) when the relocalizer does not accept or gn_loc does not confirm its pose
 
 
 DETERMINISTIC = ('exception_in_', 'search_worker_exit_1', 'search_worker_exit_2')    # a Python exception / bad arguments: a new attempt cannot fix them; everything else (a push, an ambiguous scene, a worker killed by a signal or the OOM killer) can pass
@@ -232,13 +231,22 @@ class Supervisor:
         self.go(t, 'FAILED', f'needs_operator:{reason}' if self.auto else reason)
         self.retry = retry
 
+    def auto_init_due(self, t):
+        """Start-up localization: at once when gn_loc is up without a pose (a fresh WAITING_POSE status); otherwise (no status yet, or TRACKING from before a restarted supervisor) after
+        auto_init_s, twice for TRACKING: the start-up has no timeout of its own and a gn_loc that settles by itself must not be restarted over. auto_init_s 0: never."""
+        p = self.p
+        if p.auto_init_s <= 0:
+            return False
+        if self.gn_state == 'WAITING_POSE' and t - self.t_status <= p.status_stale_s:
+            return True
+        return t - self.t_boot >= p.auto_init_s and (self.gn_state != 'TRACKING' or t - self.t_boot >= 2 * p.auto_init_s)
+
     def tick(self, t):
         p = self.p
         if self.t_boot is None:
             self.t_boot = t
-        if self.state == 'CONFIRMING' and self.reason == 'startup' and p.auto_init_s > 0 and (self.gn_state == 'WAITING_POSE' or t - self.t_boot >= p.auto_init_s
-                                                                                            and (self.gn_state != 'TRACKING' or t - self.t_boot >= 2 * p.auto_init_s)):
-            self.auto, self.attempts = True, 0                       # gn_loc is up without a pose: localize at once, a click of the operator still aborts it. Otherwise (no status yet, or TRACKING from before: a restarted supervisor) wait: TRACKING gets twice the wait, the start-up has no timeout
+        if self.state == 'CONFIRMING' and self.reason == 'startup' and self.auto_init_due(t):
+            self.auto, self.attempts = True, 0                       # localize: the operator can still click, and wins
             return self.start_reloc(t, 'startup_auto')
         if self.hold and any(self.goals.values()) and (self.t_sent is None or t - self.t_sent >= p.recancel_s):
             self.actions.append(('cancel',)); self.t_sent = t
