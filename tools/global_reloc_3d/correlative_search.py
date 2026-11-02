@@ -46,10 +46,10 @@ def unique_cells(points, res):
 
 
 def z_cell_range(sources, res, radius):
-    """(lowest, highest) z cell index of the points of the sources inside the search radius: the cells a rotation about z leaves where they are."""
+    """(lowest, highest) z cell index of the points of the sources inside the search radius (the cells a rotation about z leaves where they are), None when there are no points."""
     zs = np.concatenate([crop_source(s, radius)[:, 2] for s in sources])
-    if not len(zs):                 # a near-empty frame: (0, 0), as source_reach_z gives 0, so that the search itself rejects it ('too few points')
-        return 0, 0
+    if not len(zs):                 # a near-empty frame: no range (every layer), so that the search itself rejects it ('too few points') as before
+        return None
     return int(np.floor(zs.min() / res)), int(np.floor(zs.max() / res))
 
 
@@ -174,12 +174,12 @@ def spread_order(n):
     return order
 
 
-def tenth_of_separated(peaks, nms_xy, nms_yaw_deg, top=10, slack=1e-6):
+def top_of_separated(peaks, nms_xy, nms_yaw_deg, top, *, slack=1e-6):
     """Score of the `top`-th best of a greedy set of peaks that are far apart: more than twice nms_xy in xy OR twice nms_yaw_deg in yaw (and `slack` more, for the rounding of the
     triangle inequality), as (score, yaw_rad, xyz); -inf while there are fewer than `top`. The final selection takes the `top` best peaks that are more than nms_xy OR nms_yaw_deg from
     those already taken. A peak that is within both of two members of this set would put those two within twice both of each other, which they are not: every selected peak
     blocks at most one member, each member is selected or blocked by a peak that scores at least as much. So `top` selected peaks score >= the value returned, and a yaw whose best
-    score is below it cannot contribute to the selection."""
+    score is below it cannot contribute to the selection. The cost grows with `top` (sorting and a Python loop per yaw: ~0.04 s per search at the default 10, ~0.2 s at 40): made for the default."""
     chosen = []
     for p in sorted(peaks, key=lambda p: -p[0]):
         if all(np.hypot(p[2][0] - q[2][0], p[2][1] - q[2][1]) > 2 * nms_xy + slack or yaw_distance_deg(p[1], q[1]) > 2 * nms_yaw_deg + slack for q in chosen):
@@ -205,12 +205,12 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
     bar, skipped = -math.inf, 0
     for i in spread_order(len(yaws)):
         inside, n = field.correlate(source, yaws[i])
-        if inside.max() < bar:      # no peak of this yaw can be among the selected ones (tenth_of_separated: the `top`-th of far-apart peaks)
+        if inside.max() < bar:      # no peak of this yaw can be among the selected ones (top_of_separated: the `top`-th score of far-apart peaks)
             skipped += 1
             continue
         for j, (xyz, sc) in enumerate(yaw_peaks(inside, lo, field.origin, field.res, per_yaw, nms_xy)):
             peaks.append((sc, float(yaws[i]), xyz.tolist(), i, j, n))
-        bar = tenth_of_separated(peaks, nms_xy, nms_yaw_deg, top)
+        bar = top_of_separated(peaks, nms_xy, nms_yaw_deg, top)
     peaks.sort(key=lambda p: (-p[0], p[3], p[4]))     # ties in the order a plain 0..360 sweep would have produced them
     peaks = [{'yaw_rad': p[1], 'xyz': p[2], 'score': p[0], 'source_voxels': p[5]} for p in peaks]
     selected = []

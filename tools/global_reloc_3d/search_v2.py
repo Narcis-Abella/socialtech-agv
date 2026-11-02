@@ -125,6 +125,13 @@ def rank(rows, z_band=None):
     return top
 
 
+def positive_int(s):
+    n = int(s)
+    if n < 1:
+        raise argparse.ArgumentTypeError('must be >= 1')
+    return n
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--run', required=True, help='prepared run with map/fit/check.xyz, levelled source')
@@ -134,7 +141,7 @@ def main():
     p.add_argument('--yaw-step', type=float, default=2.5)
     p.add_argument('--radius', type=float, default=15.)
     p.add_argument('--top', type=int, default=10)
-    p.add_argument('--fft-workers', type=int, default=1, help='FFT threads of each search (1: the primary and the confirmation search run side by side; 2 costs ~40 %% more CPU on a laptop for no gain in wall time, to be measured on a board)')
+    p.add_argument('--fft-workers', type=positive_int, default=1, help='FFT threads of each search (1: the primary and the confirmation search run side by side; 2 costs ~40 %% more CPU on a laptop for no gain in wall time, to be measured on a board)')
     p.add_argument('--gicp-voxel', type=float, default=.3)
     p.add_argument('--deadline-s', type=float, default=60., help='remaining decision budget from this process start')
     p.add_argument('--z-band', type=float, nargs=2, metavar=('LO', 'HI'), help='heights (m, map frame) the sensor can have: the search and the refined poses stay inside it (+- 0.25 m for the latter)')
@@ -193,7 +200,7 @@ def main():
     report = {'dataset_run': str(run), 'generator': 'correlative_fft_levelled', 'res_m': a.res,
               'yaw_step_deg': a.yaw_step, 'radius_m': a.radius, 'top': a.top,
               'field_seconds': t_field, 'correlative_seconds': found['seconds'],
-              'correlative_score_quantiles_unskipped': found['score_quantiles_unskipped_peaks'],
+              'score_quantiles_unskipped_peaks': found['score_quantiles_unskipped_peaks'],
               'grid_shape': found['grid_shape'], 'valid_candidates': sum('geometry' in r for r in rows),
               'distinct_top_ids': [r['id'] for r in top],
               'distinct_top': [{'id': r['id'], 'support': r['geometry']['support_015'],
