@@ -44,6 +44,15 @@ def main():
     dist = np.hypot(x - rx, y - ry)
     m = dist < 1.2
     print(f'local costmap ({cm.header.frame_id}, {info.width}x{info.height} at {info.resolution} m): {len(jj)} lethal cells, {int(m.sum())} within 1.2 m of the robot at ({rx:.2f}, {ry:.2f})')
+    ci, cj = np.meshgrid(np.arange(info.width), np.arange(info.height))
+    cx, cy = info.origin.position.x + (ci + .5) * info.resolution, info.origin.position.y + (cj + .5) * info.resolution
+    near_robot = np.hypot(cx - rx, cy - ry) < .6
+    vals, cnt = np.unique(d[near_robot], return_counts=True)
+    print('costs within 0.6 m of the robot (value: cells):', dict(zip(vals.tolist(), cnt.tolist())))
+    print('whole costmap:', dict(zip(*[x.tolist() for x in np.unique(d, return_counts=True)])))
+    import subprocess
+    for prm in ('FollowPath.use_collision_detection', 'FollowPath.max_allowed_time_to_collision_up_to_carrot', 'FollowPath.allow_reversing', 'FollowPath.lookahead_dist'):
+        print(prm, subprocess.run(['ros2', 'param', 'get', '/controller_server', prm], capture_output=True, text=True).stdout.strip())
     for k in np.argsort(dist)[:25]:
         if m[k]:
             print(f'  lethal at ({x[k]:.2f}, {y[k]:.2f}) dist {dist[k]:.2f} bearing {math.degrees(math.atan2(y[k] - ry, x[k] - rx)):.0f} deg')
