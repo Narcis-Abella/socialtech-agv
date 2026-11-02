@@ -38,9 +38,10 @@ lio_nodes() {
   ros2 run fast_lio fastlio_mapping --ros-args --params-file "$out/fastlio.yaml" -p use_sim_time:=true > "$out/fastlio.log" 2>&1 &
   ros2 run planar_odom planar_odom $SIM -p sensor_height:=$SENSOR_H -p level:="[0.0, 0.0, 0.0, 1.0]" > "$out/planar.log" 2>&1 &
   # The real /scan has surface jumps (the 3D band collapsed to 2D, furniture) and dropout (21-27 % outlier beams, 2-8 % dropout by range) that this clean world and its static scene do not produce:
-  # SCAN_EXTRA (default on) adds exactly those from the calibrated model (noise_scale 0: the Gaussian core already comes from the real chain); SCAN_EXTRA=0 is the chain alone.
+  # SCAN_EXTRA=1 adds exactly those from the calibrated model (noise_scale 0: the Gaussian core already comes from the real chain). Off by default: calibrated on a furnished room, in this empty
+  # world its "nearer" jumps are phantom obstacles around the robot (Nav2 completed 0 of 4 trials with it, 4 of 4 without). fid_sim.sh turns it on to compare with the calibration.
   local scan_out=/scan
-  if [ "${SCAN_EXTRA:-1}" != 0 ]; then
+  if [ "${SCAN_EXTRA:-0}" != 0 ]; then
     scan_out=/scan_chain
     ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
   fi

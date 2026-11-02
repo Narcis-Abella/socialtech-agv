@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nav2 on the full-chain simulation, inside the `sim` image: the robot's own ops/nav_robot.launch.py (FAST-LIO2 on the simulated Mid-360, planar_odom, scan_median, gn_loc,
 # Nav2 with the real robot's overrides, base off: the simulator's base model drives) and trials.py on a scenario. usage: nav_full_sim.sh <out dir> <scenario.json> [reps]
-# mounts and env as sup_sim.sh; SUPERVISOR=1 also runs gn_supervisor (needs /greloc/build and the prior); SCAN_EXTRA=0 the chain alone; LOCALIZER=amcl for AMCL.
+# mounts and env as sup_sim.sh; SUPERVISOR=1 also runs gn_supervisor (needs /greloc/build and the prior); SCAN_EXTRA=1 adds the calibrated dropout and surface jumps (a stress test: it blocks Nav2 in this empty world); LOCALIZER=amcl for AMCL.
 set -eo pipefail
 out=${1:?out dir}; scenario=${2:?scenario.json}; reps=${3:-1}
 source "${ROS_ENV:-/ros_env.sh}"
@@ -28,7 +28,7 @@ python3 /ops/merge_params.py "$share/config/nav2_params.yaml" /ops/nav2_robot_ov
 if [ "${SUPERVISOR:-0}" != 0 ]; then
   python3 /tools/sim_realism/tris_to_prior.py /pat/loyola.tris "$out/prior.xyz" 0.2 0.1 > "$out/prior.log"; mkdir -p "$out/runs"; export SUP_PRIOR="$out/prior.xyz"
 fi
-if [ "${SCAN_EXTRA:-1}" != 0 ]; then
+if [ "${SCAN_EXTRA:-0}" != 0 ]; then
   export SCAN_TOPIC=/scan_chain
   ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
 fi

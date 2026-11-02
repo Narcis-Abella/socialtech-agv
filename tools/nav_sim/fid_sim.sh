@@ -6,6 +6,7 @@ set -eo pipefail
 out=${1:?out dir}; secs=${2:-60}
 source "${ROS_ENV:-/ros_env.sh}"
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-56}
+export SCAN_EXTRA=${SCAN_EXTRA:-1}   # the comparison with the calibration needs the dropout and jumps the clean world lacks
 source /tools/nav_sim/sim_up.sh
 lio_nodes
 python3 /tools/nav_sim/lio_eval.py record "$out/parked.csv" "$secs" > "$out/rec.log" 2>&1 &

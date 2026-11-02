@@ -8,9 +8,9 @@ All `*.sh` that run inside the image take the same mounts: this `tools/` at `/to
 | | 2D (legacy) | full chain (`SIM_LIO=1`) |
 |---|---|---|
 | sensors | Gazebo 2D lidar `/scan` + wheel/ground-truth odometry | simulated Mid-360 (`socialtech_livox_sim`, non-repetitive) + ICM-40609 IMU 200 Hz in g |
-| localization input | the simulator's `/scan` and `odom -> base_footprint` | real FAST-LIO2 (the robot's parameter edits) -> `planar_odom` -> `scan_median` -> `/scan`, plus `SCAN_EXTRA` dropout and surface jumps |
+| localization input | the simulator's `/scan` and `odom -> base_footprint` | real FAST-LIO2 (the robot's parameter edits) -> `planar_odom` -> `scan_median` -> `/scan`, (optional `SCAN_EXTRA=1`: calibrated dropout and surface jumps, a stress test) |
 | entry points | `run_trials.sh`, `run_eval.sh`, `agx_run.sh`, `agx_queue.sh`, `agx_live.sh` | `lio_sim.sh`, `fid_sim.sh`, `sup_sim.sh` (`sim_up.sh` is their common start) |
-| Nav2 | yes (`socialtech_nav`, AMCL on the PGM) | not yet: `sup_sim.sh` runs the robot's own `ops/nav_live.launch.py` (gn_loc + gn_supervisor) without Nav2 |
+| Nav2 | yes (`socialtech_nav`, AMCL on the PGM) | `nav_full_sim.sh`: the robot's own `ops/nav_robot.launch.py` (gn_loc, RPP, the real overrides) + `trials.py`; `sup_sim.sh`: gn_loc + gn_supervisor without Nav2 |
 
 ## Full chain
 - `lio_sim.sh OUT [leg v w]`: drives out and back, `lio_eval.py` reports FAST-LIO2 against the Gazebo pose (8.7 m, two half turns: xy median 2.1 cm, max 7.7 cm on the AGX).
@@ -24,3 +24,6 @@ AMCL on recorded real inputs (no simulator): `record_real_inputs.sh`, `real_swee
 
 ## Tests
 with the laptop's ROS sourced: `python3 -m pytest tools/nav_sim --ignore=tools/nav_sim/test_trials.py` (194 pass); `test_trials.py` needs `nav2_msgs`, so run it in the `sim` image.
+
+## Results (AGX, 2026-11-02)
+`nav_full_sim.sh auto:4` (4 start/goal pairs on the chain's own map, clearance 0.6 m): 4 of 4 reached, 25-52 s each, 0 recoveries, localization error 2-3 cm at the start. With `SCAN_EXTRA=1`: 0 of 4. Start/goal pairs 0.45 m from a wall fail instead: the footprint's corners (0.43 m) cannot turn in place there.
