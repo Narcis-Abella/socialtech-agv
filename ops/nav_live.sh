@@ -31,7 +31,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   h=$(python3 -c "import json; print(json.load(open('/map/report.json'))['sensor_height_m'])")
   read -r qx qy qz qw < <(python3 "$NB/pose_eval.py" level --ref /map/vs/run/alidarState.txt --map /map/map.yaml)
   "$REPO/ops/livox_config.sh" >/tmp/MID360_config.json
-  FSM=${FILTER_SIZE_MAP:-0.25}; PFN=${POINT_FILTER_NUM:-2}   # env, like GYR_COV: FILTER_SIZE_MAP=0.5 POINT_FILTER_NUM=3 are the upstream values
+  FSM=${FILTER_SIZE_MAP:-0.25}; PFN=${POINT_FILTER_NUM:-2}   # empty (not passed) = default   # env, like GYR_COV: FILTER_SIZE_MAP=0.5 POINT_FILTER_NUM=3 are the upstream values
   [[ $FSM =~ ^[0-9]+(\.[0-9]+)?$ && $FSM != 0 && $PFN =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: FILTER_SIZE_MAP='$FSM' must be a positive number and POINT_FILTER_NUM='$PFN' a positive integer" >&2; exit 1; }
   sed -e "s|pcd_save_en:.*|pcd_save_en: false|" -e "s|map_en:.*|map_en: false|" -e "s|path_en:.*|path_en: false|" \
       -e "s|^\( *\)gyr_cov:.*|\1gyr_cov: ${GYR_COV:-0.01}|" -e "s|^\( *\)acc_cov:.*|\1acc_cov: 1.0|" -e "s|^\( *\)blind:.*|\1blind: 0.1|" \
@@ -118,6 +118,6 @@ fi
 RUN=${NAV_RUNS:-$HOME/nav_runs}/$(date +%Y%m%d_%H%M%S)   # persists after the container is gone: ROS node logs (log/) and, with NAV, the bag (bag/)
 mkdir -p "$RUN/log"
 echo "localizing on $MAP (Ctrl-C to stop). Logs${NAV:+ and bag} in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
-exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e BASE="${BASE:-}" -e LOCALIZER="${LOCALIZER:-}" -e GYR_COV="${GYR_COV:-0.01}" -e SCAN_CONVERTER="${SCAN_CONVERTER:-}" \
+exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e BASE="${BASE:-}" -e LOCALIZER="${LOCALIZER:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" -e SCAN_CONVERTER="${SCAN_CONVERTER:-}" \
   -e DDS_IFACE="$DDS_IFACE" -e PEER="$PEER" -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e LIVOX_HOST_IP="$HOST_IP" -e LIVOX_LIDAR_IP="$LIDAR_IP" \
   -v "$MAP:/map:ro" -v "$REPO:$REPO:ro" -v "$RUN:/runs" -v "$HOME/nav_overlay:/ov:ro" "${SUP[@]}" -w /tmp "$IMAGE" "$REPO/ops/nav_live.sh" --inside
