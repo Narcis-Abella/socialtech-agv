@@ -5,7 +5,7 @@ import numpy as np
 
 from scipy import fft
 
-from correlative_search import MapField, pose, search, spread_order, tenth_of_separated, unique_cells, yaw_distance_deg, yaw_peaks, rot_z
+from correlative_search import MapField, pose, search, spread_order, tenth_of_separated, unique_cells, yaw_distance_deg, yaw_peaks, z_cell_range, rot_z
 from offline_s2 import transform
 
 
@@ -54,7 +54,9 @@ class ExactSpeedupsTest(unittest.TestCase):
         self.source = local[np.linalg.norm(local[:, :2], axis=1) < 9.]
 
     def test_layered_padded_correlation_gives_the_3d_scores_inside_the_valid_window(self):
-        f = MapField(self.world, .5, .5, 9.5, float(np.abs(self.source[:, 2]).max()) + .5)
+        reach = float(np.abs(self.source[:, 2]).max()) + .5
+        f = MapField(self.world, .5, .5, 9.5, reach)
+        field = ReferenceMapField(self.world, .5, .5, 9.5, reach).field      # the field itself (the reference keeps it; MapField only keeps its spectrum)
         self.assertTrue(all(n >= m for n, m in zip(f.fft_xy, f.shape)))
         self.assertTrue(all(fft.next_fast_len(n, real=True) == n for n in f.fft_xy), f.fft_xy)
         lo, hi = f.valid_lo, f.valid_hi
@@ -62,7 +64,7 @@ class ExactSpeedupsTest(unittest.TestCase):
             cells = np.unique(np.floor((self.source @ rot_z(yaw).T) / f.res).astype(int), axis=0)
             S = np.zeros(f.shape, np.float32)
             S[tuple((cells % np.array(f.shape)).T)] = 1.
-            ref = fft.irfftn(fft.rfftn(f.field) * np.conj(fft.rfftn(S)), s=f.shape) / len(cells)
+            ref = fft.irfftn(fft.rfftn(field) * np.conj(fft.rfftn(S)), s=f.shape) / len(cells)
             got, n = f.correlate(self.source, yaw)
             self.assertEqual(n, len(cells))
             win = (slice(lo[0], hi[0] + 1), slice(lo[1], hi[1] + 1), slice(lo[2], hi[2] + 1))
@@ -147,7 +149,7 @@ class ReferenceMapField:
         occ = np.zeros(self.shape, bool)
         occ[tuple(np.floor((points - self.origin) / res).astype(int).T)] = True
         d = ndimage.distance_transform_edt(~occ) * res
-        field = np.exp(-.5 * (d / sigma) ** 2).astype(np.float32)
+        field = self.field = np.exp(-.5 * (d / sigma) ** 2).astype(np.float32)
         self.fft_xy = tuple(fft.next_fast_len(n, real=True) for n in self.shape[:2])
         self.layers = fft.rfft2(np.moveaxis(field, 2, 0), s=self.fft_xy, axes=(1, 2), workers=2)
 
@@ -231,6 +233,42 @@ class SkipTest(unittest.TestCase):
         r = search(world, local, res=.5, radius=9., top=10)
         self.assertGreater(r['yaws_skipped'], 0)
         self.assertLess(r['yaws_skipped'], 144)
+
+
+class LeanBuildTest(unittest.TestCase):
+    def setUp(self):
+        self.world = synthetic_map(np.random.default_rng(5))
+        local = transform(self.world, np.linalg.inv(pose(math.radians(40.), [14., 9., .5])))
+        self.source = local[np.linalg.norm(local[:, :2], axis=1) < 9.]
+        self.reach = float(np.abs(self.source[:, 2]).max()) + .5
+
+    def test_z_cell_range_is_the_floor_of_the_heights_inside_the_radius(self):
+        a = np.array([[1., 0., -.7], [0., 2., 1.3], [30., 0., 9.]])          # the last point is outside the radius
+        self.assertEqual(z_cell_range([a], .5, 15.), (-2, 2))
+        b = np.array([[1., 0., 3.1]])
+        self.assertEqual(z_cell_range([a, b], .5, 15.), (-2, 6))
+
+    def test_only_the_layers_the_source_reaches_are_transformed_and_the_scores_do_not_change(self):
+        full = MapField(self.world, .5, .5, 9.5, self.reach)
+        zr = z_cell_range([self.source], .5, 9.)
+        lean = MapField(self.world, .5, .5, 9.5, self.reach, z_cells=zr)
+        self.assertLess(len(lean.layers), len(full.layers))
+        for yaw in (0., 1.1, 4.0):
+            a, na = full.correlate(self.source, yaw)
+            b, nb = lean.correlate(self.source, yaw)
+            self.assertEqual(na, nb)
+            np.testing.assert_array_equal(a, b)
+        high = self.source + [0., 0., 6.]                                    # a source taller than the range it was built for
+        with self.assertRaises(ValueError):
+            lean.correlate(high, 0.)
+
+    def test_the_build_allocates_far_less_than_scipys_edt_does(self):
+        import tracemalloc
+        tracemalloc.start()
+        f = MapField(self.world, .5, .5, 9.5, self.reach, z_cells=z_cell_range([self.source], .5, 9.))
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        self.assertLess(peak / np.prod(f.shape), 36., 'bytes per cell at the peak (scipy edt + exp temporaries: 57; now ~30)')
 
 
 class OneFftThreadTest(unittest.TestCase):

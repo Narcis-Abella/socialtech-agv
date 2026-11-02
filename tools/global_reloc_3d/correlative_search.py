@@ -45,6 +45,12 @@ def unique_cells(points, res):
     return np.stack([kx, ky, kz], axis=1) + base
 
 
+def z_cell_range(sources, res, radius):
+    """(lowest, highest) z cell index of the points of the sources inside the search radius: the cells a rotation about z leaves where they are."""
+    zs = np.concatenate([crop_source(s, radius)[:, 2] for s in sources])
+    return int(np.floor(zs.min() / res)), int(np.floor(zs.max() / res))
+
+
 def yaw_peaks(inside, lo, origin, res, per_yaw, nms_xy):
     """The per_yaw best voxels of one yaw's score volume, at least nms_xy apart in xy, best first, as (position, score)."""
     flat = inside.ravel()
@@ -71,7 +77,7 @@ class MapField:
     6 on a real map). The xy FFT runs on the grid padded again, at the end, to a size the FFT does fast (the 191 of a real map is prime and costs several times
     more): the extra cells are zero and lie beyond the reach of every valid sensor position, so the scores of the valid window do not change."""
 
-    def __init__(self, points, res, sigma, reach_xy, reach_z, workers=1, z_band=None):
+    def __init__(self, points, res, sigma, reach_xy, reach_z, workers=1, z_band=None, z_cells=None):
         points = np.asarray(points, float)
         self.res, self.workers = res, workers
         lo = points.min(axis=0)
@@ -90,10 +96,25 @@ class MapField:
         occ = np.zeros(self.shape, bool)
         idx = np.floor((points - self.origin) / res).astype(int)
         occ[tuple(idx.T)] = True
-        d = ndimage.distance_transform_edt(~occ) * res
-        self.field = np.exp(-.5 * (d / sigma) ** 2).astype(np.float32)
+        # scipy's distance_transform_edt allocates ~50 B per cell (the feature transform, then float64 differences, squares and the sum for all cells at once). Same operations, one x slab at
+        # a time from a preallocated int32 feature transform: the same numbers (the reference test compares them bit for bit) for ~12 B per cell
+        ft = np.empty((3, *self.shape), np.int32)
+        ndimage.distance_transform_edt(~occ, return_distances=False, return_indices=True, indices=ft)
+        del occ
+        field = np.empty(self.shape, np.float32)
+        gy, gz = np.indices(self.shape[1:], dtype=np.int32)
+        for x in range(self.shape[0]):
+            dt = np.stack([ft[0, x] - np.int32(x), ft[1, x] - gy, ft[2, x] - gz]).astype(np.float64)
+            np.multiply(dt, dt, dt)
+            d = np.sqrt(np.add.reduce(dt, axis=0)) * res
+            field[x] = np.exp(-.5 * (d / sigma) ** 2)
+        del ft
         self.fft_xy = tuple(fft.next_fast_len(n, real=True) for n in self.shape[:2])
-        self.layers = fft.rfft2(np.moveaxis(self.field, 2, 0), s=self.fft_xy, axes=(1, 2), workers=workers)     # (z, x, y spectrum)
+        # the layers a source can touch from the valid window (z_cells = its lowest and highest z cell): the others are never read
+        self.z_first, z_end = 0, self.shape[2]
+        if z_cells is not None:
+            self.z_first, z_end = max(0, self.valid_lo[2] + z_cells[0]), min(self.shape[2], self.valid_hi[2] + z_cells[1] + 1)
+        self.layers = fft.rfft2(np.moveaxis(field[:, :, self.z_first:z_end], 2, 0), s=self.fft_xy, axes=(1, 2), workers=workers)     # (z, x, y spectrum)
 
     def correlate(self, source_points, yaw):
         """Return (score volume of the valid window, number of source voxels) for one yaw; the window indexes are field indexes minus valid_lo."""
@@ -102,8 +123,8 @@ class MapField:
         kz = cells[:, 2]
         k0, k1 = int(kz.min()), int(kz.max())
         z0 = np.arange(self.valid_lo[2], self.valid_hi[2] + 1)
-        if z0[0] + k0 < 0 or z0[-1] + k1 >= self.shape[2]:
-            raise ValueError('source reaches outside the field in z')
+        if z0[0] + k0 < self.z_first or z0[-1] + k1 >= self.z_first + len(self.layers):
+            raise ValueError('source reaches outside the field in z (or the layers this field was built for)')
         nx, ny = self.fft_xy
         # rfft2 is the real FFT along y then the complex FFT along x. A source occupies a few dozen of the nx rows (62 of 270 on a real map) and the real FFT of an empty row is zero, so only
         # the occupied rows are transformed along y and the rest of the spectrum is left at zero: the same numbers, a fraction of the work
@@ -117,7 +138,7 @@ class MapField:
         acc = np.empty((len(z0), *self.layers.shape[1:]), self.layers.dtype)
         tmp = np.empty(self.layers.shape[1:], self.layers.dtype)
         for i, z in enumerate(z0):       # the sum over the source's layers, one layer at a time and in place, in the order of .sum(axis=0): no (layers x spectrum) temporary
-            layers = self.layers[z + k0:z + k1 + 1]
+            layers = self.layers[z + k0 - self.z_first:z + k1 + 1 - self.z_first]
             np.multiply(layers[0], spectrum[0], out=acc[i])
             for k in range(1, len(spectrum)):
                 np.multiply(layers[k], spectrum[k], out=tmp)
@@ -170,7 +191,7 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
         raise ValueError('source has too few points inside the search radius')
     reach_z = float(np.abs(source[:, 2]).max()) + res
     if field is None:
-        field = MapField(map_points, res, sigma, radius + res, reach_z, z_band=z_band)
+        field = MapField(map_points, res, sigma, radius + res, reach_z, z_band=z_band, z_cells=z_cell_range([source], res, radius))
     t_field = time.monotonic() - t0
     lo = field.valid_lo
     peaks = []                      # (score, yaw_rad, xyz, yaw index, rank in the yaw, source voxels)

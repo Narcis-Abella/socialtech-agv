@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from scipy.spatial import cKDTree
 
-from correlative_search import MapField, crop_source, search
+from correlative_search import MapField, crop_source, search, z_cell_range
 from search_tiles import agreement, distinct, pose_difference, temporal_evidence
 from verify import decide, score
 
@@ -152,7 +152,8 @@ def main():
     check = np.loadtxt(run / 'check.xyz')
     reach_z = source_reach_z(fit, check, a.radius)
     z_band = tuple(a.z_band) if a.z_band else None
-    field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res, z_band=z_band)   # FFT on one thread: the two searches run side by side
+    field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res, z_band=z_band,
+                     z_cells=z_cell_range([fit, check], a.res, a.radius))   # FFT on one thread: the two searches run side by side
     t_field = time.monotonic() - t0
     temporal_ok, separation = temporal_evidence(manifest['stamps_s'], manifest['start_header_s'], manifest['duration_s'])
     def confirmation_search():
