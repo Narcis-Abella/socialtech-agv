@@ -71,7 +71,7 @@ class MapField:
     6 on a real map). The xy FFT runs on the grid padded again, at the end, to a size the FFT does fast (the 191 of a real map is prime and costs several times
     more): the extra cells are zero and lie beyond the reach of every valid sensor position, so the scores of the valid window do not change."""
 
-    def __init__(self, points, res, sigma, reach_xy, reach_z, workers=2):
+    def __init__(self, points, res, sigma, reach_xy, reach_z, workers=2, z_band=None):
         points = np.asarray(points, float)
         self.res, self.workers = res, workers
         lo = points.min(axis=0)
@@ -82,6 +82,11 @@ class MapField:
         # Sensor positions are restricted to the map box (no prior inside it).
         self.valid_lo = np.floor((lo - self.origin) / res).astype(int)
         self.valid_hi = np.ceil((hi - self.origin) / res).astype(int)
+        if z_band is not None:       # sensor heights the robot can have (its mounting height +- a margin): the rest of the map box cannot hold the sensor
+            self.valid_lo[2] = max(self.valid_lo[2], int(np.floor((z_band[0] - self.origin[2]) / res)))
+            self.valid_hi[2] = min(self.valid_hi[2], int(np.ceil((z_band[1] - self.origin[2]) / res)))
+            if self.valid_hi[2] < self.valid_lo[2]:
+                raise ValueError('z_band outside the map box')
         occ = np.zeros(self.shape, bool)
         idx = np.floor((points - self.origin) / res).astype(int)
         occ[tuple(idx.T)] = True
@@ -119,14 +124,14 @@ def yaw_distance_deg(a, b):
 
 
 def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius=15.,
-           top=10, per_yaw=8, nms_xy=1., nms_yaw_deg=10., field=None):
+           top=10, per_yaw=8, nms_xy=1., nms_yaw_deg=10., field=None, z_band=None):
     t0 = time.monotonic()
     source = crop_source(source_points, radius)
     if len(source) < 50:
         raise ValueError('source has too few points inside the search radius')
     reach_z = float(np.abs(source[:, 2]).max()) + res
     if field is None:
-        field = MapField(map_points, res, sigma, radius + res, reach_z)
+        field = MapField(map_points, res, sigma, radius + res, reach_z, z_band=z_band)
     t_field = time.monotonic() - t0
     lo, hi = field.valid_lo, field.valid_hi
     peaks = []

@@ -55,10 +55,12 @@ def signal_by_comm(name, sig=signal.SIGTERM, proc='/proc', kill=os.kill):
 
 class Worker:
     """search_v2.py as a killable process group."""
-    def __init__(self, binary, lib_dir, run_dir, out_dir, deadline_s, threads=2):
+    def __init__(self, binary, lib_dir, run_dir, out_dir, deadline_s, threads=2, z_band=None):
         env = {**os.environ, 'LD_LIBRARY_PATH': f"{lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
         cmd = [sys.executable, '-B', str(HERE / 'search_v2.py'), '--run', str(run_dir), '--out', str(out_dir), '--binary', binary,
                '--deadline-s', f'{deadline_s:.3f}', '--threads', str(threads)]
+        if z_band:
+            cmd += ['--z-band', str(z_band[0]), str(z_band[1])]
         with open(Path(run_dir).parent / 'search.stdout', 'w') as log:      # the child keeps its own copy of the descriptor
             self.p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True, preexec_fn=_die_with_parent)
 
@@ -102,9 +104,9 @@ class LiveReloc:
     ODOM_NEW_AFTER_S = .5      # odometry stamped this soon after the restart can still be the old filter's, in flight
 
     def __init__(self, map_xyz, binary, lib_dir, work_dir, deadline_s=60., base_ext=(0., 0., 0.), exposure_s=rc.S2_EXPOSURE_S, spawn=None,
-                 restart=None, lio_timeout_s=15., threads=2, min_points=3000, flow_s=.5):
+                 restart=None, lio_timeout_s=15., threads=2, min_points=3000, flow_s=.5, z_band=None):
         self.map_xyz, self.work, self.deadline_s, self.base_ext, self.exposure_s = map_xyz, Path(work_dir), deadline_s, tuple(base_ext), exposure_s
-        self.spawn = spawn or (lambda run, out, dl: Worker(binary, lib_dir, run, out, dl, threads))
+        self.spawn = spawn or (lambda run, out, dl: Worker(binary, lib_dir, run, out, dl, threads, z_band))
         self.restart_fn, self.lio_timeout_s, self.min_points, self.flow_s = restart, lio_timeout_s, min_points, flow_s
         self.stage, self.n, self.proc = None, 0, None
         self.still = StillWindow()               # the node feeds and polls from boot, before the first start()

@@ -101,5 +101,32 @@ class ExactSpeedupsTest(unittest.TestCase):
             self.assertEqual(score, float(inside[tuple(np.round((want - origin) / res).astype(int) - lo)]))
 
 
+class ZBandTest(unittest.TestCase):
+    def test_the_band_only_removes_sensor_heights_outside_it_and_keeps_the_scores_inside(self):
+        rng = np.random.default_rng(5)
+        world = synthetic_map(rng)
+        T = pose(math.radians(40.), [14., 9., .5])
+        src = transform(world, np.linalg.inv(T)); src = src[np.linalg.norm(src[:, :2], axis=1) < 9.]
+        reach = float(np.abs(src[:, 2]).max()) + .5
+        full = MapField(world, .5, .5, 9.5, reach)
+        band = MapField(world, .5, .5, 9.5, reach, z_band=(.2, .9))
+        self.assertLess(band.valid_hi[2] - band.valid_lo[2], full.valid_hi[2] - full.valid_lo[2])
+        a, _ = full.correlate(src, 1.1)
+        b, _ = band.correlate(src, 1.1)
+        k = band.valid_lo[2] - full.valid_lo[2]
+        np.testing.assert_allclose(b, a[:, :, k:k + b.shape[2]], atol=2e-5)
+        zs = band.origin[2] + (np.arange(band.valid_lo[2], band.valid_hi[2] + 1)) * band.res
+        self.assertTrue(zs.min() >= .2 - band.res and zs.max() <= .9 + band.res)
+
+    def test_search_with_the_band_finds_the_same_pose(self):
+        rng = np.random.default_rng(3)
+        world = synthetic_map(rng)
+        T = pose(math.radians(137.), [17.3, 8.6, .55])
+        local = transform(world, np.linalg.inv(T)); local = local[np.linalg.norm(local[:, :2], axis=1) < 10.]
+        a = search(world, local, res=.5, radius=10., top=5)['candidates'][0]
+        b = search(world, local, res=.5, radius=10., top=5, z_band=(.25, .85))['candidates'][0]
+        self.assertEqual(a['xyz'], b['xyz']); self.assertEqual(a['yaw_rad'], b['yaw_rad'])
+
+
 if __name__ == '__main__':
     unittest.main()

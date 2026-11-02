@@ -67,3 +67,17 @@ class SearchV2Test(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ZBandRankTest(unittest.TestCase):
+    def row(self, z):
+        T = np.eye(4); T[2, 3] = z
+        return {'geometry': {'valid': True, 'support_015': .9, 'matched_rmse_m': .05}, 'result': {'T_map_lidar_refined': T.tolist()}}
+
+    def test_a_refined_pose_outside_the_band_is_not_ranked(self):
+        import search_v2 as sv
+        rows = [self.row(.5), self.row(1.9)]
+        self.assertTrue(sv.in_band(rows[0], (.2, .9)))
+        self.assertFalse(sv.in_band(rows[1], (.2, .9)))
+        self.assertTrue(sv.in_band(rows[1], None))
+        self.assertEqual([r['result']['T_map_lidar_refined'][2][3] for r in sv.rank(rows, (.2, .9))], [.5])

@@ -59,7 +59,7 @@ def refine(binary, map_path, source_path, check_path, T_init, out_dir, voxel, ti
 def global_hypotheses(field, map_points, batch, batch_path, other, other_path, map_path, args, out, prefix, t0):
     """Correlative search on one batch, GICP refine, score on the other batch."""
     found = search(map_points, batch, args.res, yaw_step_deg=args.yaw_step, radius=args.radius,
-                   top=args.top, field=field)
+                   top=args.top, field=field)       # the z band is already in the field
     rows = []
     for i, c in enumerate(found['candidates']):
         remaining = DEADLINE_S - (time.monotonic() - t0)
@@ -95,8 +95,13 @@ def source_reach_z(fit, check, radius):
     return max((float(z.max()) for z in zs if len(z)), default=0.)
 
 
-def rank(rows):
-    valid = [r for r in rows if 'geometry' in r and r['geometry']['valid']]
+def in_band(row, z_band, margin=.25):
+    """The refined pose keeps the sensor within the band (+- margin): a GICP that drifts out of the heights the robot can have is not a hypothesis."""
+    return z_band is None or z_band[0] - margin <= row['result']['T_map_lidar_refined'][2][3] <= z_band[1] + margin
+
+
+def rank(rows, z_band=None):
+    valid = [r for r in rows if 'geometry' in r and r['geometry']['valid'] and in_band(r, z_band)]
     valid.sort(key=lambda r: (-r['geometry']['support_015'], r['geometry']['matched_rmse_m'] or 9.))
     top = []
     for r in valid:
@@ -119,6 +124,7 @@ def main():
     p.add_argument('--top', type=int, default=10)
     p.add_argument('--gicp-voxel', type=float, default=.3)
     p.add_argument('--deadline-s', type=float, default=60., help='remaining decision budget from this process start')
+    p.add_argument('--z-band', type=float, nargs=2, metavar=('LO', 'HI'), help='heights (m, map frame) the sensor can have: the search and the refined poses stay inside it (+- 0.25 m for the latter)')
     p.add_argument('--threads', type=int, default=2, help='threads of each search (FFT workers, GICP): the primary and the confirmation search run at the same time')
     a = p.parse_args()
     global DEADLINE_S
@@ -133,7 +139,8 @@ def main():
     fit = np.loadtxt(run / 'fit.xyz')
     check = np.loadtxt(run / 'check.xyz')
     reach_z = source_reach_z(fit, check, a.radius)
-    field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res, workers=a.threads)
+    z_band = tuple(a.z_band) if a.z_band else None
+    field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res, workers=a.threads, z_band=z_band)
     t_field = time.monotonic() - t0
     temporal_ok, separation = temporal_evidence(manifest['stamps_s'], manifest['start_header_s'], manifest['duration_s'])
     def confirmation_search():
@@ -144,14 +151,14 @@ def main():
         return r
     (found, rows, timed_out), (c_found, c_rows, c_timed_out) = run_concurrently(
         lambda: global_hypotheses(field, full, fit, run / 'fit.xyz', check, run / 'check.xyz', run / 'map.xyz', a, out, 'cand', t0), confirmation_search)
-    top = rank(rows)
+    top = rank(rows, z_band)
     primary = top[0] if top else None
     runner = top[1] if len(top) > 1 else None
     margin = primary['geometry']['support_015'] - runner['geometry']['support_015'] if runner else None
     confirmation = None
     if primary and not timed_out and time.monotonic() - t0 < DEADLINE_S:
         timed_out = c_timed_out
-        c_top = rank(c_rows)
+        c_top = rank(c_rows, z_band)
         confirmation = {'search_seconds': c_found['seconds'], 'top_ids': [r['id'] for r in c_top], 'agreement': False}
         if c_top:
             Tp = np.asarray(primary['result']['T_map_lidar_refined'])

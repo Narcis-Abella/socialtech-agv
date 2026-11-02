@@ -48,6 +48,13 @@ def yaw_of(q):
 
 
 class SupervisorNode(Node):
+    @staticmethod
+    def z_band(P):
+        """[lo, hi] heights of the sensor in the map frame, from sensor_z (the mounting height over the floor of the map) +- sensor_z_margin; no sensor_z: the whole map box."""
+        z = P('sensor_z', -1.).value
+        m = P('sensor_z_margin', .5).value
+        return (z - m, z + m) if z >= 0 else None
+
     def __init__(self):
         super().__init__('gn_supervisor')
         P = self.declare_parameter
@@ -58,7 +65,7 @@ class SupervisorNode(Node):
                                   P('work_dir', '/tmp/gn_supervisor').value, P('search_deadline_s', 60.).value,
                                   tuple(P('base_from_body_xyyaw', [0., 0., 0.]).value),
                                   restart=self.restart_lio if P('restart_lio', True).value else None, lio_timeout_s=P('lio_timeout_s', 15.).value,
-                                  threads=P('search_threads', 2).value, min_points=P('lidar_min_points', 3000).value, flow_s=P('lidar_flow_s', .5).value)
+                                  threads=P('search_threads', 2).value, z_band=self.z_band(P), min_points=P('lidar_min_points', 3000).value, flow_s=P('lidar_flow_s', .5).value)
         # the FAST-LIO2 config the raw frames are filtered with (ops/nav_live.sh: blind 0.1, point_filter_num 2; extrinsic_T of the upstream mid360.yaml)
         self.frame_cfg = dict(blind=P('lidar_blind', .1).value, decimate=P('lidar_decimate', 2).value, extrinsic=tuple(P('lidar_to_body_xyz', [-.011, -.02329, .04412]).value))
         self.init_std, self.init_yaw_std = P('init_std_m', .15).value, P('init_yaw_std_deg', 5.).value
