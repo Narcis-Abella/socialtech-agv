@@ -20,7 +20,7 @@ CLOUD = [("cloud_in", "/cloud_registered_body")]
 
 
 def scan_nodes():
-    """Default: scan_median (overlay), quantile 0 = the closest point per bin = the same /scan as pointcloud_to_laserscan, plus the median of each bin on /scan_med (recorded, used by nothing).
+    """Default: scan_median (overlay), quantile 0 = the closest point per bin = the same /scan as pointcloud_to_laserscan.
     SCAN_CONVERTER=p2l: pointcloud_to_laserscan as before."""
     if os.environ.get("SCAN_CONVERTER") == "p2l":
         return [Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", parameters=[SCAN], remappings=CLOUD + [("scan", "/scan")])]
