@@ -17,6 +17,7 @@
 #include "message_filters/subscriber.h"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
@@ -78,6 +79,10 @@ public:
     declare_parameter("still_yaw_deg", 1.0);
     declare_parameter("scan_topic", "scan");
     declare_parameter("bond_heartbeat_period", 0.1);   // s; 0 = no bond (as nav2_util::LifecycleNode)
+    // As nav2_util::LifecycleNode::register_rcl_preshutdown_callback: the bond is destroyed BEFORE the context turns invalid. Left to the destructor, its thread
+    // can create a timer in that window and rclcpp::exceptions::RCLError ends the process in std::terminate (12 of 20 stops with the CPU squeezed, 0 with this).
+    preshutdown_ = std::make_unique<rclcpp::PreShutdownCallbackHandle>(
+      get_node_base_interface()->get_context()->add_pre_shutdown_callback([this]() {runCleanups();}));
   }
 
 protected:
@@ -175,6 +180,13 @@ protected:
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State & s) override {return on_cleanup(s);}
 
 private:
+  void runCleanups()   // pre-shutdown: deactivate (drops the bond) and clean up, as Nav2's own nodes do on SIGINT
+  {
+    RCLCPP_INFO(get_logger(), "Running gn_loc rcl preshutdown");
+    if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {deactivate();}
+    if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE) {cleanup();}
+  }
+
   void createBond()   // the lifecycle_manager of Nav2 holds a bond with every managed node and takes the node as dead without it
   {
     const double period = get_parameter("bond_heartbeat_period").as_double();
@@ -309,6 +321,7 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr fit_pub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr reloc_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  std::unique_ptr<rclcpp::PreShutdownCallbackHandle> preshutdown_;   // last: removed first, before the members it cleans up
 };
 
 int main(int argc, char ** argv)
