@@ -52,7 +52,7 @@ class Params:
                                      # asks the operator (FAILED needs_operator:...) when the relocalizer does not accept or gn_loc does not confirm its pose
 
 
-DETERMINISTIC = ('exception_in_', 'search_worker_exit_')    # failures a new attempt cannot fix; everything else (a push, an ambiguous scene, a filter that did not come back) can pass
+DETERMINISTIC = ('exception_in_', 'search_worker_exit_1', 'search_worker_exit_2')    # a Python exception / bad arguments: a new attempt cannot fix them; everything else (a push, an ambiguous scene, a worker killed by a signal or the OOM killer) can pass
 
 
 def wrap(a):
@@ -82,7 +82,7 @@ class Supervisor:
         self.t_status = None
         self.samples = []               # (t, good) per GN scan, kept while CONFIRMING; counted in tick(), after the pose of the same cycle (fit and pose arrive independently)
         self.t_good0 = None             # when the current run of good samples began
-        self.t_prev_sample = None       # the sample before, for the speed bound of the lock
+        self.t_lock_ref = None          # when the target of the lock was last refreshed, for its speed bound
         self.t_lost = None
         self.pose = None                # newest GN pose and when
         self.t_gn_pose = -math.inf
@@ -212,7 +212,7 @@ class Supervisor:
         self.go(t, state, why)
 
     def confirm(self, t, target, why):
-        self.target, self.t_pose, self.good, self.locked, self.samples, self.t_good0, self.t_prev_sample = target, t, 0, False, [], None, None
+        self.target, self.t_pose, self.good, self.locked, self.samples, self.t_good0, self.t_lock_ref = target, t, 0, False, [], None, None
         self.timeout = t + self.p.confirm_timeout_s
         self.go(t, 'CONFIRMING', why)
 
@@ -256,15 +256,14 @@ class Supervisor:
                 if ts < self.t_pose + p.confirm_lag_s:       # this soon after the pose it may describe a scan before it
                     continue
                 fresh = self.pose is not None and self.t_gn_pose >= self.t_pose + p.confirm_lag_s
-                dt = ts - self.t_prev_sample if self.t_prev_sample is not None else 1.
-                self.t_prev_sample = ts
+                dt = min(ts - self.t_lock_ref + .2, 1.5) if self.t_lock_ref is not None else 1.       # since the target was last refreshed (a bad sample in between lets the robot go on), plus a tick of batching; capped so a stale target cannot grow into a free pass
                 xy, yaw = (max(p.track_xy * dt, .05), max(p.track_yaw_deg * dt, 1.5)) if self.locked else (p.agree_xy, p.agree_yaw_deg)
                 close = self.target is None or (fresh and agree(self.pose, self.target, xy, yaw))
                 if ok and close:
                     self.t_good0 = ts if not self.good else self.t_good0
                     self.good += 1
                     if self.target is not None:
-                        self.target, self.locked = self.pose, True      # GN took the relocalizer's pose: it is followed from here, so a robot pushed meanwhile is not a failure, a jump is
+                        self.target, self.locked, self.t_lock_ref = self.pose, True, ts      # GN took the relocalizer's pose: it is followed from here, so a robot pushed meanwhile is not a failure, a jump is
                     if self.good >= p.confirm_n and ts - self.t_good0 >= p.confirm_s:
                         self.target = None
                         return self.go(t, 'MONITOR', 'confirmed')

@@ -66,7 +66,7 @@ class LiveRelocBase(unittest.TestCase):
             t = t0 + k / 200.
             r.add_imu(t, gyro(t), (0., 0., 1.))
             if k % 20 == 0:
-                r.add_lidar(t + .001, self.cloud, points(t))
+                r.add_lidar(t + .001, self.cloud if r.stage == 'expose' else None, points(t))      # the node parses the whole cloud only while exposing
                 if odom(t):
                     r.add_odom(t)
             if k % 4 == 0:
@@ -312,6 +312,12 @@ class ReviewFixesTest(LiveRelocBase):
         # no wheel data at all (base off): the IMU is the witness
         r = self.make(); r.start()
         res = self.feed(r, 0., 14., gyro=lambda t: (0., 0., .3) if t > 5.4 else (0., 0., 0.))
+        self.assertFalse(res['ok'])
+        self.assertEqual(res['why'], 'moved_since_exposure')
+
+    def test_a_shove_that_ended_before_the_search_returned_is_still_refused(self):
+        r = self.make(); r.start()
+        res = self.feed(r, 0., 14., gyro=lambda t: (0., 0., .3) if 5.4 < t < 5.8 else (0., 0., 0.))   # moved briefly, then still again for the 2 s window before the result
         self.assertFalse(res['ok'])
         self.assertEqual(res['why'], 'moved_since_exposure')
 

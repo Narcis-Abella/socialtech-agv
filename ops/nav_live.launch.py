@@ -62,7 +62,7 @@ def supervisor_nodes():
         "-p", f"map_xyz:={prior}", "-p", "register_binary:=/greloc/build/register_v2", "-p", "lib_dir:=/greloc/build",
         "-p", "wheel_topic:=/odom", "-p", "work_dir:=/runs/gn_supervisor",
         "-p", ["sensor_z:=", LC("sensor_height")],
-        "-p", f"lidar_decimate:={int(os.environ.get('POINT_FILTER_NUM') or 2)}"])]      # the density FAST-LIO2 runs with (nav_live.sh point_filter_num): the exposure keeps the validated one     # the mounting height over the floor of the map: the relocalizer searches only +- 0.5 m around it
+        "-p", f"lidar_decimate:={int(os.environ.get('POINT_FILTER_NUM') or 2)}"])]      # the density FAST-LIO2 runs with (nav_live.sh point_filter_num); the search was validated with 2, so another value is a change to re-validate     # the mounting height over the floor of the map: the relocalizer searches only +- 0.5 m around it
 
 
 def generate_launch_description():

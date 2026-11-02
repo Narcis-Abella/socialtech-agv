@@ -152,6 +152,8 @@ class LiveReloc:
                 self.begin(t)
         elif self.stage == 'expose':
             self.imu.append((t, np.asarray(acc_g, float))); self.motion.append((t, gyro, acc_g))
+        elif self.stage == 'search' and not still and self.moved_in is None:
+            self.moved_in = 'search'                       # latched like the wheels: a shove that ended before the worker returned must still refuse the pose
 
     def begin(self, t):
         """The robot is still and the lidar sees: the filter restarts now and the exposure starts, side by side."""

@@ -543,6 +543,21 @@ class LockGateTest(Fixture):
         self.assertFalse(confirmed)                                          # the 5 m/s slide broke the lock: the run of good samples started again every time
 
 
+class LockAcrossBadSamplesTest(Fixture):
+    def test_a_robot_that_goes_on_moving_through_a_few_bad_samples_is_still_followed(self):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', .1, .1))
+        run(s, t + 1, ('on_reloc_result', True, (2.5, 2., 0.), 'accepted'))
+        t0, confirmed = t + 1.6, False
+        for k in range(60):
+            tight = .3 if 4 <= k < 7 else .8                                  # a momentary dip of the fit while the robot is pushed at 0.3 m/s
+            if k % 10 == 0:
+                sc.Supervisor.on_status(s, t0 + .1 * k, 'TRACKING', .9, tight, k)       # the 1 Hz heartbeat
+            run(s, t0 + .1 * k, ('on_scan_fit', 'TRACKING', .9, tight), ('on_gn_pose', (2.5 + .03 * k, 2., 0.)))
+            confirmed = confirmed or (s.state, s.reason) == ('MONITOR', 'confirmed')
+        self.assertTrue(confirmed)
+
+
 class ScanRateConfirmTest(Fixture):
     """Confirmation counts one sample per GN scan (~10 Hz): a run of good samples at least confirm_s long, so the relocalized pose is released ~1 s after GN takes it, not after three 1 Hz statuses."""
     def relocalized(self, pose=(2.5, 2., 0.)):
@@ -691,7 +706,7 @@ class FailedRetryTest(Fixture):
             self.assertNotIn('reloc_start', kinds(a), why)                    # a wrong parameter or a missing map would restart FAST-LIO2 every 30 s for ever
 
     def test_a_transient_failure_is_retried(self):
-        for why in ('moved_since_exposure', 'ambiguous_no_alternative_margin', 'lio_restart_timeout'):
+        for why in ('moved_since_exposure', 'ambiguous_no_alternative_margin', 'lio_restart_timeout', 'search_worker_exit_-9'):
             s, t = self.failed_by(why)
             a = []
             for k in range(1, 40):
