@@ -1,6 +1,10 @@
+import json
 import math
+import tempfile
+import textwrap
 import threading
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -81,3 +85,49 @@ class ZBandRankTest(unittest.TestCase):
         self.assertFalse(sv.in_band(rows[1], (.2, .9)))
         self.assertTrue(sv.in_band(rows[1], None))
         self.assertEqual([r['result']['T_map_lidar_refined'][2][3] for r in sv.rank(rows, (.2, .9))], [.5])
+
+
+FAKE_REGISTER = textwrap.dedent("""\
+    #!/usr/bin/env python3
+    import json, sys, time
+    from pathlib import Path
+    a = sys.argv
+    assert a[6] == '--init-list', a
+    rows = [r for r in Path(a[7]).read_text().splitlines() if r.strip()]
+    for i, r in enumerate(rows):
+        if i == 1:
+            continue                      # an init that failed leaves no file
+        if i == 3:
+            time.sleep(30)                # still running when the deadline comes
+        Path(a[5], f'{i:02d}.json').write_text(json.dumps({'gicp_converged': True, 'first': float(r.split()[0])}))
+""")
+
+
+class RefineAllTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = Path(self.tmp.name)
+        self.binary = self.out / 'fake_register'
+        self.binary.write_text(FAKE_REGISTER)
+        self.binary.chmod(0o755)
+        self.T = [np.eye(4) * k for k in (1., 2., 3., 4.)]
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_it(self, n, timeout_s):
+        import search_v2 as sv
+        return sv.refine_all(self.binary, 'map', 'src', 'chk', self.T[:n], self.out, 'cand', .3, timeout_s)
+
+    def test_each_result_lands_where_a_lone_run_would_put_it(self):
+        log, results, timed_out = self.run_it(3, 20)
+        self.assertEqual((log['exit_code'], timed_out), (0, False))
+        self.assertEqual([r and r['first'] for r in results], [1., None, 3.])
+        self.assertEqual(json.loads((self.out / 'cand_02' / 'result.json').read_text())['first'], 3.)
+        self.assertFalse((self.out / 'cand_01').exists())
+
+    def test_a_timeout_keeps_what_was_finished(self):
+        log, results, timed_out = self.run_it(4, 1)
+        self.assertEqual((log['exit_code'], timed_out), (124, True))
+        self.assertEqual([r and r['first'] for r in results], [1., None, 3., None])
+

@@ -41,20 +41,47 @@ def tilt_deg(T):
     return float(math.degrees(math.acos(np.clip(np.asarray(T)[2, 2], -1., 1.))))
 
 
+def run_register(binary, args, timeout_s, threads):
+    """register_v2 with `args`; (log, timed_out). On a timeout the result files already written stay."""
+    try:
+        proc = subprocess.run([str(binary), *map(str, args)], capture_output=True, text=True, timeout=max(.001, timeout_s),
+                              env={**os.environ, 'OMP_NUM_THREADS': str(threads)})
+        return {'exit_code': proc.returncode, 'stdout': proc.stdout[-500:], 'stderr': proc.stderr[-500:]}, False
+    except subprocess.TimeoutExpired:
+        return {'exit_code': 124, 'stderr': 'matcher_deadline_exceeded'}, True
+
+
 def refine(binary, map_path, source_path, check_path, T_init, out_dir, voxel, timeout_s, threads=2):
     out_dir.mkdir()
     init = out_dir / 'init.txt'
     np.savetxt(init, np.asarray(T_init))
-    try:
-        proc = subprocess.run([str(binary), str(map_path), str(source_path), str(check_path), str(voxel),
-                               str(out_dir / 'result.json'), '--init', str(init)],
-                              capture_output=True, text=True, timeout=max(.001, timeout_s),
-                              env={**os.environ, 'OMP_NUM_THREADS': str(threads)})
-        log = {'exit_code': proc.returncode, 'stdout': proc.stdout[-500:], 'stderr': proc.stderr[-500:]}
-    except subprocess.TimeoutExpired:
-        return {'exit_code': 124, 'stderr': 'matcher_deadline_exceeded'}, None
+    log, _ = run_register(binary, [map_path, source_path, check_path, voxel, out_dir / 'result.json', '--init', init],
+                          timeout_s, threads)
     path = out_dir / 'result.json'
     return log, (json.loads(path.read_text()) if path.exists() else None)
+
+
+def refine_all(binary, map_path, source_path, check_path, T_inits, out, prefix, voxel, timeout_s, threads=2):
+    """GICP from every T_init in one register_v2 process (the map and the source are preprocessed once).
+    Result i ends in out/<prefix>_NN/result.json, as if each init had its own run. (log, results, timed_out):
+    results[i] is None when that init has no result (it failed, or the deadline came first)."""
+    work = out / f'{prefix}_batch'
+    work.mkdir()
+    inits = work / 'inits.txt'
+    inits.write_text(''.join(' '.join(f'{v:.18e}' for v in np.asarray(T).ravel()) + '\n' for T in T_inits))
+    log, timed_out = run_register(binary, [map_path, source_path, check_path, voxel, work, '--init-list', inits],
+                                  timeout_s, threads)
+    results = []
+    for i in range(len(T_inits)):
+        done = work / f'{i:02d}.json'
+        if done.exists():
+            d = out / f'{prefix}_{i:02d}'
+            d.mkdir()
+            done.rename(d / 'result.json')
+            results.append(json.loads((d / 'result.json').read_text()))
+        else:
+            results.append(None)
+    return log, results, timed_out
 
 
 MAP_TREE = {}
@@ -72,17 +99,17 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
     """Correlative search on one batch, GICP refine, score on the other batch."""
     found = search(map_points, batch, args.res, yaw_step_deg=args.yaw_step, radius=args.radius,
                    top=args.top, field=field)       # the z band is already in the field
+    candidates = found['candidates']
+    if not candidates:
+        return found, [], False
+    t_g = time.monotonic()
+    log, results, timed_out = refine_all(args.binary, map_path, batch_path, other_path, [c['T_map_source'] for c in candidates],
+                                         out, prefix, args.gicp_voxel, DEADLINE_S - (time.monotonic() - t0), args.threads)
+    with STAGE_LOCK:
+        STAGE_S['gicp'] += time.monotonic() - t_g
     rows = []
-    for i, c in enumerate(found['candidates']):
-        remaining = DEADLINE_S - (time.monotonic() - t0)
-        if remaining <= 0:
-            return found, rows, True
-        t_g = time.monotonic()
-        log, result = refine(args.binary, map_path, batch_path, other_path, c['T_map_source'],
-                             out / f'{prefix}_{i:02d}', args.gicp_voxel, remaining, args.threads)
-        with STAGE_LOCK:
-            STAGE_S['gicp'] += time.monotonic() - t_g
-        if log['exit_code'] == 124:
+    for i, (c, result) in enumerate(zip(candidates, results)):
+        if DEADLINE_S - (time.monotonic() - t0) <= 0 or (timed_out and result is None):
             return found, rows, True
         row = {'id': f'{prefix}_{i:02d}', 'correlative': {k: c[k] for k in ('score', 'yaw_rad', 'xyz')}, 'run': log}
         if result is not None:
@@ -136,7 +163,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--run', required=True, help='prepared run with map/fit/check.xyz, levelled source')
     p.add_argument('--out', required=True, help='new versioned output directory')
-    p.add_argument('--binary', required=True, help='register_v2 (GICP-only --init mode)')
+    p.add_argument('--binary', required=True, help='register_v2 (GICP-only --init-list mode)')
     p.add_argument('--res', type=float, default=.5)
     p.add_argument('--yaw-step', type=float, default=2.5)
     p.add_argument('--radius', type=float, default=15.)
