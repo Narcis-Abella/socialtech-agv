@@ -296,3 +296,20 @@ class SignalByCommTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LazyStillWindowTest(unittest.TestCase):
+    def test_a_window_evaluated_only_when_needed_answers_like_the_eager_one(self):
+        """need=False skips the test but keeps the window: once needed it answers what an always-evaluated window does (blocks of motion, isolated spikes, jitter, gaps)."""
+        rng = np.random.default_rng(7)
+        eager, lazy, t, checked = rl.StillWindow(), rl.StillWindow(), 100., [0, 0]
+        for k in range(40000):
+            t += 1 / 200. + rng.normal(0, 2e-4) + (rng.random() < 2e-4) * rng.uniform(.2, 1.5)
+            moving = (k // 600) % 4 == 1 or rng.random() < 5e-4
+            g = tuple(rng.normal(0, .2 if moving else .001, 3)); a = tuple(np.array([0, 0, 1.]) + rng.normal(0, .001, 3))
+            need = rng.random() < .3                  # needed again right after skipped grid times, often
+            e, l = eager.add(t, g, a), lazy.add(t, g, a, need=need)
+            if need:
+                self.assertEqual(e, l, k)
+                checked[e] += 1
+        self.assertGreater(min(checked), 1000)        # both answers exercised

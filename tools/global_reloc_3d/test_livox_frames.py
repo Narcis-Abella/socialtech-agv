@@ -91,5 +91,27 @@ class RclpyTest(unittest.TestCase):
             np.testing.assert_allclose(xyz, np.array([[q.x, q.y, q.z] for q in keep]), atol=1e-6)
 
 
+class ImuTest(unittest.TestCase):
+    def test_same_fields_as_the_message(self):
+        try:
+            from rclpy.serialization import serialize_message
+            from sensor_msgs.msg import Imu
+        except ImportError:
+            self.skipTest('needs the robot image (rclpy)')
+        for fid in ('livox_frame', 'a', 'imu_link', 'a_longer_frame_id'):
+            m = Imu(); m.header.frame_id = fid; m.header.stamp.sec = 1793574000; m.header.stamp.nanosec = 7
+            m.angular_velocity.x, m.angular_velocity.y, m.angular_velocity.z = .1, -.2, .3
+            m.linear_acceleration.x, m.linear_acceleration.y, m.linear_acceleration.z = .01, -.02, .99
+            t, g, a = lf.imu_fields(serialize_message(m))
+            self.assertAlmostEqual(t, 1793574000 + 7e-9, 6)
+            self.assertEqual((g, a), ((.1, -.2, .3), (.01, -.02, .99)), fid)
+
+    def test_a_short_or_foreign_message_is_refused(self):
+        with self.assertRaises(ValueError):
+            lf.imu_fields(b'\x00\x01\x00\x00' + b'\x00' * 40)
+        with self.assertRaises(ValueError):
+            lf.imu_fields(b'\x00\x00' + b'\x00' * 400)
+
+
 if __name__ == '__main__':
     unittest.main()

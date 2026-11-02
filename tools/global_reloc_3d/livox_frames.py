@@ -34,3 +34,16 @@ def parse(raw, blind=.1, decimate=2, extrinsic=(-.011, -.02329, .04412)):
     ok = (p['line'] < 4) & ((tag == 0x00) | (tag == 0x10)) & (np.einsum('ij,ij->i', xyz, xyz) > blind * blind)
     xyz = xyz[ok]
     return sec + nsec * 1e-9, int(ok.sum()), xyz[::max(decimate, 1)] + np.asarray(extrinsic)
+
+
+def imu_fields(b):
+    """(stamp [s], gyro (3), acc (3)) of a sensor_msgs/Imu CDR message without deserializing it: after the frame_id the message is float64s (orientation 4 + covariance 9, angular_velocity 3 +
+    covariance 9, linear_acceleration 3 + covariance 9), 8-aligned from the stream start."""
+    if b[:2] != b'\x00\x01':
+        raise ValueError('not a little-endian CDR message')
+    sec, nsec, L = struct.unpack_from('<iII', b, 4)
+    off = 16 + L
+    off += -(off - 4) % 8
+    if len(b) < off + 8 * (4 + 9 + 3 + 9 + 3 + 9):
+        raise ValueError('short Imu message')
+    return sec + nsec * 1e-9, struct.unpack_from('<3d', b, off + 104), struct.unpack_from('<3d', b, off + 200)

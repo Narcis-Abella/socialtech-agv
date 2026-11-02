@@ -76,9 +76,10 @@ class StillWindow:
     """Stillness of the last rc-ImuGate window (2 s), re-evaluated every 0.1 s with the unchanged test. ImuGate latches the first time it passes; this one follows the robot,
     so a start waits for the stillness of *now*, not of some moment in the past."""
     def __init__(self, step=.1):
-        self.t, self.g, self.a, self.step, self.next_eval, self.ok = collections.deque(), collections.deque(), collections.deque(), step, None, False
+        self.t, self.g, self.a, self.step, self.next_eval, self.ok, self.stale = collections.deque(), collections.deque(), collections.deque(), step, None, False, False
 
-    def add(self, stamp, gyro, acc_g):
+    def add(self, stamp, gyro, acc_g, need=True):
+        """need=False keeps the window and its grid but skips the test; the next needed call runs it once, at the newest grid time: the answer the eager window had."""
         if self.t and stamp <= self.t[-1]:
             return self.ok                     # non-monotonic sample: ignored
         self.t.append(stamp); self.g.append(gyro); self.a.append(acc_g)
@@ -87,7 +88,9 @@ class StillWindow:
         if self.next_eval is None or self.next_eval < self.t[0]:
             self.next_eval = self.t[0] + imu_ready.WINDOW_S if self.next_eval is None else self.next_eval + math.ceil((self.t[0] - self.next_eval) / self.step) * self.step
         while stamp >= self.next_eval:
-            T, self.next_eval = self.next_eval, self.next_eval + self.step
+            self.T, self.next_eval, self.stale = self.next_eval, self.next_eval + self.step, True
+        if need and self.stale:                # only the newest grid time counts: the eager loop overwrote ok at each one
+            self.stale, T = False, self.T
             t = np.asarray(self.t)
             i, j = np.searchsorted(t, [T - imu_ready.WINDOW_S, T])
             if j - i >= 3:
@@ -142,7 +145,7 @@ class LiveReloc:
 
     def add_imu(self, t, gyro, acc_g):
         self.t_imu = t
-        still = self.still.add(t, gyro, acc_g)
+        still = self.still.add(t, gyro, acc_g, need=self.stage == 'imu')   # the answer is only read while waiting to start
         if self.stage == 'imu':
             self.t_first_imu = t if self.t_first_imu is None else self.t_first_imu
             if still and self.seeing(t):

@@ -37,6 +37,7 @@ import reloc_live as rl
 from lio_submap import stamp
 
 BEST = QoSProfile(depth=500, reliability=ReliabilityPolicy.BEST_EFFORT)
+LIDAR = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)     # 500 raw frames of 400 kB would be 200 MB in a stall; a frame older than 0.3 s is of no use here
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
 ACTIONS = ('navigate_to_pose', 'navigate_through_poses')
 LEVEL = {'MONITOR': DiagnosticStatus.OK, 'VERIFYING': DiagnosticStatus.OK, 'CONFIRMING': DiagnosticStatus.WARN,
@@ -88,9 +89,9 @@ class SupervisorNode(Node):
         wheel = P('wheel_topic', '/odom').value
         if wheel and wheel != 'none':
             self.create_subscription(Odometry, wheel, self.on_wheel, 50)
-        self.create_subscription(Imu, '/livox/imu', self.on_imu, BEST)
+        self.create_subscription(Imu, '/livox/imu', self.on_imu, BEST, raw=True)
         self.create_subscription(Odometry, '/Odometry', self.on_odom, BEST)
-        self.create_subscription(CustomMsg, '/livox/lidar', self.on_lidar, BEST, raw=True)
+        self.create_subscription(CustomMsg, '/livox/lidar', self.on_lidar, LIDAR, raw=True)
         for a in ACTIONS:            # rclcpp_action publishes its status transient-local (rcl_action_qos_profile_status_default)
             self.create_subscription(GoalStatusArray, f'/{a}/_action/status', lambda m, a=a: self.on_goals(a, m), LATCHED)
         self.create_timer(.1, self.tick, clock=Clock(clock_type=ClockType.STEADY_TIME))   # watchdogs on wall time, whatever /clock does
@@ -151,9 +152,13 @@ class SupervisorNode(Node):
         self.core.on_wheel(self.mono(), v, w)
         self.reloc.add_wheel(self.core.wheel_moving)
 
-    def on_imu(self, m):          # always: the stillness window of the relocalizer is a sliding one and must be warm when a relocalization starts
-        g, a = m.angular_velocity, m.linear_acceleration
-        self.guarded('imu', self.reloc.add_imu, stamp(m), (g.x, g.y, g.z), (a.x, a.y, a.z))
+    def on_imu(self, raw):        # always: the stillness window of the relocalizer is a sliding one and must be warm when a relocalization starts. Raw: 1 us to unpack vs 44 us to deserialize, 200 times a second
+        try:
+            t, g, a = lf.imu_fields(bytes(raw))
+        except ValueError:
+            self.get_logger().warn('unparsed /livox/imu message', throttle_duration_sec=10.)
+            return
+        self.guarded('imu', self.reloc.add_imu, t, g, a)
 
     def on_odom(self, m):
         if self.reloc.active:
