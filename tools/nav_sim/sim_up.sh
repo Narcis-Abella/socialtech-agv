@@ -29,3 +29,19 @@ fastlio_yaml() {
       -e "s|^\( *\)filter_size_map:.*|\1filter_size_map: ${FILTER_SIZE_MAP:-0.25}|" -e "s|^\( *\)point_filter_num:.*|\1point_filter_num: ${POINT_FILTER_NUM:-2}|" \
       "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" > "$1"
 }
+
+# FAST-LIO2 + planar_odom + scan_median exactly as on the robot, on the simulated sensors; waits 8 s so FAST-LIO2 takes gravity from the still IMU
+lio_nodes() {
+  fastlio_yaml "$out/fastlio.yaml"
+  ros2 run fast_lio fastlio_mapping --ros-args --params-file "$out/fastlio.yaml" -p use_sim_time:=true > "$out/fastlio.log" 2>&1 &
+  ros2 run planar_odom planar_odom $SIM -p sensor_height:=0.28 -p level:="[0.0, 0.0, 0.0, 1.0]" > "$out/planar.log" 2>&1 &
+  # The real /scan has surface jumps (the 3D band collapsed to 2D, furniture) and dropout (21-27 % outlier beams, 2-8 % dropout by range) that this clean world and its static scene do not produce:
+  # SCAN_EXTRA (default on) adds exactly those from the calibrated model (noise_scale 0: the Gaussian core already comes from the real chain); SCAN_EXTRA=0 is the chain alone.
+  local scan_out=/scan
+  if [ "${SCAN_EXTRA:-1}" != 0 ]; then
+    scan_out=/scan_chain
+    ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
+  fi
+  ros2 run scan_median scan_median_node --ros-args --params-file /tools/nav_bench/config/scan.yaml -p quantile:=0.0 -p use_sim_time:=true -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
+  sleep 8
+}

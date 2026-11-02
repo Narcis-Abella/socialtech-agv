@@ -10,11 +10,7 @@ out=${1:?out dir}; shift || true
 source "${ROS_ENV:-/ros_env.sh}"
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-54}
 source /tools/nav_sim/sim_up.sh
-fastlio_yaml "$out/fastlio.yaml"
-ros2 run fast_lio fastlio_mapping --ros-args --params-file "$out/fastlio.yaml" -p use_sim_time:=true > "$out/fastlio.log" 2>&1 &
-ros2 run planar_odom planar_odom $SIM -p sensor_height:=0.28 -p level:="[0.0, 0.0, 0.0, 1.0]" > "$out/planar.log" 2>&1 &
-ros2 run scan_median scan_median_node --ros-args --params-file /tools/nav_bench/config/scan.yaml -p quantile:=0.0 -p use_sim_time:=true -r cloud_in:=/cloud_registered_body -r scan:=/scan > "$out/scan.log" 2>&1 &
-sleep 8   # FAST-LIO2 takes gravity from the first IMU samples: the robot stays still until the drive starts
+lio_nodes
 python3 /tools/nav_sim/lio_eval.py record "$out/lio.csv" 80 > "$out/rec.log" 2>&1 &
 rec=$!
 python3 /tools/nav_sim/lio_drive.py ${DRIVE:-5 0.4 0.5} > "$out/drive.log" 2>&1
