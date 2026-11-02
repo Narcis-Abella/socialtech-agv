@@ -1,5 +1,5 @@
 #!/bin/bash
-# Nav2 on the full-chain simulation, inside the `sim` image: the robot's own ops/nav_robot.launch.py (FAST-LIO2 on the simulated Mid-360, planar_odom, scan_median, gn_loc,
+# Nav2 on the full-chain simulation, inside the `sim` image: the robot's own ops/nav_robot.launch.py (FAST-LIO2 on the simulated Mid-360, planar_odom, pointcloud_to_laserscan, gn_loc,
 # Nav2 with the real robot's overrides, base off: the simulator's base model drives) and trials.py on a scenario. usage: nav_full_sim.sh <out dir> <scenario.json> [reps]
 # mounts and env as sup_sim.sh; SUPERVISOR=1 also runs gn_supervisor (needs /greloc/build and the prior); SCAN_EXTRA=1 adds the calibrated dropout and surface jumps (a stress test: it blocks Nav2 in this empty world); LOCALIZER=amcl for AMCL.
 set -eo pipefail

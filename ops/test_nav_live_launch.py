@@ -72,3 +72,9 @@ assert viz_default and perform_substitutions(LaunchContext(), viz_default[0].def
 assert runs(live_paths(), "true"), "live_paths must run with viz:=true"
 assert not runs(live_paths(), "false"), "viz:=false must stop live_paths"
 print("ok viz")
+
+# /scan comes from the stock pointcloud_to_laserscan (the quantile-0 scan_median package was removed: it did the same, and the median it was written for was rejected)
+launch_text = [e for e in launch.generate_launch_description().entities if isinstance(e, Node)]
+assert any(e.node_executable == "pointcloud_to_laserscan_node" for e in launch_text), "no pointcloud_to_laserscan_node"
+assert not any(e.node_package == "scan_median" for e in launch_text), "scan_median must be gone"
+print("ok scan")

@@ -13,7 +13,7 @@ import time
 TICK = os.sysconf('SC_CLK_TCK')
 SIM = re.compile(r'gz|ruby|livox_mid360_sim|sim_base_model|sim_wheel_odom|sim_imu_model|sim_scan_model|sup_cover|nav_diag|trials\.py|procmon|ros2 (param|topic)|hospital-agv-sim|ros_gz|parameter_bridge|image_bridge|noisy_livox|robot_state_publisher|ros2cli')
 STACK = [('register_v2', r'^\S*/register_v2 '), ('search_worker', r'^\S*python\S* (-\S+ )*\S*search_v2'),          # first: their paths contain /runs/gn_supervisor/
-         ('fastlio', r'fastlio_mapping'), ('planar_odom', r'planar_odom'), ('scan_median', r'scan_median'), ('gn_loc', r'gn_loc_node'),
+         ('fastlio', r'fastlio_mapping'), ('planar_odom', r'planar_odom'), ('scan_converter', r'pointcloud_to_laserscan'), ('gn_loc', r'gn_loc_node'),
          ('supervisor', r'gn_supervisor_node'), ('live_paths', r'live_paths'),
          ('nav2', r'controller_server|planner_server|bt_navigator|behavior_server|smoother_server|velocity_smoother|collision_monitor|lifecycle_manager|map_server|waypoint_follower|route_server|nav2_'),
          ('launch', r'ros2 launch|launch_ros|/ops/')]

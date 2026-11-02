@@ -20,7 +20,7 @@ normalize_flags NAV BASE SUPERVISOR PROD   # NAV=0 / BASE=0 / SUPERVISOR=0 / PRO
 if [[ ${1:-} == --inside ]]; then   # runs in the container
   source /ros_env.sh
   source "$REPO/ops/fastlio_check.sh"
-  # ~/nav_overlay: optional, a colcon overlay built in this image that shadows its packages (an image built from this tree already has the patched RPP, scan_median and gn_loc). It is sourced after the image, so an old overlay wins over the image: delete it once the image is rebuilt
+  # ~/nav_overlay: optional, a colcon overlay built in this image that shadows its packages (an image built from this tree already has the patched RPP and gn_loc). It is sourced after the image, so an old overlay wins over the image: delete it once the image is rebuilt
   if [[ -f /ov/install/setup.bash ]]; then
     source /ov/install/setup.bash
     echo "WARN: ~/nav_overlay is sourced after the image: its packages ($(find /ov/install -mindepth 1 -maxdepth 1 -type d -printf '%f ')) shadow the ones built in the image"
@@ -126,6 +126,6 @@ fi
 RUN=${NAV_RUNS:-$HOME/nav_runs}/$(date +%Y%m%d_%H%M%S)   # persists after the container is gone: ROS node logs (log/) and, with NAV, the bag (bag/)
 mkdir -p "$RUN/log"
 echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} ]] && echo " and bag") in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
-exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e PROD="${PROD:-}" -e BASE="${BASE:-}" -e LOCALIZER="${LOCALIZER:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" -e SCAN_CONVERTER="${SCAN_CONVERTER:-}" \
+exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e PROD="${PROD:-}" -e BASE="${BASE:-}" -e LOCALIZER="${LOCALIZER:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" \
   -e DDS_IFACE="$DDS_IFACE" -e PEER="$PEER" -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e LIVOX_HOST_IP="$HOST_IP" -e LIVOX_LIDAR_IP="$LIDAR_IP" \
   -v "$MAP:/map:ro" -v "$REPO:$REPO:ro" -v "$RUN:/runs" -v "$HOME/nav_overlay:/ov:ro" "${SUP[@]}" -w /tmp "$IMAGE" "$REPO/ops/nav_live.sh" --inside

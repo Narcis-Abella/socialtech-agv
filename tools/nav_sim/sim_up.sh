@@ -32,7 +32,7 @@ fastlio_yaml() {
       "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" > "$1"
 }
 
-# FAST-LIO2 + planar_odom + scan_median exactly as on the robot, on the simulated sensors; waits 8 s so FAST-LIO2 takes gravity from the still IMU
+# FAST-LIO2 + planar_odom + pointcloud_to_laserscan exactly as on the robot, on the simulated sensors; waits 8 s so FAST-LIO2 takes gravity from the still IMU
 lio_nodes() {
   fastlio_yaml "$out/fastlio.yaml"
   ros2 run fast_lio fastlio_mapping --ros-args --params-file "$out/fastlio.yaml" -p use_sim_time:=true > "$out/fastlio.log" 2>&1 &
@@ -45,7 +45,7 @@ lio_nodes() {
     scan_out=/scan_chain
     ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
   fi
-  ros2 run scan_median scan_median_node --ros-args --params-file /tools/nav_bench/config/scan.yaml -p quantile:=0.0 -p use_sim_time:=true -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
+  ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node --ros-args --params-file /tools/nav_bench/config/scan.yaml -p use_sim_time:=true -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
   sleep 8
 }
 

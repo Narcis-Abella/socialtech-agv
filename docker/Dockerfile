@@ -99,9 +99,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-jazzy-nav2-amcl ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan \
       ros-jazzy-bondcpp
 
-# docker/ros_loc: gn_loc (Gauss-Newton scan-to-map localizer; ops/nav_live.sh selects it with LOCALIZER=gn, AMCL with LOCALIZER=amcl) and scan_median (the /scan
-# binner, quantile 0 = pointcloud_to_laserscan). Their own colcon build: gn_loc needs the Nav2 packages installed just above, which the first build does not
-# have. Tests and the gn_offline study tool are not built in the image (BUILD_TESTING=OFF, GN_LOC_OFFLINE=OFF); see docker/ros_loc/gn_loc/README.md.
+# docker/ros_loc: gn_loc (Gauss-Newton scan-to-map localizer; ops/nav_live.sh selects it with LOCALIZER=gn, AMCL with LOCALIZER=amcl). Its own colcon build: it needs
+# the Nav2 packages installed just above, which the first build does not have. Tests and the gn_offline study tool are not built in the image (BUILD_TESTING=OFF, GN_LOC_OFFLINE=OFF); see docker/ros_loc/gn_loc/README.md.
 COPY ros_loc/ /ws/src_loc/
 RUN --mount=type=cache,target=/tmp/build_loc \
     --mount=type=cache,target=/tmp/log_loc \

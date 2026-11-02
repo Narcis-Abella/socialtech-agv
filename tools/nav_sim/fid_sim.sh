@@ -1,6 +1,6 @@
 #!/bin/bash
 # Fidelity of the simulated chain to the real one, robot still, inside the `sim` image (same mounts/env as lio_sim.sh). usage: fid_sim.sh <out dir> [seconds=60]
-#   1. /scan (Mid-360 -> FAST-LIO2 -> scan_median, the real chain) against the real calibration: scan_selfcheck.py (per range bin: core sigma, outlier rate, dropout; exit 1 if off)
+#   1. /scan (Mid-360 -> FAST-LIO2 -> pointcloud_to_laserscan, the real chain) against the real calibration: scan_selfcheck.py (per range bin: core sigma, outlier rate, dropout; exit 1 if off)
 #   2. the parked drift of FAST-LIO2 against the truth (lio_eval.py): what GN and the supervisor's parked-drift check see when nothing moves
 set -eo pipefail
 out=${1:?out dir}; secs=${2:-60}

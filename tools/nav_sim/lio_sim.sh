@@ -2,7 +2,7 @@
 # The simulated robot with a REAL FAST-LIO2 in the loop, inside the `sim` image on a board. usage: lio_sim.sh <out dir> [drive args: leg_m v w]
 #   Sensors: socialtech_livox_sim (non-repetitive Mid-360 from the ground-truth pose, CustomMsg /livox/lidar) and sim_imu_model (ICM-40609 noise, in g, 200 Hz, /livox/imu, frame livox_frame);
 #   base/wheel models of socialtech_simreal; FAST-LIO2 with the robot's own parameter edits (ops/nav_live.sh); planar_odom (odom -> base_footprint, level = identity: the simulated floor is level);
-#   /scan from scan_median on /cloud_registered_body as on the robot.  Result: out/lio.csv (FAST-LIO2 vs truth) and lio_eval.py report.
+#   /scan from pointcloud_to_laserscan on /cloud_registered_body as on the robot.  Result: out/lio.csv (FAST-LIO2 vs truth) and lio_eval.py report.
 # mounts: tools/ at /tools, optionally docker/ros_nav at /navsrc, SIM_SRC (hospital-agv-sim, branch sim-realism) at /simsrc, PAT (dir with ours.lvm = the unit's pattern model and loyola.tris) at /pat, out at /out.
 # env: SPAWN ("-13.0 0.0 0.0" x y yaw), ROS_DOMAIN_ID (54), SIM_WAIT (30), DRIVE ("5 0.4 0.5"), SEED (1)
 set -eo pipefail

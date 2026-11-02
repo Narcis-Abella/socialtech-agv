@@ -8,7 +8,7 @@ All `*.sh` that run inside the image take the same mounts: this `tools/` at `/to
 | | 2D (legacy) | full chain (`SIM_LIO=1`) |
 |---|---|---|
 | sensors | Gazebo 2D lidar `/scan` + wheel/ground-truth odometry | simulated Mid-360 (`socialtech_livox_sim`, non-repetitive) + ICM-40609 IMU 200 Hz in g |
-| localization input | the simulator's `/scan` and `odom -> base_footprint` | real FAST-LIO2 (the robot's parameter edits) -> `planar_odom` -> `scan_median` -> `/scan`, (optional `SCAN_EXTRA=1`: calibrated dropout and surface jumps, a stress test) |
+| localization input | the simulator's `/scan` and `odom -> base_footprint` | real FAST-LIO2 (the robot's parameter edits) -> `planar_odom` -> `pointcloud_to_laserscan` -> `/scan`, (optional `SCAN_EXTRA=1`: calibrated dropout and surface jumps, a stress test) |
 | entry points | `run_trials.sh`, `run_eval.sh`, `agx_run.sh`, `agx_queue.sh`, `agx_live.sh` | `lio_sim.sh`, `fid_sim.sh`, `sup_sim.sh` (`sim_up.sh` is their common start) |
 | Nav2 | yes (`socialtech_nav`, AMCL on the PGM) | `nav_full_sim.sh`: the robot's own `ops/nav_robot.launch.py` (gn_loc, RPP, the real overrides) + `trials.py`; `sup_sim.sh`: gn_loc + gn_supervisor without Nav2 |
 
