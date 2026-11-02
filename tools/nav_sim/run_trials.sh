@@ -39,9 +39,9 @@ sleep 5
 [ -z "$EXTRA" ] || { eval "$EXTRA" > "$out/extra.log" 2>&1 & }   # EXTRA: a command started once Nav2 is active (a helper node under test, e.g. speed_guard.py); the trap at the top stops it
 ros2 param list /controller_server > "$out/declared_controller.txt" 2>&1   # to check that an overlay's keys are parameters of the plugin
 ps -eo pid,args | grep -E 'nav2|opennav|gz|noisy|bridge' | grep -v grep | cut -c1-160 > "$out/ps.txt"
-python3 /tools/nav_bench/cost_sampler.py sample "$out/cost.csv" --every 1.0 &
+python3 /tools/nav_bench/procmon.py sample "$out/cost.csv" 1 &
 sampler=$!
 python3 /tools/${RUNNER:-nav_sim/trials.py} "$scenario" "$out" "$reps" --ros-args -p use_sim_time:=true 2>&1 | tee "$out/trials.log"
 kill $sampler 2>/dev/null || true
-python3 /tools/nav_bench/cost_sampler.py summarize "$out/cost.csv" > "$out/cost_summary.txt" 2>&1 || true
+python3 /tools/nav_bench/procmon.py report "$out/cost.csv" > "$out/cost_summary.txt" 2>&1 || true
 echo done

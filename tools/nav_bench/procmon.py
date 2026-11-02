@@ -26,13 +26,18 @@ def group(cmd):
     return next((g for g, rx in STACK if re.search(rx, cmd)), 'other')
 
 
+def parse_stat(s):
+    """(ppid, own ticks, reaped-children ticks, command name) of a /proc/PID/stat line. The name may hold spaces and parentheses: cut after its last closing one; the state is then f[0] (field 3)."""
+    r = s.rindex(')')
+    f = s[r + 2:].split()
+    return int(f[1]), int(f[11]) + int(f[12]), int(f[13]) + int(f[14]), s[s.index('(') + 1:r]
+
+
 def read(pid):
     with open(f'/proc/{pid}/stat') as f:
-        s = f.read()
-    r = s.rindex(')')
-    f = s[r + 2:].split()                                   # f[0] is the state (field 3)
+        ppid, ticks, child_ticks, name = parse_stat(f.read())
     with open(f'/proc/{pid}/cmdline', 'rb') as c:
-        cmd = c.read().replace(b'\0', b' ').decode(errors='replace').strip() or s[s.index('(') + 1:r]
+        cmd = c.read().replace(b'\0', b' ').decode(errors='replace').strip() or name
     rss = hwm = 0
     with open(f'/proc/{pid}/status') as st:
         for line in st:
@@ -40,7 +45,7 @@ def read(pid):
                 rss = int(line.split()[1])
             elif line.startswith('VmHWM:'):
                 hwm = int(line.split()[1])
-    return int(f[1]), int(f[11]) + int(f[12]), int(f[13]) + int(f[14]), rss, hwm, cmd[:160]
+    return ppid, ticks, child_ticks, rss, hwm, cmd[:160]
 
 
 def sample(out, period):

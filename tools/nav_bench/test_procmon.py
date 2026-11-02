@@ -19,6 +19,11 @@ class ProcmonTest(unittest.TestCase):
         self.addCleanup(os.unlink, f.name)
         return f.name
 
+    def test_parse_stat_with_odd_command_names(self):
+        # the command name may hold spaces and parentheses: cut after its LAST closing one; utime + stime = fields 14 + 15, cutime + cstime = 16 + 17, ppid = field 4
+        stat = "4242 (fast lio (map)) S 77 4242 4242 0 -1 4194560 100 0 0 0 1500 250 30 5 20 0 8 0 12345 123456789 5000 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0"
+        self.assertEqual(procmon.parse_stat(stat), (77, 1750, 35, 'fast lio (map)'))
+
     def test_groups(self):
         self.assertEqual(procmon.group('/x/fastlio_mapping --ros-args'), 'fastlio')
         self.assertEqual(procmon.group('python3 /tools/nav_sim/sup_cover.py'), 'sim')
