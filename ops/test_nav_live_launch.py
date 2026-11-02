@@ -46,3 +46,29 @@ assert not env_of("planar_odom"), "only the two ends of the lidar topic get it"
 os.environ["HEAVY_DDS"] = "0"
 assert not launch.heavy_env()
 print("ok heavy")
+
+# viz: live_paths.py is a rviz aid; PROD=1 (nav_live.sh) turns it off with viz:=false, the default keeps it
+from launch.actions import ExecuteProcess
+
+
+def live_paths():
+    ctx = LaunchContext()
+    ctx.launch_configurations["map"] = "m.yaml"
+    for e in launch.generate_launch_description().entities:
+        if type(e) is ExecuteProcess and any("live_paths" in perform_substitutions(ctx, c) for c in e.cmd):
+            return e
+    raise AssertionError("no live_paths process in nav_live.launch.py")
+
+
+def runs(entity, viz):
+    ctx = LaunchContext()
+    ctx.launch_configurations["viz"] = viz
+    return entity.condition is None or entity.condition.evaluate(ctx)
+
+
+from launch.actions import DeclareLaunchArgument
+viz_default = [e for e in launch.generate_launch_description().entities if isinstance(e, DeclareLaunchArgument) and e.name == "viz"]
+assert viz_default and perform_substitutions(LaunchContext(), viz_default[0].default_value) == "true", "viz must default to true (DEV)"
+assert runs(live_paths(), "true"), "live_paths must run with viz:=true"
+assert not runs(live_paths(), "false"), "viz:=false must stop live_paths"
+print("ok viz")

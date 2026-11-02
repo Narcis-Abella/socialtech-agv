@@ -67,7 +67,7 @@ def supervisor_nodes():
 
 def generate_launch_description():
     args = [DeclareLaunchArgument(n) for n in ("livox_config", "fastlio_params", "map", "overrides", "sensor_height", "level_qx", "level_qy", "level_qz", "level_qw")]
-    args += [DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false")]
+    args += [DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false"), DeclareLaunchArgument("viz", default_value="true")]
     return LaunchDescription(args + [
         SetParameter(name="use_sim_time", value=True, condition=IfCondition(LC("sim_time"))),
         Node(package="livox_ros_driver2", executable="livox_ros_driver2_node", name="livox_lidar_publisher", parameters=[{
@@ -82,7 +82,7 @@ def generate_launch_description():
         *scan_nodes(),
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}]),
         *localizer_nodes(LC("overrides")),
-        # AMCL trail (/amcl_path) and its particles as a PoseArray (/particle_poses), which rviz2 can draw; "-" = no reference path
-        ExecuteProcess(cmd=["python3", os.path.join(NAV_BENCH, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen"),
+        # AMCL trail (/amcl_path) and its particles as a PoseArray (/particle_poses), which rviz2 can draw; "-" = no reference path. A rviz aid: viz:=false (PROD=1) leaves it out
+        ExecuteProcess(cmd=["python3", os.path.join(NAV_BENCH, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen", condition=IfCondition(LC("viz"))),
         *supervisor_nodes(),
     ])

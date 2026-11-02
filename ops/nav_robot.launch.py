@@ -22,8 +22,8 @@ def include(path, condition=None, **args):
 def generate_launch_description():
     nav2 = get_package_share_directory("nav2_bringup")
     tracer = get_package_share_directory("tracer_base")
-    return LaunchDescription([DeclareLaunchArgument(n) for n in LIVE_ARGS + ("nav2_params",)] + [DeclareLaunchArgument("base", default_value="false"), DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false")] + [
-        include(os.path.join(HERE, "nav_live.launch.py"), driver=LC("driver"), sim_time=LC("sim_time"), **{n: LC(n) for n in LIVE_ARGS}),
+    return LaunchDescription([DeclareLaunchArgument(n) for n in LIVE_ARGS + ("nav2_params",)] + [DeclareLaunchArgument("base", default_value="false"), DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false"), DeclareLaunchArgument("viz", default_value="true")] + [
+        include(os.path.join(HERE, "nav_live.launch.py"), driver=LC("driver"), sim_time=LC("sim_time"), viz=LC("viz"), **{n: LC(n) for n in LIVE_ARGS}),
         include(os.path.join(nav2, "launch", "navigation_launch.py"), params_file=LC("nav2_params"), use_sim_time=LC("sim_time"), autostart="false", use_composition="False"),   # started by nav_start_when_localized.py
         include(os.path.join(tracer, "launch", "tracer_base.launch.py"), IfCondition(LC("base")), port_name="can_tracer", odom_frame="wheel_odom", base_frame="wheel_base_link"),
     ])

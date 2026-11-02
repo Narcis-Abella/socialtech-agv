@@ -4,6 +4,8 @@
 # Keep the robot still while FAST-LIO2 initialises (~5 s); then click "2D Pose Estimate" in rviz2 at the robot's real pose and drag to its heading.
 # The odometry is levelled from the map's own Voxel-SLAM start pose (same IMU mounting, robot on the same floor); the yaw is whatever you click.
 # NAV=1 adds Nav2 (nav_robot.launch.py) with the base OFF: goals plan but nothing moves. NAV=1 BASE=1 also starts the Tracer base: then a goal MOVES THE ROBOT.
+# PROD=1 (default off = DEV): the robot as deployed. No bag recorder (DEV records the speeds, the odometry and the raw /livox/lidar + /livox/imu of every NAV run) and no live_paths.py (a
+# rviz aid); the ROS node logs still persist in $RUN/log.
 # HEAVY_DDS=1 (default off): driver and FAST-LIO2 talk on loopback with 64 kB DDS datagrams (see heavy_env in nav_live.launch.py: not measured on the Nano yet).
 # SUPERVISOR=1 (default off) adds gn_supervisor (branch feat/gn-reloc-supervisor, staged in GRELOC=~/greloc): when gn_loc is lost, starved of scans, silent, or
 # drifts while parked, it cancels every Nav2 goal (never publishes a velocity), relocalizes with the robot's own FAST-LIO2 and the 3D prior
@@ -13,7 +15,7 @@ set -eo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 NB=$REPO/tools/nav_bench
 source "$REPO/ops/flags.sh"
-normalize_flags NAV BASE SUPERVISOR   # NAV=0 / BASE=0 / SUPERVISOR=0 mean off (a non-empty test used to arm Nav2, the Tracer base and the supervisor)
+normalize_flags NAV BASE SUPERVISOR PROD   # NAV=0 / BASE=0 / SUPERVISOR=0 / PROD=0 mean off (a non-empty test used to arm Nav2, the Tracer base and the supervisor)
 
 if [[ ${1:-} == --inside ]]; then   # runs in the container
   source /ros_env.sh
@@ -50,15 +52,18 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
     sup_topics=(); [[ -z ${SUPERVISOR:-} ]] || sup_topics=(/gn_loc/status /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status)   # only where they exist
     set -m   # job control: a background job of a non-interactive shell ignores SIGINT, and the recorder needs one to write its metadata.yaml
     python3 "$REPO/ops/nav_start_when_localized.py" &   # lifetime = the container's
-    # Everything needed to judge a run offline (and to replay FAST-LIO on it: /Odometry, /livox/lidar, /livox/imu): the three speed stages, what the base reports, AMCL, BT, plans, scan, local costmap, TF, goals. Not the global costmap (static, big).
-    ros2 bag record -s mcap -o /runs/bag /cmd_vel_nav /cmd_vel_smoothed /cmd_vel /odom /tracer_status /amcl_pose /behavior_tree_log /collision_monitor_state /diagnostics \
-      /goal_pose /plan /local_plan /received_global_plan /speed_limit /scan /local_costmap/costmap /tf /tf_static /navigate_to_pose/_action/status /navigate_to_pose/_action/feedback \
-      /Odometry /livox/lidar /livox/imu "${sup_topics[@]}" \
-      </dev/null >/runs/bag.log 2>&1 &
-    rec=$!
+    if [[ -z ${PROD:-} ]]; then   # PROD=1: no recording
+      # Everything needed to judge a run offline (and to replay FAST-LIO on it: /Odometry, /livox/lidar, /livox/imu): the three speed stages, what the base reports, AMCL, BT, plans, scan, local costmap, TF, goals. Not the global costmap (static, big).
+      ros2 bag record -s mcap -o /runs/bag /cmd_vel_nav /cmd_vel_smoothed /cmd_vel /odom /tracer_status /amcl_pose /behavior_tree_log /collision_monitor_state /diagnostics \
+        /goal_pose /plan /local_plan /received_global_plan /speed_limit /scan /local_costmap/costmap /tf /tf_static /navigate_to_pose/_action/status /navigate_to_pose/_action/feedback \
+        /Odometry /livox/lidar /livox/imu "${sup_topics[@]}" \
+        </dev/null >/runs/bag.log 2>&1 &
+      rec=$!
+    fi
     [[ -z ${BASE:-} ]] || { sleep 12; python3 "$REPO/ops/base_state.py" --require-can || echo "!!! the base IGNORES Nav2's commands until this is fixed" >&2; } &   # tracer_base has asked for CAN mode by then
     launch=nav_robot; extra=(nav2_params:=/tmp/nav2_params.yaml base:=$([[ -n ${BASE:-} ]] && echo true || echo false))
   fi
+  [[ -z ${PROD:-} ]] || extra+=(viz:=false)
   args=("$REPO/ops/$launch.launch.py" livox_config:=/tmp/MID360_config.json fastlio_params:=/tmp/fastlio.yaml map:=/map/map.yaml
     overrides:="$REPO/ops/live_overrides.yaml" sensor_height:="$h" level_qx:="$qx" level_qy:="$qy" level_qz:="$qz" level_qw:="$qw" "${extra[@]}")
   [[ -n ${NAV:-} ]] || exec ros2 launch "${args[@]}"
@@ -69,8 +74,10 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   rc=0
   trap 'kill -INT "$lp" 2>/dev/null || true' INT TERM
   while kill -0 "$lp" 2>/dev/null; do wait "$lp" || rc=$?; done
-  kill -INT "$rec" 2>/dev/null || true
-  wait "$rec" || true
+  if [[ -n ${rec:-} ]]; then
+    kill -INT "$rec" 2>/dev/null || true
+    wait "$rec" || true
+  fi
   exit "$rc"
 fi
 
@@ -118,7 +125,7 @@ if [[ -n ${NAV:-} ]]; then
 fi
 RUN=${NAV_RUNS:-$HOME/nav_runs}/$(date +%Y%m%d_%H%M%S)   # persists after the container is gone: ROS node logs (log/) and, with NAV, the bag (bag/)
 mkdir -p "$RUN/log"
-echo "localizing on $MAP (Ctrl-C to stop). Logs${NAV:+ and bag} in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
-exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e BASE="${BASE:-}" -e LOCALIZER="${LOCALIZER:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" -e SCAN_CONVERTER="${SCAN_CONVERTER:-}" \
+echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} ]] && echo " and bag") in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
+exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e PROD="${PROD:-}" -e BASE="${BASE:-}" -e LOCALIZER="${LOCALIZER:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" -e SCAN_CONVERTER="${SCAN_CONVERTER:-}" \
   -e DDS_IFACE="$DDS_IFACE" -e PEER="$PEER" -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e LIVOX_HOST_IP="$HOST_IP" -e LIVOX_LIDAR_IP="$LIDAR_IP" \
   -v "$MAP:/map:ro" -v "$REPO:$REPO:ro" -v "$RUN:/runs" -v "$HOME/nav_overlay:/ov:ro" "${SUP[@]}" -w /tmp "$IMAGE" "$REPO/ops/nav_live.sh" --inside

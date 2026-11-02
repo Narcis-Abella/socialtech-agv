@@ -2,7 +2,7 @@
 # gn_supervisor in the full simulation: the simulator with a real FAST-LIO2, the robot's own ops/nav_live.launch.py (driver off, sim time) with gn_loc and the supervisor,
 # then the covered-lidar scenario (sup_cover.py). usage: sup_sim.sh <out dir> [cover_s] [sup_cover.py options: --push-after S | --move-covered M]
 # mounts: repo tools/ at /tools and /greloc/tools, ops/ at /ops, docker/ros_loc/gn_loc at /locsrc (optional), GRELOC_BUILD (register_v2, libsmall_gicp.so) at /greloc/build, out at /out, as lio_sim.sh (SIM_SRC, /pat, /navsrc)
-# env: ROS_DOMAIN_ID (55), SPAWN, SEED, SIM_WAIT, SETTLE (s in MONITOR before the cover, 10), PROCMON=1 (per-process CPU/RAM of the whole container to $out/procmon.csv; procmon.py report separates the stack from the simulator)
+# env: ROS_DOMAIN_ID (55), SPAWN, SEED, SIM_WAIT, PROD=1 (the robot as deployed: viz:=false, no rviz aid), SETTLE (s in MONITOR before the cover, 10), PROCMON=1 (per-process CPU/RAM of the whole container to $out/procmon.csv; procmon.py report separates the stack from the simulator)
 set -eo pipefail
 out=${1:?out dir}; cover_s=${2:-20}; settle_s=${SETTLE:-10}; shift 2 || true
 source "${ROS_ENV:-/ros_env.sh}"
@@ -19,7 +19,7 @@ mkdir -p "$out/runs"
 export SUPERVISOR=1 SUP_PRIOR="$out/prior.xyz"
 chain_map; map=$CHAIN_MAP
 ros2 launch /ops/nav_live.launch.py livox_config:=/dev/null fastlio_params:="$out/fastlio.yaml" map:="$map" overrides:=/ops/live_overrides.yaml \
-  sensor_height:=$SENSOR_H level_qx:=0.0 level_qy:=0.0 level_qz:=0.0 level_qw:=1.0 driver:=false sim_time:=true > "$out/launch.log" 2>&1 &
+  sensor_height:=$SENSOR_H level_qx:=0.0 level_qy:=0.0 level_qz:=0.0 level_qw:=1.0 driver:=false sim_time:=true ${PROD:+viz:=false} > "$out/launch.log" 2>&1 &
 sleep 10
 if [ -n "$PROCMON" ]; then python3 /tools/nav_sim/procmon.py sample "$out/procmon.csv" 1 & mon=$!; fi
 python3 /tools/nav_sim/sup_cover.py "$out/scenario.json" "$cover_s" "$settle_s" "$@" | tee "$out/scenario.txt"
