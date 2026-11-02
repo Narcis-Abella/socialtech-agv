@@ -8,6 +8,10 @@
 # amcl.sigma_hit = 0.1 (default 0.2): D-1.3, part of the stack on the strength of the real recordings (5 recordings, position p95 -3.0 cm [-4.9, -1.6] at 5 cm map, better in all 5, also in the long symmetric corridor; the reference is the Voxel-SLAM run of the same map, not an independent truth). The sim is not conclusive for localization (F2/SC7b/RP1/RP2 loc_err_p95 +1 to +12 cm, exact map and LiDAR). To verify on the robot (ledger LAB-13).
 # global_costmap.obstacle_layer (scan, mark 5 m, clear 6 m): D-2.1, adopted by Narcis 2026-10-24. Without it the global planner cannot see anything unmapped (an unmapped box in an empty hall aborted the robot, 0/3 -> 3/3 with the layer); no regression in SC7b/RP1/RP2 (clearance +2.6 to +5.0 cm, smoother, +1 goal reached in RP1 and RP2), +1.9 s per 30 s trip in dyn_hall, CPU/RAM cost negligible. Does not fix a pedestrian stepping in from the side.
 # Initial values, tuned in the evaluation (notes/nav2_sim_resultados_*.md). use_sim_time comes from the launch (SetParameter).
+# bond_heartbeat_period 1.0 (default 0.1): node side of the lifecycle_manager bonds; detection stays the 4 s bond_timeout. The manager side keeps its hard-coded 0.1 s, so /bond traffic drops by about half (arithmetic, ledger lever 4).
+/**:
+  ros__parameters:
+    bond_heartbeat_period: 1.0
 amcl:
   ros__parameters:
     alpha1: 0.01
