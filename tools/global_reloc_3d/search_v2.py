@@ -55,8 +55,10 @@ def refine(binary, map_path, source_path, check_path, T_init, out_dir, voxel, ti
     out_dir.mkdir()
     init = out_dir / 'init.txt'
     np.savetxt(init, np.asarray(T_init))
-    log, _ = run_register(binary, [map_path, source_path, check_path, voxel, out_dir / 'result.json', '--init', init],
-                          timeout_s, threads)
+    log, timed_out = run_register(binary, [map_path, source_path, check_path, voxel, out_dir / 'result.json', '--init', init],
+                                  timeout_s, threads)
+    if timed_out:
+        return log, None        # the lone run writes result.json in place: a killed one may leave half a file
     path = out_dir / 'result.json'
     return log, (json.loads(path.read_text()) if path.exists() else None)
 
@@ -102,21 +104,25 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
     candidates = found['candidates']
     if not candidates:
         return found, [], False
+    if DEADLINE_S - (time.monotonic() - t0) <= 0:
+        return found, [], True
     t_g = time.monotonic()
     log, results, timed_out = refine_all(args.binary, map_path, batch_path, other_path, [c['T_map_source'] for c in candidates],
                                          out, prefix, args.gicp_voxel, DEADLINE_S - (time.monotonic() - t0), args.threads)
     with STAGE_LOCK:
         STAGE_S['gicp'] += time.monotonic() - t_g
     rows = []
+    late = timed_out        # past the deadline the finished candidates are kept, unscored; the search ends as a timeout
     for i, (c, result) in enumerate(zip(candidates, results)):
-        if DEADLINE_S - (time.monotonic() - t0) <= 0 or (timed_out and result is None):
-            return found, rows, True
+        late = late or DEADLINE_S - (time.monotonic() - t0) <= 0
+        if late and result is None:
+            continue
         row = {'id': f'{prefix}_{i:02d}', 'correlative': {k: c[k] for k in ('score', 'yaw_rad', 'xyz')}, 'run': log}
         if result is not None:
             # The generator replaces KISS; keep verify.decide()'s interface.
             result['kiss_valid'] = True
             row['result'] = result
-            if result['gicp_converged']:
+            if result['gicp_converged'] and not late:
                 t_s = time.monotonic()
                 row['geometry'] = score(map_points, other, result['T_map_lidar_refined'], tree=map_tree(map_points))
                 with STAGE_LOCK:
@@ -125,7 +131,7 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
                 xy, deg = pose_difference(np.asarray(c['T_map_source']), np.asarray(result['T_map_lidar_refined']))
                 row['gicp_shift'] = {'xy_m': xy, 'yaw_deg': deg}
         rows.append(row)
-    return found, rows, False
+    return found, rows, late
 
 
 def source_reach_z(fit, check, radius):

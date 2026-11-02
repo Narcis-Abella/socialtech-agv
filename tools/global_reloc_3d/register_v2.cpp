@@ -134,6 +134,8 @@ static int refine_list(const std::vector<Point>& target, const std::vector<Point
         if (!f) throw std::runtime_error("cannot write result");
         write_report(f,r);
         f << "\n}\n";
+        f.flush();
+        if (!f) { std::filesystem::remove(tmp); throw std::runtime_error("cannot write result"); }
       }
       std::filesystem::rename(tmp,dir/name); // a killed process never leaves half a result
     } catch (const std::exception& e) {

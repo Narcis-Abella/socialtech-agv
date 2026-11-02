@@ -131,3 +131,56 @@ class RefineAllTest(unittest.TestCase):
         self.assertEqual((log['exit_code'], timed_out), (124, True))
         self.assertEqual([r and r['first'] for r in results], [1., None, 3., None])
 
+
+
+class GlobalHypothesesDeadlineTest(unittest.TestCase):
+    """What the search keeps when the GICP batch runs out of time, and that it does not even start with no time left."""
+    def setUp(self):
+        import argparse
+        import search_v2 as sv
+        from unittest import mock
+        self.sv = sv
+        self.args = argparse.Namespace(res=.5, yaw_step=2.5, radius=15., top=4, binary='b', gicp_voxel=.3, threads=2)
+        cands = [{'score': 1., 'yaw_rad': 0., 'xyz': [0., 0., 0.], 'T_map_source': np.eye(4).tolist()} for _ in range(4)]
+        self.patches = [mock.patch.object(sv, 'search', return_value={'candidates': cands}),
+                        mock.patch.object(sv, 'score', return_value={'valid': True, 'support_015': .9, 'matched_rmse_m': .05}),
+                        mock.patch.object(sv, 'map_tree', return_value=None),
+                        mock.patch.object(sv, 'DEADLINE_S', 60.)]
+        for p in self.patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.ok = {'gicp_converged': True, 'T_map_lidar_refined': np.eye(4).tolist()}
+
+    def run_it(self, results, timed_out, t0_offset=0.):
+        import time
+        from unittest import mock
+        with mock.patch.object(self.sv, 'refine_all', return_value=({'exit_code': 0}, results, timed_out)) as ra:
+            out = self.sv.global_hypotheses(None, None, None, 'b', None, 'o', 'm', self.args, None, 'cand', time.monotonic() - t0_offset)
+        return out, ra
+
+    def test_finished_candidates_survive_a_batch_timeout_even_after_a_failed_init(self):
+        (_, rows, timed_out), _ = self.run_it([dict(self.ok), None, dict(self.ok), None], True)
+        self.assertTrue(timed_out)
+        self.assertEqual([r['id'] for r in rows], ['cand_00', 'cand_02'])
+
+    def test_without_a_timeout_a_failed_init_is_a_row_without_result(self):
+        (_, rows, timed_out), _ = self.run_it([dict(self.ok), None, dict(self.ok), dict(self.ok)], False)
+        self.assertFalse(timed_out)
+        self.assertEqual([('result' in r) for r in rows], [True, False, True, True])
+
+    def test_no_time_left_starts_no_process(self):
+        (_, rows, timed_out), ra = self.run_it([], False, t0_offset=61.)
+        self.assertEqual((rows, timed_out), ([], True))
+        ra.assert_not_called()
+
+
+class LoneRefineTimeoutTest(unittest.TestCase):
+    def test_a_timed_out_lone_run_has_no_result_even_if_a_file_exists(self):
+        import search_v2 as sv
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            b = d / 'slow'
+            b.write_text('#!/bin/sh\necho "{" > "$5"\nsleep 30\n')
+            b.chmod(0o755)
+            log, result = sv.refine(b, 'm', 's', 'c', np.eye(4), d / 'o', .3, 1)
+        self.assertEqual((log['exit_code'], result), (124, None))
