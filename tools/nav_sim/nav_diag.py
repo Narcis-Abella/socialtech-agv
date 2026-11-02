@@ -28,6 +28,8 @@ def main():
     s, cm = got['scan'], got['cm']
     r = np.array(s.ranges); ang = s.angle_min + s.angle_increment * np.arange(len(r))
     near = np.flatnonzero(np.isfinite(r) & (r < 1.2))
+    k0 = int(np.nanargmin(r)); print(f'nearest return: {r[k0]:.2f} m at {math.degrees(ang[k0]):.0f} deg')
+    near = near[np.argsort(r[near])]
     print(f'scan frame {s.header.frame_id}: {len(r)} beams, {int(np.isfinite(r).sum())} finite; nearer than 1.2 m: {len(near)}')
     for i in near[:40]:
         print(f'  beam {i}: angle {math.degrees(ang[i]):7.1f} deg  range {r[i]:.2f} m')
@@ -39,7 +41,7 @@ def main():
             print(frame, 'tf error', e)
     info = cm.info; d = np.array(cm.data, int).reshape(info.height, info.width)
     tf = buf.lookup_transform(cm.header.frame_id, 'base_footprint', rclpy.time.Time()); rx, ry = tf.transform.translation.x, tf.transform.translation.y
-    jj, ii = np.nonzero(d >= 253)
+    jj, ii = np.nonzero(d >= 100)      # OccupancyGrid scale: 100 = lethal (cost 254), 99 = inscribed (253)
     x, y = info.origin.position.x + (ii + .5) * info.resolution, info.origin.position.y + (jj + .5) * info.resolution
     dist = np.hypot(x - rx, y - ry)
     m = dist < 1.2
