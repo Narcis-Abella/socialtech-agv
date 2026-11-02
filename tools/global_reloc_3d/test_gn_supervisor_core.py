@@ -528,6 +528,21 @@ class MovedWhileConfirmingTest(Fixture):
         self.assertEqual(s.state, 'CONFIRMING')
 
 
+class LockGateTest(Fixture):
+    def test_the_lock_follows_a_speed_not_a_distance_per_sample(self):
+        # samples at 10 Hz: GN may follow a robot pushed at ~1 m/s (0.1 m per sample) but not slide 0.5 m between two samples
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', .1, .1))
+        run(s, t + 1, ('on_reloc_result', True, (2.5, 2., 0.), 'accepted'))
+        t0 = t + 1.6
+        confirmed = False
+        for k in range(40):
+            x = 2.5 + (0.05 * k if k < 3 else 0.15 + 0.5 * (k - 2))           # 0.5 m/s for 0.3 s, then 5 m/s
+            run(s, t0 + .1 * k, ('on_scan_fit', 'TRACKING', .9, .8), ('on_gn_pose', (x, 2., 0.)))
+            confirmed = confirmed or (s.state, s.reason) == ('MONITOR', 'confirmed')
+        self.assertFalse(confirmed)                                          # the 5 m/s slide broke the lock: the run of good samples started again every time
+
+
 class ScanRateConfirmTest(Fixture):
     """Confirmation counts one sample per GN scan (~10 Hz): a run of good samples at least confirm_s long, so the relocalized pose is released ~1 s after GN takes it, not after three 1 Hz statuses."""
     def relocalized(self, pose=(2.5, 2., 0.)):
@@ -666,6 +681,22 @@ class FailedRetryTest(Fixture):
         for k in range(1, 130):
             a += run(s, t + float(k), ('on_status', 'LOST', 0., 0.))
         self.assertNotIn('reloc_start', kinds(a))                            # a bug would loop: each cycle restarts FAST-LIO2
+
+    def test_a_deterministic_failure_is_not_retried_either(self):
+        for why in ('search_worker_exit_1', 'exception_in_poll'):
+            s, t = self.failed_by(why)
+            a = []
+            for k in range(1, 130):
+                a += run(s, t + float(k), ('on_status', 'LOST', 0., 0.))
+            self.assertNotIn('reloc_start', kinds(a), why)                    # a wrong parameter or a missing map would restart FAST-LIO2 every 30 s for ever
+
+    def test_a_transient_failure_is_retried(self):
+        for why in ('moved_since_exposure', 'ambiguous_no_alternative_margin', 'lio_restart_timeout'):
+            s, t = self.failed_by(why)
+            a = []
+            for k in range(1, 40):
+                a += run(s, t + float(k), ('on_status', 'LOST', 0., 0.))
+            self.assertIn('reloc_start', kinds(a), why)
 
     def test_the_retry_cycles_are_capped(self):
         s, t = self.failed(failed_retry_max=2)

@@ -35,7 +35,7 @@ class Params:
     reloc_timeout_s: float = 75.     # IMU 2 s + exposure 3 s + search: 7 s (small map) - 23 s (mapa_20261028_01) on the AGX, Nano slower and unmeasured
     max_attempts: int = 2
     failed_retry_max: int = 10       # at most this many retry cycles in a row (2 attempts each; each restarts FAST-LIO2 and runs a 60 s search on a shared board): then the operator
-    track_xy: float = 1.0            # once GN took the relocalizer's pose, how far it may move between two statuses (1 Hz) and still count as the same lock: a pushed robot
+    track_xy: float = 1.0            # once GN took the relocalizer's pose, how fast it may move (m/s, deg/s; at least 5 cm / 1.5 deg between samples) and still count as the same lock: a pushed robot
     track_yaw_deg: float = 30.       # yes, a snap to another well-fitting place no
     failed_retry_s: float = 30.      # FAILED after a relocalization that did not work: search again this often (0 = wait for the operator only). The lidar may have been uncovered
                                      # or the robot parked since. Not for gn_not_confirmed: the search would give the same pose
@@ -50,6 +50,9 @@ class Params:
     verify_period_s: float = 0.      # > 0: also relocalize (without holding) when parked and the last check is this old
     auto_init_s: float = 8.          # start-up with nobody having given gn_loc a pose for this long: localize by itself (0 = wait for the operator only). It only
                                      # asks the operator (FAILED needs_operator:...) when the relocalizer does not accept or gn_loc does not confirm its pose
+
+
+DETERMINISTIC = ('exception_in_', 'search_worker_exit_')    # failures a new attempt cannot fix; everything else (a push, an ambiguous scene, a filter that did not come back) can pass
 
 
 def wrap(a):
@@ -79,6 +82,7 @@ class Supervisor:
         self.t_status = None
         self.samples = []               # (t, good) per GN scan, kept while CONFIRMING; counted in tick(), after the pose of the same cycle (fit and pose arrive independently)
         self.t_good0 = None             # when the current run of good samples began
+        self.t_prev_sample = None       # the sample before, for the speed bound of the lock
         self.t_lost = None
         self.pose = None                # newest GN pose and when
         self.t_gn_pose = -math.inf
@@ -184,7 +188,7 @@ class Supervisor:
                 return self.go(t, 'MONITOR', f'verify_no_pose_{why}')
             if self.attempts < self.p.max_attempts:
                 return self.start_reloc(t, self.reason.split('+')[0])      # the '+not_stopped' note belongs to the attempt that was reported
-            return self.fail(t, f'reloc_failed_{why}', retry=not why.startswith('exception_in_'))      # an exception would loop: each retry restarts FAST-LIO2
+            return self.fail(t, f'reloc_failed_{why}', retry=not why.startswith(DETERMINISTIC))      # a bug or a wrong parameter would loop: each retry restarts FAST-LIO2 and runs a search
         if self.gn_good and self.pose is not None and agree(self.pose, pose, self.p.agree_xy, self.p.agree_yaw_deg):
             return self.go(t, 'MONITOR', 'verified_gn_agrees')
         if verifying:
@@ -208,7 +212,7 @@ class Supervisor:
         self.go(t, state, why)
 
     def confirm(self, t, target, why):
-        self.target, self.t_pose, self.good, self.locked, self.samples, self.t_good0 = target, t, 0, False, [], None
+        self.target, self.t_pose, self.good, self.locked, self.samples, self.t_good0, self.t_prev_sample = target, t, 0, False, [], None, None
         self.timeout = t + self.p.confirm_timeout_s
         self.go(t, 'CONFIRMING', why)
 
@@ -223,7 +227,7 @@ class Supervisor:
         return None
 
     def fail(self, t, reason, retry=False):
-        """FAILED holds navigation until an operator pose. After the start-up localization the name says that the operator is being asked for it."""
+        """FAILED holds navigation until a pose is confirmed: the operator's, or one of the automatic retries (retry=True, failed_retry_s apart, at most failed_retry_max in a row). After the start-up localization the name says that the operator is being asked for it."""
         self.go(t, 'FAILED', f'needs_operator:{reason}' if self.auto else reason)
         self.retry = retry
 
@@ -252,7 +256,9 @@ class Supervisor:
                 if ts < self.t_pose + p.confirm_lag_s:       # this soon after the pose it may describe a scan before it
                     continue
                 fresh = self.pose is not None and self.t_gn_pose >= self.t_pose + p.confirm_lag_s
-                xy, yaw = (p.track_xy, p.track_yaw_deg) if self.locked else (p.agree_xy, p.agree_yaw_deg)
+                dt = ts - self.t_prev_sample if self.t_prev_sample is not None else 1.
+                self.t_prev_sample = ts
+                xy, yaw = (max(p.track_xy * dt, .05), max(p.track_yaw_deg * dt, 1.5)) if self.locked else (p.agree_xy, p.agree_yaw_deg)
                 close = self.target is None or (fresh and agree(self.pose, self.target, xy, yaw))
                 if ok and close:
                     self.t_good0 = ts if not self.good else self.t_good0

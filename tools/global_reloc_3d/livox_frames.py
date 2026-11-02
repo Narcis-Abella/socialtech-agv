@@ -13,8 +13,9 @@ import numpy as np
 POINT = np.dtype([('t', '<u4'), ('x', '<f4'), ('y', '<f4'), ('z', '<f4'), ('refl', 'u1'), ('tag', 'u1'), ('line', 'u1'), ('pad', 'u1')])
 
 
-def parse(raw, blind=.1, decimate=2, extrinsic=(-.011, -.02329, .04412)):
-    """(stamp [s], valid points, cloud (m, 3) float64 in the body frame). `valid` counts the returns that pass the tag/line/blind test before decimating: what says the lidar sees."""
+def parse(raw, blind=.1, decimate=2, extrinsic=(-.011, -.02329, .04412), full=True):
+    """(stamp [s], valid points, cloud (m, 3) float64 in the body frame). `valid` counts the returns that pass the tag/line/blind test before decimating: what says the lidar sees.
+    full=False: only the count (None for the cloud), without the float64 copy and the stack of 20 000 points: what the supervisor needs at 10 Hz while nothing is exposed."""
     b = bytes(raw)
     if b[:2] != b'\x00\x01':
         raise ValueError('not a little-endian CDR message')
@@ -28,12 +29,15 @@ def parse(raw, blind=.1, decimate=2, extrinsic=(-.011, -.02329, .04412)):
     off += 4
     if len(b) - off - 20 * n not in (-1, 0):        # the last element's padding byte is there when the C++ serializer wrote the message (the driver, the simulator), not when rclpy's did
         raise ValueError(f'frame layout mismatch: {n} points from offset {off} do not end at byte {len(b)}')
-    p = np.frombuffer(b + b'\x00', POINT, n, off)
-    xyz = np.stack([p['x'], p['y'], p['z']], axis=1).astype(np.float64)
+    p = np.frombuffer(b if len(b) - off == 20 * n else b + b'\x00', POINT, n, off)
     tag = p['tag'] & 0x30
-    ok = (p['line'] < 4) & ((tag == 0x00) | (tag == 0x10)) & (np.einsum('ij,ij->i', xyz, xyz) > blind * blind)
-    xyz = xyz[ok]
-    return sec + nsec * 1e-9, int(ok.sum()), xyz[::max(decimate, 1)] + np.asarray(extrinsic)
+    x, y, z = p['x'], p['y'], p['z']
+    ok = (p['line'] < 4) & ((tag == 0x00) | (tag == 0x10)) & (x * x + y * y + z * z > np.float32(blind * blind))
+    stamp, valid = sec + nsec * 1e-9, int(ok.sum())
+    if not full:
+        return stamp, valid, None
+    xyz = np.stack([x[ok], y[ok], z[ok]], axis=1).astype(np.float64)
+    return stamp, valid, xyz[::max(decimate, 1)] + np.asarray(extrinsic)
 
 
 def imu_fields(b):

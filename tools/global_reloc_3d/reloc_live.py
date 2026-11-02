@@ -145,7 +145,7 @@ class LiveReloc:
 
     def add_imu(self, t, gyro, acc_g):
         self.t_imu = t
-        still = self.still.add(t, gyro, acc_g, need=self.stage == 'imu')   # the answer is only read while waiting to start
+        still = self.still.add(t, gyro, acc_g, need=self.stage in ('imu', 'search'))   # read while waiting to start and, as the IMU witness of a push, while the search runs
         if self.stage == 'imu':
             self.t_first_imu = t if self.t_first_imu is None else self.t_first_imu
             if still and self.seeing(t):
@@ -180,9 +180,11 @@ class LiveReloc:
             self.flow_since = None
             if self.stage == 'expose':                                       # covered meanwhile: the frames so far describe another scene (the hand)
                 self.info['exposure_restarts'] += 1
-                self.stage, self.clouds, self.imu, self.motion = 'imu', [], [], []
+                self.stage, self.clouds, self.imu, self.motion, self.moved_in = 'imu', [], [], [], None      # what the aborted exposure saw (a nudge) is not about the next one
+                if self.want_restart and self.restart_done:                  # the filter restarted at that begin() initialised with the lidar covered: it is restarted again at the next one
+                    self.restart_done, self.t_restart, self.odom_new = False, None, False
             return
-        if self.stage == 'expose' and t >= self.t_ready and len(xyz):
+        if self.stage == 'expose' and t >= self.t_ready and xyz is not None and len(xyz):
             self.clouds.append((t, np.asarray(xyz, float)))
 
     def add_wheel(self, moving):
@@ -249,7 +251,7 @@ class LiveReloc:
 
     def release(self):
         """The accepted pose goes out once the robot is known not to have moved and, after a restart, the new filter is publishing (gn_loc needs odom -> base_footprint)."""
-        if self.moved_in is not None:
+        if self.moved_in is not None or not self.still.ok:                    # the wheels may be silent (base off, slow creep under their threshold): the IMU window is the other witness
             return self.end(False, 'moved_since_exposure')
         if self.t_restart is not None and not self.odom_new:
             return None

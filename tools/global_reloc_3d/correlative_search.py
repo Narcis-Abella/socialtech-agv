@@ -133,7 +133,7 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
     if field is None:
         field = MapField(map_points, res, sigma, radius + res, reach_z, z_band=z_band)
     t_field = time.monotonic() - t0
-    lo, hi = field.valid_lo, field.valid_hi
+    lo = field.valid_lo
     peaks = []
     yaws = np.radians(np.arange(0., 360., yaw_step_deg))
     for yaw in yaws:

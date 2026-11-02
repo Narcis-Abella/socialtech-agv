@@ -166,7 +166,7 @@ class SupervisorNode(Node):
 
     def on_lidar(self, raw):      # always: ~2-4 ms a frame, and it keeps "the lidar sees" current
         try:
-            t, valid, xyz = lf.parse(raw, **self.frame_cfg)
+            t, valid, xyz = lf.parse(raw, full=self.reloc.stage == 'expose', **self.frame_cfg)      # the whole cloud only while the exposure collects it
         except ValueError:
             self.get_logger().warn('unparsed /livox/lidar frame', throttle_duration_sec=10.)
             return

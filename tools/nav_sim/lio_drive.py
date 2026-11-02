@@ -8,7 +8,7 @@ from geometry_msgs.msg import Twist
 from rclpy.node import Node
 
 
-def plan(leg, v, w):
+def plan(leg=5., v=.4, w=.5):
     """[(seconds, linear, angular)]"""
     return [(5., 0., 0.), (leg / v, v, 0.), (math.pi / w, 0., w), (leg / v, v, 0.), (math.pi / w, 0., w), (3., 0., 0.)]
 

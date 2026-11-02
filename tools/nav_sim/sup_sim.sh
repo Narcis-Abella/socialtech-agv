@@ -2,7 +2,7 @@
 # gn_supervisor in the full simulation: the simulator with a real FAST-LIO2, the robot's own ops/nav_live.launch.py (driver off, sim time) with gn_loc and the supervisor,
 # then the covered-lidar scenario (sup_cover.py). usage: sup_sim.sh <out dir> [cover_s] [sup_cover.py options: --push-after S | --move-covered M]
 # mounts: repo tools/ at /tools and /greloc/tools, ops/ at /ops, docker/ros_loc/gn_loc at /locsrc (optional), GRELOC_BUILD (register_v2, libsmall_gicp.so) at /greloc/build, out at /out, as lio_sim.sh (SIM_SRC, /pat, /navsrc)
-# env: ROS_DOMAIN_ID (55), SPAWN, SEED, SIM_WAIT, SUP_ARGS (extra "-p" arguments appended to nothing: the supervisor runs with the launch file's own parameters)
+# env: ROS_DOMAIN_ID (55), SPAWN, SEED, SIM_WAIT
 set -eo pipefail
 out=${1:?out dir}; cover_s=${2:-20}; shift 2 || true
 source "${ROS_ENV:-/ros_env.sh}"

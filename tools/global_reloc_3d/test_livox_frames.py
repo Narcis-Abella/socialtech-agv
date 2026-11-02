@@ -36,6 +36,14 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(valid, 2)
         self.assertEqual(xyz[:, 0].tolist(), [5., 7.])
 
+    def test_the_count_only_path_counts_the_same_without_building_the_cloud(self):
+        rng = np.random.default_rng(3)
+        pts = [(i, *rng.normal(0, 5, 3), 100, int(rng.choice([0, 16, 32, 48])), int(i % 5)) for i in range(5000)]
+        full = lf.parse(cdr(pts), decimate=1)
+        count = lf.parse(cdr(pts), full=False)
+        self.assertEqual((count[0], count[1]), (full[0], full[1]))
+        self.assertIsNone(count[2])
+
     def test_decimation_keeps_every_nth_valid_point(self):
         pts = [(0, float(i + 1), 0., 0., 1, 0, 0) for i in range(10)]
         _, valid, xyz = lf.parse(cdr(pts), decimate=2, extrinsic=(0., 0., 0.))

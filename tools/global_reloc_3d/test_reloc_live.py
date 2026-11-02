@@ -237,14 +237,6 @@ class RestartTest(LiveRelocBase):
         self.assertEqual(len(self.restarts), 1)
         self.assertTrue(res['ok'], res)
 
-    def test_a_cover_during_the_exposure_does_not_restart_the_filter_twice(self):
-        r = self.make_restart(); r.start(restart=True)
-        self.feed(r, 0., 3.5)
-        self.feed(r, 3.5, 4.5, points=lambda t: 0)
-        res = self.feed(r, 4.5, 14.)
-        self.assertTrue(res['ok'], res)
-        self.assertEqual(len(self.restarts), 1)
-
     def test_no_restart_unless_asked(self):
         r = self.make_restart(); r.start()                               # a parked verification does not hold Nav2 and must not touch the odometry
         res = self.feed(r, 0., 10.)
@@ -313,3 +305,27 @@ class LazyStillWindowTest(unittest.TestCase):
                 self.assertEqual(e, l, k)
                 checked[e] += 1
         self.assertGreater(min(checked), 1000)        # both answers exercised
+
+
+class ReviewFixesTest(LiveRelocBase):
+    def test_a_push_during_the_search_that_the_wheels_do_not_report_is_still_refused(self):
+        # no wheel data at all (base off): the IMU is the witness
+        r = self.make(); r.start()
+        res = self.feed(r, 0., 14., gyro=lambda t: (0., 0., .3) if t > 5.4 else (0., 0., 0.))
+        self.assertFalse(res['ok'])
+        self.assertEqual(res['why'], 'moved_since_exposure')
+
+    def test_the_moved_flag_of_an_aborted_exposure_does_not_poison_the_next_one(self):
+        r = self.make(); r.start()
+        self.feed(r, 0., 3.5, wheel=lambda t: t > 3.2)                      # a nudge in the first exposure ...
+        self.feed(r, 3.5, 4.5, points=lambda t: 0)                          # ... which the cover then aborts
+        res = self.feed(r, 4.5, 16.)
+        self.assertTrue(res['ok'], res)
+
+    def test_a_cover_during_the_exposure_restarts_the_filter_again_for_the_new_exposure(self):
+        r = self.make_restart(); r.start(restart=True)
+        self.feed(r, 0., 3.5)
+        self.feed(r, 3.5, 4.5, points=lambda t: 0)
+        res = self.feed(r, 4.5, 16., odom=lambda t: t < 2.2 or t > 6.)
+        self.assertTrue(res['ok'], res)
+        self.assertEqual(len(self.restarts), 2)                             # the first filter started while the hand covered the window: no points to initialise on

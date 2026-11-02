@@ -1,7 +1,7 @@
 // Simulated Livox Mid-360: every point of the closed-form scan model (per-unit constants) is ray cast from the sensor pose at the point's own time,
+// so the output carries the real motion distortion and per-point offset_time. No-return slots are emitted as zero points (as the driver does).
 #include <atomic>
 #include <algorithm>
-// so the output carries the real motion distortion and per-point offset_time. No-return slots are emitted as zero points (as the driver does).
 #include <chrono>
 #include <cstring>
 #include <random>

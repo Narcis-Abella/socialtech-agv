@@ -44,7 +44,7 @@ HEAVY_URI = ('<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="l
 
 def heavy_env():
     """HEAVY_DDS=1: the driver and FAST-LIO2 (the two ends of the 400 kB x 10 Hz lidar topic) talk on loopback with 64 kB datagrams instead of 1344 B fragments: ~45 % less transport CPU on
-    that hop and 73 % fewer sendmsg (laptop microbenchmark, notes/optimizacion_localizacion_2026-11-02.md; NOT measured on the Nano, hence off by default). Readers on the default URI still receive them.
+    that hop and 73 % fewer sendmsg (laptop microbenchmark, notes/optimizacion_localizacion_2026-11-02.md; NOT measured on the Nano, hence off by default). Readers on the default URI (gn_supervisor reads the raw lidar and IMU) should still receive them, but that crossing is NOT tested: check `ros2 topic hz /livox/lidar` from a default-URI node before relying on it.
     Their topics and FAST-LIO2's TF are then not visible from the laptop's rviz2 (the configs in tools/ do not use them). The rcvbuf line is explicit: the entrypoint never sees a per-node env."""
     return {"additional_env": {"CYCLONEDDS_URI": HEAVY_URI}} if os.environ.get("HEAVY_DDS", "").lower() not in ("", "0", "false", "no", "off") else {}
 
@@ -61,7 +61,8 @@ def supervisor_nodes():
         "python3", "-B", "/greloc/tools/global_reloc_3d/gn_supervisor_node.py", "--ros-args",
         "-p", f"map_xyz:={prior}", "-p", "register_binary:=/greloc/build/register_v2", "-p", "lib_dir:=/greloc/build",
         "-p", "wheel_topic:=/odom", "-p", "work_dir:=/runs/gn_supervisor",
-        "-p", ["sensor_z:=", LC("sensor_height")]])]     # the mounting height over the floor of the map: the relocalizer searches only +- 0.5 m around it
+        "-p", ["sensor_z:=", LC("sensor_height")],
+        "-p", f"lidar_decimate:={int(os.environ.get('POINT_FILTER_NUM') or 2)}"])]      # the density FAST-LIO2 runs with (nav_live.sh point_filter_num): the exposure keeps the validated one     # the mounting height over the floor of the map: the relocalizer searches only +- 0.5 m around it
 
 
 def generate_launch_description():
