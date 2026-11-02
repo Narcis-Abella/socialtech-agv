@@ -128,5 +128,96 @@ class ZBandTest(unittest.TestCase):
         self.assertEqual(a['xyz'], b['xyz']); self.assertEqual(a['yaw_rad'], b['yaw_rad'])
 
 
+class ReferenceMapField:
+    """The search as it was before the CPU work (A1-A6): the plain layered correlation, kept here so that every later speed-up has to return the SAME candidates."""
+
+    def __init__(self, points, res, sigma, reach_xy, reach_z, z_band=None):
+        from scipy import ndimage
+        points = np.asarray(points, float)
+        self.res = res
+        lo, hi = points.min(axis=0), points.max(axis=0)
+        pad = np.array([reach_xy, reach_xy, reach_z])
+        self.origin = lo - pad
+        self.shape = tuple(int(n) for n in np.ceil((hi + pad - self.origin) / res) + 1)
+        self.valid_lo = np.floor((lo - self.origin) / res).astype(int)
+        self.valid_hi = np.ceil((hi - self.origin) / res).astype(int)
+        if z_band is not None:
+            self.valid_lo[2] = max(self.valid_lo[2], int(np.floor((z_band[0] - self.origin[2]) / res)))
+            self.valid_hi[2] = min(self.valid_hi[2], int(np.ceil((z_band[1] - self.origin[2]) / res)))
+        occ = np.zeros(self.shape, bool)
+        occ[tuple(np.floor((points - self.origin) / res).astype(int).T)] = True
+        d = ndimage.distance_transform_edt(~occ) * res
+        field = np.exp(-.5 * (d / sigma) ** 2).astype(np.float32)
+        self.fft_xy = tuple(fft.next_fast_len(n, real=True) for n in self.shape[:2])
+        self.layers = fft.rfft2(np.moveaxis(field, 2, 0), s=self.fft_xy, axes=(1, 2), workers=2)
+
+    def correlate(self, source_points, yaw):
+        cells = unique_cells(np.asarray(source_points) @ rot_z(yaw).T, self.res)
+        kz = cells[:, 2]
+        k0, k1 = int(kz.min()), int(kz.max())
+        z0 = np.arange(self.valid_lo[2], self.valid_hi[2] + 1)
+        S = np.zeros((k1 - k0 + 1, *self.fft_xy), np.float32)
+        S[kz - k0, cells[:, 0] % self.fft_xy[0], cells[:, 1] % self.fft_xy[1]] = 1.
+        spectrum = np.conj(fft.rfft2(S, axes=(1, 2), workers=2))
+        acc = np.empty((len(z0), *self.layers.shape[1:]), self.layers.dtype)
+        for i, z in enumerate(z0):
+            acc[i] = (self.layers[z + k0:z + k1 + 1] * spectrum).sum(axis=0)
+        c = fft.irfft2(acc, s=self.fft_xy, axes=(1, 2), workers=2)
+        lo, hi = self.valid_lo, self.valid_hi
+        return np.moveaxis(c[:, lo[0]:hi[0] + 1, lo[1]:hi[1] + 1], 0, 2) / len(cells), len(cells)
+
+
+def reference_candidates(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius=15., top=10, per_yaw=8, nms_xy=1., nms_yaw_deg=10., z_band=None):
+    source = np.asarray(source_points, float)
+    source = source[np.hypot(source[:, 0], source[:, 1]) <= radius]
+    field = ReferenceMapField(map_points, res, sigma, radius + res, float(np.abs(source[:, 2]).max()) + res, z_band)
+    peaks = []
+    for yaw in np.radians(np.arange(0., 360., yaw_step_deg)):
+        inside, n = field.correlate(source, yaw)
+        for xyz, sc in yaw_peaks(inside, field.valid_lo, field.origin, field.res, per_yaw, nms_xy):
+            peaks.append({'yaw_rad': float(yaw), 'xyz': xyz.tolist(), 'score': sc, 'source_voxels': n})
+    peaks.sort(key=lambda p: -p['score'])
+    selected = []
+    for p in peaks:
+        if all(np.linalg.norm(np.subtract(p['xyz'][:2], q['xyz'][:2])) > nms_xy or yaw_distance_deg(p['yaw_rad'], q['yaw_rad']) > nms_yaw_deg for q in selected):
+            selected.append(p)
+        if len(selected) == top:
+            break
+    return selected
+
+
+class OneFftThreadTest(unittest.TestCase):
+    def test_the_field_transforms_on_one_thread_by_default(self):
+        # the primary and the confirmation search already run side by side: a second FFT thread each costs ~40 % more CPU (laptop, 144 yaws: 1.13 vs 0.80 CPU-s) for no gain in wall time
+        f = MapField(np.random.default_rng(0).uniform(0, 5, (400, 3)), .5, .5, 2., 1.)
+        self.assertEqual(f.workers, 1)
+
+
+class SameCandidatesTest(unittest.TestCase):
+    """The speed-ups of the search are exact: the ten candidates (yaw, xyz, score, source voxels) are those of the reference above, bit for bit."""
+
+    def check(self, z_band, seed, yaw_deg, at):
+        rng = np.random.default_rng(seed)
+        world = synthetic_map(rng)
+        T = pose(math.radians(yaw_deg), at)
+        local = transform(world, np.linalg.inv(T))
+        local = local[np.linalg.norm(local[:, :2], axis=1) < 9.] + rng.normal(0, .02, (1, 3))
+        new = search(world, local, res=.5, radius=9., top=10, z_band=z_band)['candidates']
+        old = reference_candidates(world, local, radius=9., z_band=z_band)
+        self.assertEqual(len(new), len(old))
+        for a, b in zip(new, old):
+            for k in ('yaw_rad', 'xyz', 'score', 'source_voxels'):
+                self.assertEqual(a[k], b[k], k)
+
+    def test_without_z_band(self):
+        self.check(None, 3, 137., [17.3, 8.6, .55])
+
+    def test_with_z_band(self):
+        self.check((.2, .9), 5, 40., [14., 9., .5])
+
+    def test_another_pose(self):
+        self.check((.1, 1.), 11, 275., [6.1, 14.2, .45])
+
+
 if __name__ == '__main__':
     unittest.main()

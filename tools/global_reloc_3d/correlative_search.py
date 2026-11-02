@@ -71,7 +71,7 @@ class MapField:
     6 on a real map). The xy FFT runs on the grid padded again, at the end, to a size the FFT does fast (the 191 of a real map is prime and costs several times
     more): the extra cells are zero and lie beyond the reach of every valid sensor position, so the scores of the valid window do not change."""
 
-    def __init__(self, points, res, sigma, reach_xy, reach_z, workers=2, z_band=None):
+    def __init__(self, points, res, sigma, reach_xy, reach_z, workers=1, z_band=None):
         points = np.asarray(points, float)
         self.res, self.workers = res, workers
         lo = points.min(axis=0)
