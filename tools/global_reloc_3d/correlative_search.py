@@ -48,6 +48,8 @@ def unique_cells(points, res):
 def z_cell_range(sources, res, radius):
     """(lowest, highest) z cell index of the points of the sources inside the search radius: the cells a rotation about z leaves where they are."""
     zs = np.concatenate([crop_source(s, radius)[:, 2] for s in sources])
+    if not len(zs):                 # a near-empty frame: (0, 0), as source_reach_z gives 0, so that the search itself rejects it ('too few points')
+        return 0, 0
     return int(np.floor(zs.min() / res)), int(np.floor(zs.max() / res))
 
 
@@ -75,7 +77,11 @@ class MapField:
     The correlation is the sum over the source's z layers of 2D correlations with the matching field layer, which is the 3D correlation with its z axis written
     out. Only the layers the source occupies are transformed and only the z shifts of the valid window are inverted (the window is 13 of 24 layers and the source
     6 on a real map). The xy FFT runs on the grid padded again, at the end, to a size the FFT does fast (the 191 of a real map is prime and costs several times
-    more): the extra cells are zero and lie beyond the reach of every valid sensor position, so the scores of the valid window do not change."""
+    more): the extra cells are zero and lie beyond the reach of every valid sensor position, so the scores of the valid window do not change.
+
+    z_cells (lowest, highest z cell of the sources, z_cell_range) limits the transformed layers to those the sources can touch: the field then only serves sources inside that
+    range (correlate raises ValueError otherwise). The build computes scipy's distance transform in slabs with the same operations as scipy 1.11 (feature transform, float64
+    differences, squares, add.reduce, sqrt), so the field is bit-identical to the plain build; the reference copy in test_correlative_search.py fails if another scipy differs."""
 
     def __init__(self, points, res, sigma, reach_xy, reach_z, workers=1, z_band=None, z_cells=None):
         points = np.asarray(points, float)
@@ -168,17 +174,17 @@ def spread_order(n):
     return order
 
 
-def tenth_of_separated(peaks, nms_xy, nms_yaw_deg, slack=1e-6):
-    """Score of the tenth best of a greedy set of peaks that are far apart: more than twice nms_xy in xy OR twice nms_yaw_deg in yaw (and `slack` more, for the rounding of the
-    triangle inequality), as (score, yaw_rad, xyz); -inf while there are fewer than ten. The final selection takes the best peaks that are more than nms_xy OR nms_yaw_deg from
+def tenth_of_separated(peaks, nms_xy, nms_yaw_deg, top=10, slack=1e-6):
+    """Score of the `top`-th best of a greedy set of peaks that are far apart: more than twice nms_xy in xy OR twice nms_yaw_deg in yaw (and `slack` more, for the rounding of the
+    triangle inequality), as (score, yaw_rad, xyz); -inf while there are fewer than `top`. The final selection takes the `top` best peaks that are more than nms_xy OR nms_yaw_deg from
     those already taken. A peak that is within both of two members of this set would put those two within twice both of each other, which they are not: every selected peak
-    blocks at most one member, each member is selected or blocked by a peak that scores at least as much. So ten selected peaks score >= the value returned, and a yaw whose best score
-    is below it cannot contribute to the selection."""
+    blocks at most one member, each member is selected or blocked by a peak that scores at least as much. So `top` selected peaks score >= the value returned, and a yaw whose best
+    score is below it cannot contribute to the selection."""
     chosen = []
     for p in sorted(peaks, key=lambda p: -p[0]):
         if all(np.hypot(p[2][0] - q[2][0], p[2][1] - q[2][1]) > 2 * nms_xy + slack or yaw_distance_deg(p[1], q[1]) > 2 * nms_yaw_deg + slack for q in chosen):
             chosen.append(p)
-            if len(chosen) == 10:
+            if len(chosen) == top:
                 return p[0]
     return -math.inf
 
@@ -199,12 +205,12 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
     bar, skipped = -math.inf, 0
     for i in spread_order(len(yaws)):
         inside, n = field.correlate(source, yaws[i])
-        if inside.max() < bar:      # no peak of this yaw can be among the selected ones (tenth_of_separated)
+        if inside.max() < bar:      # no peak of this yaw can be among the selected ones (tenth_of_separated: the `top`-th of far-apart peaks)
             skipped += 1
             continue
         for j, (xyz, sc) in enumerate(yaw_peaks(inside, lo, field.origin, field.res, per_yaw, nms_xy)):
             peaks.append((sc, float(yaws[i]), xyz.tolist(), i, j, n))
-        bar = tenth_of_separated(peaks, nms_xy, nms_yaw_deg)
+        bar = tenth_of_separated(peaks, nms_xy, nms_yaw_deg, top)
     peaks.sort(key=lambda p: (-p[0], p[3], p[4]))     # ties in the order a plain 0..360 sweep would have produced them
     peaks = [{'yaw_rad': p[1], 'xyz': p[2], 'score': p[0], 'source_voxels': p[5]} for p in peaks]
     selected = []
@@ -220,7 +226,7 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
     return {'candidates': selected, 'grid_shape': list(field.shape), 'res_m': res, 'sigma_m': sigma,
             'yaw_step_deg': yaw_step_deg, 'radius_m': radius, 'source_points_used': int(len(source)),
             'field_seconds': t_field, 'seconds': time.monotonic() - t0, 'yaws_skipped': skipped,
-            'score_quantiles_all_peaks': np.percentile(scores, [50, 90, 99, 100]).tolist(),   # of the peaks of the yaws that were not skipped
+            'score_quantiles_unskipped_peaks': np.percentile(scores, [50, 90, 99, 100]).tolist(),   # only the peaks of the yaws that were not skipped: biased high, a diagnostic
             'truth_used': False}
 
 

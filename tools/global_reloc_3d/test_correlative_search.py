@@ -194,35 +194,36 @@ class SkipTest(unittest.TestCase):
         self.assertEqual(sorted(o), list(range(144)))
         self.assertEqual(o[:4], [0, 72, 36, 108])          # opposite yaws first, then quarter turns
 
-    def test_tenth_of_separated_is_the_tenth_score_of_the_greedy_set_of_far_apart_peaks(self):
+    def test_tenth_of_separated_is_the_top_th_score_of_the_greedy_set_of_far_apart_peaks(self):
         # (score, yaw_rad, xyz): ten peaks 5 m apart, then clones 0.5 m from the best that must not count as new members
         peaks = [(1. - .01 * i, 0., [5. * i, 0., 0.]) for i in range(10)] + [(.99, 0., [.5, 0., 0.]), (.98, 0., [5.5, 0., 0.])]
-        self.assertAlmostEqual(tenth_of_separated(peaks, 1., 10.), .91)
-        self.assertEqual(tenth_of_separated(peaks[:9], 1., 10.), -np.inf)   # fewer than ten far-apart peaks: nothing can be skipped yet
+        self.assertAlmostEqual(tenth_of_separated(peaks, 1., 10., 10), .91)
+        self.assertAlmostEqual(tenth_of_separated(peaks, 1., 10., 3), .98 + .0 if False else .98)   # top 3: the third of the far-apart ones (1.0, .99, .98)
+        self.assertEqual(tenth_of_separated(peaks[:9], 1., 10., 10), -np.inf)   # fewer than ten far-apart peaks: nothing can be skipped yet
         # a peak 1.9 m away at the same yaw is closer than 2 x nms_xy: not a new member; the same place 25 deg apart in yaw is (>2 x 10 deg)
         near = [(1., 0., [0., 0., 0.]), (.9, 0., [1.9, 0., 0.])] + [(.8 - .01 * i, 0., [10. + 5. * i, 0., 0.]) for i in range(8)]
-        self.assertEqual(tenth_of_separated(near, 1., 10.), -np.inf)
+        self.assertEqual(tenth_of_separated(near, 1., 10., 10), -np.inf)
         turned = [(1., 0., [0., 0., 0.]), (.9, math.radians(25.), [0., 0., 0.])] + [(.8 - .01 * i, 0., [10. + 5. * i, 0., 0.]) for i in range(8)]
-        self.assertAlmostEqual(tenth_of_separated(turned, 1., 10.), .73)
+        self.assertAlmostEqual(tenth_of_separated(turned, 1., 10., 10), .73)
 
     def test_the_tenth_selected_peak_never_scores_below_the_bar(self):
         # the property the skip rests on, on random dense peaks (many conflicts): select as search() does, compare the tenth with tenth_of_separated of the same peaks
         rng = np.random.default_rng(0)
         checked = 0
-        for _ in range(400):
-            n = int(rng.integers(12, 80))
-            peaks = [(float(s), float(np.radians(rng.choice(np.arange(0., 360., 2.5)))), [float(x), float(y), 0.]) for s, x, y in zip(rng.uniform(0, 1, n), rng.uniform(0, 6, n), rng.uniform(0, 6, n))]
-            bar = tenth_of_separated(peaks, 1., 10.)
+        for top in (5, 10, 20, 40) * 100:
+            n = int(rng.integers(3 * top, 3 * top + 80))
+            peaks = [(float(s), float(np.radians(rng.choice(np.arange(0., 360., 2.5)))), [float(x), float(y), 0.]) for s, x, y in zip(rng.uniform(0, 1, n), rng.uniform(0, 12, n), rng.uniform(0, 12, n))]
+            bar = tenth_of_separated(peaks, 1., 10., top)
             chosen = []
             for p in sorted(peaks, key=lambda p: -p[0]):
                 if all(math.hypot(p[2][0] - q[2][0], p[2][1] - q[2][1]) > 1. or yaw_distance_deg(p[1], q[1]) > 10. for q in chosen):
                     chosen.append(p)
-                if len(chosen) == 10:
+                if len(chosen) == top:
                     break
             if bar > -math.inf:
                 checked += 1
-                self.assertEqual(len(chosen), 10)
-                self.assertGreaterEqual(chosen[9][0], bar)
+                self.assertEqual(len(chosen), top)
+                self.assertGreaterEqual(chosen[top - 1][0], bar)
         self.assertGreater(checked, 100)             # the property was exercised, not vacuous
 
     def test_the_search_really_skips_yaws(self):
@@ -231,6 +232,7 @@ class SkipTest(unittest.TestCase):
         local = transform(world, np.linalg.inv(pose(math.radians(137.), [17.3, 8.6, .55])))
         local = local[np.linalg.norm(local[:, :2], axis=1) < 9.] + rng.normal(0, .02, (1, 3))
         r = search(world, local, res=.5, radius=9., top=10)
+        self.assertIn('score_quantiles_unskipped_peaks', r)                # not "all peaks": the skipped yaws contribute none
         self.assertGreater(r['yaws_skipped'], 0)
         self.assertLess(r['yaws_skipped'], 144)
 
@@ -248,6 +250,23 @@ class LeanBuildTest(unittest.TestCase):
         b = np.array([[1., 0., 3.1]])
         self.assertEqual(z_cell_range([a, b], .5, 15.), (-2, 6))
 
+    def test_z_cell_range_of_empty_crops_is_zero_so_search_rejects_cleanly(self):
+        far = np.array([[50., 0., 1.]])
+        self.assertEqual(z_cell_range([far, far], .5, 15.), (0, 0))        # as source_reach_z returns 0 for a near-empty frame
+
+    def test_z_cells_edges_and_the_band(self):
+        full = MapField(self.world, .5, .5, 9.5, self.reach, z_band=(.2, .9))
+        zr = z_cell_range([self.source], .5, 9.)
+        lean = MapField(self.world, .5, .5, 9.5, self.reach, z_band=(.2, .9), z_cells=zr)
+        self.assertEqual(lean.z_first, max(0, lean.valid_lo[2] + zr[0]))
+        self.assertEqual(lean.z_first + len(lean.layers), min(lean.shape[2], lean.valid_hi[2] + zr[1] + 1))
+        np.testing.assert_array_equal(full.correlate(self.source, 2.)[0], lean.correlate(self.source, 2.)[0])
+        huge = MapField(self.world, .5, .5, 9.5, self.reach, z_cells=(-1000, 1000))          # clamped to the grid: all the layers
+        self.assertEqual((huge.z_first, len(huge.layers)), (0, huge.shape[2]))
+        low = self.source - [0., 0., 4.]                                                   # below the layers the field was built for
+        with self.assertRaises(ValueError):
+            lean.correlate(low, 0.)
+
     def test_only_the_layers_the_source_reaches_are_transformed_and_the_scores_do_not_change(self):
         full = MapField(self.world, .5, .5, 9.5, self.reach)
         zr = z_cell_range([self.source], .5, 9.)
@@ -264,11 +283,17 @@ class LeanBuildTest(unittest.TestCase):
 
     def test_the_build_allocates_far_less_than_scipys_edt_does(self):
         import tracemalloc
-        tracemalloc.start()
-        f = MapField(self.world, .5, .5, 9.5, self.reach, z_cells=z_cell_range([self.source], .5, 9.))
-        _, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-        self.assertLess(peak / np.prod(f.shape), 36., 'bytes per cell at the peak (scipy edt + exp temporaries: 57; now ~30)')
+
+        def peak(make):
+            tracemalloc.start()
+            make()
+            p = tracemalloc.get_traced_memory()[1]
+            tracemalloc.stop()
+            return p
+        zr = z_cell_range([self.source], .5, 9.)
+        lean = peak(lambda: MapField(self.world, .5, .5, 9.5, self.reach, z_cells=zr))
+        old = peak(lambda: ReferenceMapField(self.world, .5, .5, 9.5, self.reach))      # scipy's own edt and exp: ~57 B per cell; relative, so a scipy that allocates differently moves both
+        self.assertLess(lean, .7 * old, f'peak {lean / 1e6:.1f} MB against {old / 1e6:.1f} MB')
 
 
 class OneFftThreadTest(unittest.TestCase):
@@ -281,14 +306,17 @@ class OneFftThreadTest(unittest.TestCase):
 class SameCandidatesTest(unittest.TestCase):
     """The speed-ups of the search are exact: the ten candidates (yaw, xyz, score, source voxels) are those of the reference above, bit for bit."""
 
-    def check(self, z_band, seed, yaw_deg, at):
+    def check(self, z_band, seed, yaw_deg, at, top=10, skips=None):
         rng = np.random.default_rng(seed)
         world = synthetic_map(rng)
         T = pose(math.radians(yaw_deg), at)
         local = transform(world, np.linalg.inv(T))
         local = local[np.linalg.norm(local[:, :2], axis=1) < 9.] + rng.normal(0, .02, (1, 3))
-        new = search(world, local, res=.5, radius=9., top=10, z_band=z_band)['candidates']
-        old = reference_candidates(world, local, radius=9., z_band=z_band)
+        r = search(world, local, res=.5, radius=9., top=top, z_band=z_band)
+        new = r['candidates']
+        old = reference_candidates(world, local, radius=9., top=top, z_band=z_band)
+        if skips is not None:
+            self.assertEqual(r['yaws_skipped'] > 0, skips, f"yaws_skipped {r['yaws_skipped']}")
         self.assertEqual(len(new), len(old))
         for a, b in zip(new, old):
             for k in ('yaw_rad', 'xyz', 'score', 'source_voxels'):
@@ -302,6 +330,16 @@ class SameCandidatesTest(unittest.TestCase):
 
     def test_another_pose(self):
         self.check((.1, 1.), 11, 275., [6.1, 14.2, .45])
+
+    def test_other_numbers_of_candidates(self):
+        # --top is a parameter of search_v2: the skip bar is the top-th separated peak, not the tenth (top 40 used to differ from the reference, even returning fewer candidates)
+        for top in (1, 5, 20, 40):
+            self.check((.2, .9), 5, 40., [14., 9., .5], top=top)
+            self.check(None, 3, 137., [17.3, 8.6, .55], top=top)
+
+    def test_the_cases_compared_do_skip_yaws(self):
+        self.check(None, 3, 137., [17.3, 8.6, .55], skips=True)
+        self.check((.2, .9), 5, 40., [14., 9., .5], skips=True)
 
 
 if __name__ == '__main__':

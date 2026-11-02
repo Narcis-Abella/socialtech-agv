@@ -134,10 +134,11 @@ def main():
     p.add_argument('--yaw-step', type=float, default=2.5)
     p.add_argument('--radius', type=float, default=15.)
     p.add_argument('--top', type=int, default=10)
+    p.add_argument('--fft-workers', type=int, default=1, help='FFT threads of each search (1: the primary and the confirmation search run side by side; 2 costs ~40 %% more CPU on a laptop for no gain in wall time, to be measured on a board)')
     p.add_argument('--gicp-voxel', type=float, default=.3)
     p.add_argument('--deadline-s', type=float, default=60., help='remaining decision budget from this process start')
     p.add_argument('--z-band', type=float, nargs=2, metavar=('LO', 'HI'), help='heights (m, map frame) the sensor can have: the search and the refined poses stay inside it (+- 0.25 m for the latter)')
-    p.add_argument('--threads', type=int, default=2, help='OMP_NUM_THREADS of each register_v2 call (small_gicp is built without OpenMP, so GICP runs on one thread whatever this says); the FFT uses one thread per search')
+    p.add_argument('--threads', type=int, default=2, help='OMP_NUM_THREADS of each register_v2 call (small_gicp is built without OpenMP, so GICP runs on one thread whatever this says); the FFT threads are --fft-workers')
     a = p.parse_args()
     global DEADLINE_S
     DEADLINE_S = a.deadline_s
@@ -152,8 +153,8 @@ def main():
     check = np.loadtxt(run / 'check.xyz')
     reach_z = source_reach_z(fit, check, a.radius)
     z_band = tuple(a.z_band) if a.z_band else None
-    field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res, z_band=z_band,
-                     z_cells=z_cell_range([fit, check], a.res, a.radius))   # FFT on one thread: the two searches run side by side
+    field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res, workers=a.fft_workers, z_band=z_band,
+                     z_cells=z_cell_range([fit, check], a.res, a.radius))
     t_field = time.monotonic() - t0
     temporal_ok, separation = temporal_evidence(manifest['stamps_s'], manifest['start_header_s'], manifest['duration_s'])
     def confirmation_search():
@@ -192,7 +193,7 @@ def main():
     report = {'dataset_run': str(run), 'generator': 'correlative_fft_levelled', 'res_m': a.res,
               'yaw_step_deg': a.yaw_step, 'radius_m': a.radius, 'top': a.top,
               'field_seconds': t_field, 'correlative_seconds': found['seconds'],
-              'correlative_score_quantiles': found['score_quantiles_all_peaks'],
+              'correlative_score_quantiles_unskipped': found['score_quantiles_unskipped_peaks'],
               'grid_shape': found['grid_shape'], 'valid_candidates': sum('geometry' in r for r in rows),
               'distinct_top_ids': [r['id'] for r in top],
               'distinct_top': [{'id': r['id'], 'support': r['geometry']['support_015'],
