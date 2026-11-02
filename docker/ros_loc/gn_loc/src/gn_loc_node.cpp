@@ -14,10 +14,10 @@
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "gn_loc/gn_core.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
 #include "message_filters/subscriber.h"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "lifecycle_msgs/msg/state.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
@@ -83,6 +83,12 @@ public:
     // can create a timer in that window and rclcpp::exceptions::RCLError ends the process in std::terminate (12 of 20 stops with the CPU squeezed, 0 with this).
     preshutdown_ = std::make_unique<rclcpp::PreShutdownCallbackHandle>(
       get_node_base_interface()->get_context()->add_pre_shutdown_callback([this]() {runCleanups();}));
+  }
+
+  ~GnLocNode() override
+  {
+    // the handle only holds a weak reference: the context owns the callback, which would keep a dangling this (nav2_util::LifecycleNode does the same)
+    if (preshutdown_) {get_node_base_interface()->get_context()->remove_pre_shutdown_callback(*preshutdown_);}
   }
 
 protected:
@@ -170,9 +176,9 @@ protected:
 
   CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override
   {
-    scan_filter_.reset(); scan_sub_.reset(); init_sub_.reset(); map_sub_.reset();
+    scan_filter_.reset(); scan_sub_.reset(); init_sub_.reset(); map_sub_.reset();   // no new callbacks after this; not under mtx_ (a callback in flight needs it to end)
+    std::lock_guard<std::mutex> lk(mtx_);   // from the pre-shutdown hook this runs beside a scan in flight: it may be using the TF buffer, the broadcaster and the publishers
     pose_pub_.reset(); status_pub_.reset(); fit_pub_.reset(); reloc_pub_.reset(); br_.reset(); tf_listener_.reset(); tf_buffer_.reset();
-    std::lock_guard<std::mutex> lk(mtx_);
     core_.reset(); pending_init_.reset(); ratio_ = tight_ = 0; n_ = 0;
     return CallbackReturn::SUCCESS;
   }
@@ -183,8 +189,12 @@ private:
   void runCleanups()   // pre-shutdown: deactivate (drops the bond) and clean up, as Nav2's own nodes do on SIGINT
   {
     RCLCPP_INFO(get_logger(), "Running gn_loc rcl preshutdown");
-    if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {deactivate();}
-    if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE) {cleanup();}
+    try {   // an exception out of a pre-shutdown callback ends in std::terminate, the very symptom this hook removes
+      if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {deactivate();}
+      if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE) {cleanup();}
+    } catch (const std::exception & e) {
+      RCLCPP_WARN(get_logger(), "preshutdown cleanup failed: %s", e.what());
+    }
   }
 
   void createBond()   // the lifecycle_manager of Nav2 holds a bond with every managed node and takes the node as dead without it
@@ -321,7 +331,7 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr fit_pub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr reloc_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
-  std::unique_ptr<rclcpp::PreShutdownCallbackHandle> preshutdown_;   // last: removed first, before the members it cleans up
+  std::unique_ptr<rclcpp::PreShutdownCallbackHandle> preshutdown_;   // removed in the destructor
 };
 
 int main(int argc, char ** argv)
