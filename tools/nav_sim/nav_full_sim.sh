@@ -14,6 +14,7 @@ if [ -d /locsrc ]; then
   mkdir -p /tmp/locws && (cd /tmp/locws && colcon build --base-paths /locsrc --packages-select gn_loc --merge-install --install-base /tmp/loc_install > "$out/build_loc.log" 2>&1)
   source /tmp/loc_install/setup.bash
 fi
+chain_map
 fastlio_yaml "$out/fastlio.yaml"
 share=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav
 python3 /ops/merge_params.py "$share/config/nav2_params.yaml" /ops/nav2_robot_overrides.yaml > "$out/nav2_params.yaml"
@@ -24,7 +25,7 @@ if [ "${SCAN_EXTRA:-1}" != 0 ]; then
   export SCAN_TOPIC=/scan_chain
   ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
 fi
-ros2 launch /ops/nav_robot.launch.py livox_config:=/dev/null fastlio_params:="$out/fastlio.yaml" map:="$share/maps/loyola.yaml" overrides:=/ops/live_overrides.yaml \
+ros2 launch /ops/nav_robot.launch.py livox_config:=/dev/null fastlio_params:="$out/fastlio.yaml" map:="$CHAIN_MAP" overrides:=/ops/live_overrides.yaml \
   sensor_height:=$SENSOR_H level_qx:=0.0 level_qy:=0.0 level_qz:=0.0 level_qw:=1.0 nav2_params:="$out/nav2_params.yaml" driver:=false sim_time:=true base:=false > "$out/launch.log" 2>&1 &
 sleep 12
 # the robot starts at the spawn pose: tell gn_loc (the operator's 2D Pose Estimate), as trials.py does for every trial

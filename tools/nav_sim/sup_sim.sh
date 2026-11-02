@@ -17,7 +17,7 @@ fastlio_yaml "$out/fastlio.yaml"
 python3 /tools/sim_realism/tris_to_prior.py /pat/loyola.tris "$out/prior.xyz" 0.2 0.1 > "$out/prior.log"
 mkdir -p "$out/runs"
 export SUPERVISOR=1 SUP_PRIOR="$out/prior.xyz"
-map=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/maps/loyola.yaml
+chain_map; map=$CHAIN_MAP
 ros2 launch /ops/nav_live.launch.py livox_config:=/dev/null fastlio_params:="$out/fastlio.yaml" map:="$map" overrides:=/ops/live_overrides.yaml \
   sensor_height:=$SENSOR_H level_qx:=0.0 level_qy:=0.0 level_qz:=0.0 level_qw:=1.0 driver:=false sim_time:=true > "$out/launch.log" 2>&1 &
 sleep 10

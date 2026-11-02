@@ -4,7 +4,7 @@
 #   agx_full.sh wait <remote dir>        blocks until it has ended and prints the last lines of its result
 #   agx_full.sh fetch <remote dir> <local dir>
 # Ships tools/, ops/ and docker/{ros_nav,ros_loc} of this checkout and the committed sim repo (SIM_REPO, ~/Documents/GitHub/hospital-agv-sim). On the board: ~/livox_pat (ours.lvm, loyola.tris), ~/greloc/build (sup only).
-# env: RUN_TIMEOUT (1800 s), IMAGE (socialtech:sim-navtest: a `sim` image with socialtech_livox_sim and socialtech_simreal; the checkout's versions are built over it), SCAN_EXTRA=0 (chain alone), SEED, SPAWN.
+# env: DEADBAND (rad/s, 0.08: the median of the three real sessions 0.06 / 0.08 / 0.18), RUN_TIMEOUT (1800 s), IMAGE (socialtech:sim-navtest: a `sim` image with socialtech_livox_sim and socialtech_simreal; the checkout's versions are built over it), SCAN_EXTRA=0 (chain alone), SEED, SPAWN.
 set -eo pipefail
 KEY=~/.nvsdkm/.ssh/id_rsa_sdkm; HOST=jetson@socialtech-agx-1
 ssh_() { ssh -i "$KEY" -o ConnectTimeout=10 "$HOST" "$@"; }

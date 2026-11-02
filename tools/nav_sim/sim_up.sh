@@ -18,7 +18,7 @@ SIM="--ros-args -p use_sim_time:=true"
 export SIM_REALISM=1 SIM_LIO=1 LIDAR_Z=${LIDAR_Z:-0.57}
 SENSOR_H=$(python3 -c "print(round($LIDAR_Z - 0.04412, 5))")
 ros2 launch hospital-agv-sim simulation.launch.py headless:=true odom_source:=ground_truth spawn_x:=$sx spawn_y:=$sy spawn_yaw:=$sw > "$out/sim.log" 2>&1 &
-ros2 run socialtech_simreal sim_base_model $SIM -p seed:=${SEED:-1} > "$out/base.log" 2>&1 &
+ros2 run socialtech_simreal sim_base_model $SIM -p seed:=${SEED:-1} -p deadband:=${DEADBAND:-0.08} > "$out/base.log" 2>&1 &
 ros2 run socialtech_simreal sim_wheel_odom $SIM -p seed:=${SEED:-1} > "$out/wheel.log" 2>&1 &
 ros2 run socialtech_simreal sim_imu_model $SIM -p seed:=${SEED:-1} -p rate_hz:=200.0 -p acc_scale:=0.10197162 -p out_topic:=/livox/imu -p frame_id:=livox_frame > "$out/imu.log" 2>&1 &   # 1/9.80665: the Livox driver publishes g
 sleep "${SIM_WAIT:-30}"
@@ -46,4 +46,11 @@ lio_nodes() {
   fi
   ros2 run scan_median scan_median_node --ros-args --params-file /tools/nav_bench/config/scan.yaml -p quantile:=0.0 -p use_sim_time:=true -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
   sleep 8
+}
+
+# The 2D map the chain localizes on: made from the triangles the simulated Mid-360 sees, in the band /scan uses (the legacy loyola.pgm was surveyed with the simulator's 2D lidar
+# and sits 0.1-0.3 m off what the chain sees: a constant offset of GN against the truth). Seeded at the spawn. Sets $CHAIN_MAP (yaml).
+chain_map() {
+  python3 /tools/sim_realism/tris_to_map.py /pat/loyola.tris "$out/loyola_chain" "$sx,$sy" > "$out/map.log"
+  CHAIN_MAP="$out/loyola_chain.yaml"
 }
