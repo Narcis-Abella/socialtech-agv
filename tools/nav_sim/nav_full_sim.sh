@@ -11,7 +11,7 @@ export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterfac
 if [[ $scenario == auto* ]]; then
   mkdir -p "$out"; n=${scenario#auto}; n=${n#:}
   python3 /tools/sim_realism/tris_to_map.py /pat/loyola.tris "$out/loyola_chain" -13.0,0.0 > "$out/map.log"
-  (cd /tools/nav_sim && python3 make_scenario.py "$out/loyola_chain.yaml" "$out/scenario.json" "${n:-6}" 20261102)
+  (cd /tools/nav_sim && python3 make_scenario.py "$out/loyola_chain.yaml" "$out/scenario.json" "${n:-6}" 20261102 "${CLEARANCE:-0.6}")   # 0.6 m: the footprint's corners are at 0.43 m, so a start 0.45 m from a wall cannot turn in place
   scenario=$out/scenario.json
 fi
 # FAST-LIO2 does not survive a teleport: the robot is spawned at the first start of the scenario and the trials chain from where the previous one ended (trials.py CHAIN=1)
