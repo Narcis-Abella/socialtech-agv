@@ -177,8 +177,9 @@ protected:
   CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override
   {
     scan_filter_.reset(); scan_sub_.reset(); init_sub_.reset(); map_sub_.reset();   // no new callbacks after this; not under mtx_ (a callback in flight needs it to end)
-    std::lock_guard<std::mutex> lk(mtx_);   // from the pre-shutdown hook this runs beside a scan in flight: it may be using the TF buffer, the broadcaster and the publishers
-    pose_pub_.reset(); status_pub_.reset(); fit_pub_.reset(); reloc_pub_.reset(); br_.reset(); tf_listener_.reset(); tf_buffer_.reset();
+    tf_listener_.reset();   // joins the TF thread, which can still be delivering an onScan (the filter does not wait for it): never under mtx_, or that onScan deadlocks the join
+    std::lock_guard<std::mutex> lk(mtx_);   // from the pre-shutdown hook the executor still spins: a scan in flight there may be using the TF buffer, the broadcaster and the publishers
+    pose_pub_.reset(); status_pub_.reset(); fit_pub_.reset(); reloc_pub_.reset(); br_.reset(); tf_buffer_.reset();
     core_.reset(); pending_init_.reset(); ratio_ = tight_ = 0; n_ = 0;
     return CallbackReturn::SUCCESS;
   }
@@ -192,6 +193,7 @@ private:
     try {   // an exception out of a pre-shutdown callback ends in std::terminate, the very symptom this hook removes
       if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {deactivate();}
       if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE) {cleanup();}
+      bond_.reset();   // whatever the state, as nav2_util's destroyBond(): ACTIVE -> FINALIZED (on_shutdown) keeps the bond
     } catch (const std::exception & e) {
       RCLCPP_WARN(get_logger(), "preshutdown cleanup failed: %s", e.what());
     }
