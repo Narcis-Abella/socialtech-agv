@@ -106,7 +106,8 @@ class MapField:
             raise ValueError('source reaches outside the field in z')
         S = np.zeros((k1 - k0 + 1, *self.fft_xy), np.float32)
         S[kz - k0, cells[:, 0] % self.fft_xy[0], cells[:, 1] % self.fft_xy[1]] = 1.
-        spectrum = np.conj(fft.rfft2(S, axes=(1, 2), workers=self.workers))
+        spectrum = fft.rfft2(S, axes=(1, 2), workers=self.workers)
+        np.conjugate(spectrum, out=spectrum)
         acc = np.empty((len(z0), *self.layers.shape[1:]), self.layers.dtype)
         for i, z in enumerate(z0):
             acc[i] = (self.layers[z + k0:z + k1 + 1] * spectrum).sum(axis=0)
