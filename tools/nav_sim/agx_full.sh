@@ -1,6 +1,6 @@
 #!/bin/bash
 # Laptop side: runs the full-chain simulation (simulated Mid-360 + real FAST-LIO2) on the AGX; same conventions as agx_run.sh. No sudo; refuses when the board is busy.
-#   agx_full.sh start <lio|fid|sup> <name> [args of the script]   lio: lio_sim.sh [leg v w]   fid: fid_sim.sh [seconds]   sup: sup_sim.sh [cover_s] [--push-after S | --move-covered M]
+#   agx_full.sh start <lio|fid|sup|nav> <name> [args of the script]   lio: lio_sim.sh [leg v w]   fid: fid_sim.sh [seconds]   sup: sup_sim.sh [cover_s] [--push-after S | --move-covered M]   nav: nav_full_sim.sh /tools/nav_sim/scenarios/X.json [reps] (Nav2 + trials.py)
 #   agx_full.sh wait <remote dir>        blocks until it has ended and prints the last lines of its result
 #   agx_full.sh fetch <remote dir> <local dir>
 # Ships tools/, ops/ and docker/{ros_nav,ros_loc} of this checkout and the committed sim repo (SIM_REPO, ~/Documents/GitHub/hospital-agv-sim). On the board: ~/livox_pat (ours.lvm, loyola.tris), ~/greloc/build (sup only).
@@ -11,8 +11,8 @@ ssh_() { ssh -i "$KEY" -o ConnectTimeout=10 "$HOST" "$@"; }
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 case "$1" in
 start)
-  kind=${2:?lio|fid|sup}; name=${3:?name}; shift 3
-  case $kind in lio) script=lio_sim.sh ;; fid) script=fid_sim.sh ;; sup) script=sup_sim.sh ;; *) echo "kind: lio|fid|sup" >&2; exit 1 ;; esac
+  kind=${2:?lio|fid|sup|nav}; name=${3:?name}; shift 3
+  case $kind in lio) script=lio_sim.sh ;; nav) script=nav_full_sim.sh ;; fid) script=fid_sim.sh ;; sup) script=sup_sim.sh ;; *) echo "kind: lio|fid|sup|nav" >&2; exit 1 ;; esac
   sim=${SIM_REPO:-$HOME/Documents/GitHub/hospital-agv-sim}
   [ -z "$(git -C "$sim" status --porcelain)" ] || { echo "the sim repo has uncommitted changes" >&2; exit 1; }
   hash=$(git -C "$sim" rev-parse --short HEAD)

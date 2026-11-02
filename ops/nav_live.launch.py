@@ -21,11 +21,12 @@ CLOUD = [("cloud_in", "/cloud_registered_body")]
 
 def scan_nodes():
     """Default: scan_median (overlay), quantile 0 = the closest point per bin = the same /scan as pointcloud_to_laserscan.
-    SCAN_CONVERTER=p2l: pointcloud_to_laserscan as before."""
+    SCAN_CONVERTER=p2l: pointcloud_to_laserscan as before. SCAN_TOPIC (default /scan): where the converter publishes (the simulation puts a noise model between it and /scan)."""
+    topic = os.environ.get("SCAN_TOPIC", "/scan")
     if os.environ.get("SCAN_CONVERTER") == "p2l":
-        return [Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", parameters=[SCAN], remappings=CLOUD + [("scan", "/scan")])]
+        return [Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", parameters=[SCAN], remappings=CLOUD + [("scan", topic)])]
     return [Node(package="scan_median", executable="scan_median_node", name=name, parameters=[SCAN, {"quantile": q}], remappings=CLOUD + [("scan", topic)])
-            for name, q, topic in (("scan_closest", 0.0, "/scan"),)]
+            for name, q in (("scan_closest", 0.0),)]
 
 
 def localizer_nodes(overrides):
