@@ -5,7 +5,7 @@ import numpy as np
 
 from scipy import fft
 
-from correlative_search import MapField, pose, search, unique_cells, yaw_distance_deg, yaw_peaks, rot_z
+from correlative_search import MapField, pose, search, spread_order, tenth_of_separated, unique_cells, yaw_distance_deg, yaw_peaks, rot_z
 from offline_s2 import transform
 
 
@@ -184,6 +184,53 @@ def reference_candidates(map_points, source_points, res=.5, sigma=.5, yaw_step_d
         if len(selected) == top:
             break
     return selected
+
+
+class SkipTest(unittest.TestCase):
+    def test_spread_order_visits_every_yaw_once_coarse_first(self):
+        o = spread_order(144)
+        self.assertEqual(sorted(o), list(range(144)))
+        self.assertEqual(o[:4], [0, 72, 36, 108])          # opposite yaws first, then quarter turns
+
+    def test_tenth_of_separated_is_the_tenth_score_of_the_greedy_set_of_far_apart_peaks(self):
+        # (score, yaw_rad, xyz): ten peaks 5 m apart, then clones 0.5 m from the best that must not count as new members
+        peaks = [(1. - .01 * i, 0., [5. * i, 0., 0.]) for i in range(10)] + [(.99, 0., [.5, 0., 0.]), (.98, 0., [5.5, 0., 0.])]
+        self.assertAlmostEqual(tenth_of_separated(peaks, 1., 10.), .91)
+        self.assertEqual(tenth_of_separated(peaks[:9], 1., 10.), -np.inf)   # fewer than ten far-apart peaks: nothing can be skipped yet
+        # a peak 1.9 m away at the same yaw is closer than 2 x nms_xy: not a new member; the same place 25 deg apart in yaw is (>2 x 10 deg)
+        near = [(1., 0., [0., 0., 0.]), (.9, 0., [1.9, 0., 0.])] + [(.8 - .01 * i, 0., [10. + 5. * i, 0., 0.]) for i in range(8)]
+        self.assertEqual(tenth_of_separated(near, 1., 10.), -np.inf)
+        turned = [(1., 0., [0., 0., 0.]), (.9, math.radians(25.), [0., 0., 0.])] + [(.8 - .01 * i, 0., [10. + 5. * i, 0., 0.]) for i in range(8)]
+        self.assertAlmostEqual(tenth_of_separated(turned, 1., 10.), .73)
+
+    def test_the_tenth_selected_peak_never_scores_below_the_bar(self):
+        # the property the skip rests on, on random dense peaks (many conflicts): select as search() does, compare the tenth with tenth_of_separated of the same peaks
+        rng = np.random.default_rng(0)
+        checked = 0
+        for _ in range(400):
+            n = int(rng.integers(12, 80))
+            peaks = [(float(s), float(np.radians(rng.choice(np.arange(0., 360., 2.5)))), [float(x), float(y), 0.]) for s, x, y in zip(rng.uniform(0, 1, n), rng.uniform(0, 6, n), rng.uniform(0, 6, n))]
+            bar = tenth_of_separated(peaks, 1., 10.)
+            chosen = []
+            for p in sorted(peaks, key=lambda p: -p[0]):
+                if all(math.hypot(p[2][0] - q[2][0], p[2][1] - q[2][1]) > 1. or yaw_distance_deg(p[1], q[1]) > 10. for q in chosen):
+                    chosen.append(p)
+                if len(chosen) == 10:
+                    break
+            if bar > -math.inf:
+                checked += 1
+                self.assertEqual(len(chosen), 10)
+                self.assertGreaterEqual(chosen[9][0], bar)
+        self.assertGreater(checked, 100)             # the property was exercised, not vacuous
+
+    def test_the_search_really_skips_yaws(self):
+        rng = np.random.default_rng(3)
+        world = synthetic_map(rng)
+        local = transform(world, np.linalg.inv(pose(math.radians(137.), [17.3, 8.6, .55])))
+        local = local[np.linalg.norm(local[:, :2], axis=1) < 9.] + rng.normal(0, .02, (1, 3))
+        r = search(world, local, res=.5, radius=9., top=10)
+        self.assertGreater(r['yaws_skipped'], 0)
+        self.assertLess(r['yaws_skipped'], 144)
 
 
 class OneFftThreadTest(unittest.TestCase):

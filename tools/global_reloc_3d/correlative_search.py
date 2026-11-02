@@ -135,6 +135,33 @@ def yaw_distance_deg(a, b):
     return abs((d + 180.) % 360. - 180.)
 
 
+def spread_order(n):
+    """0..n-1 coarse to fine (0, n/2, n/4, 3n/4, ...): a few yaws far apart first, so a good candidate is known early and the others can be skipped."""
+    seen, order, step = set(), [], n
+    while step >= 1:
+        for i in range(0, n, step):
+            if i not in seen:
+                seen.add(i)
+                order.append(i)
+        step //= 2
+    return order
+
+
+def tenth_of_separated(peaks, nms_xy, nms_yaw_deg, slack=1e-6):
+    """Score of the tenth best of a greedy set of peaks that are far apart: more than twice nms_xy in xy OR twice nms_yaw_deg in yaw (and `slack` more, for the rounding of the
+    triangle inequality), as (score, yaw_rad, xyz); -inf while there are fewer than ten. The final selection takes the best peaks that are more than nms_xy OR nms_yaw_deg from
+    those already taken. A peak that is within both of two members of this set would put those two within twice both of each other, which they are not: every selected peak
+    blocks at most one member, each member is selected or blocked by a peak that scores at least as much. So ten selected peaks score >= the value returned, and a yaw whose best score
+    is below it cannot contribute to the selection."""
+    chosen = []
+    for p in sorted(peaks, key=lambda p: -p[0]):
+        if all(np.hypot(p[2][0] - q[2][0], p[2][1] - q[2][1]) > 2 * nms_xy + slack or yaw_distance_deg(p[1], q[1]) > 2 * nms_yaw_deg + slack for q in chosen):
+            chosen.append(p)
+            if len(chosen) == 10:
+                return p[0]
+    return -math.inf
+
+
 def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius=15.,
            top=10, per_yaw=8, nms_xy=1., nms_yaw_deg=10., field=None, z_band=None):
     t0 = time.monotonic()
@@ -146,13 +173,19 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
         field = MapField(map_points, res, sigma, radius + res, reach_z, z_band=z_band)
     t_field = time.monotonic() - t0
     lo = field.valid_lo
-    peaks = []
+    peaks = []                      # (score, yaw_rad, xyz, yaw index, rank in the yaw, source voxels)
     yaws = np.radians(np.arange(0., 360., yaw_step_deg))
-    for yaw in yaws:
-        inside, n = field.correlate(source, yaw)
-        for xyz, sc in yaw_peaks(inside, lo, field.origin, field.res, per_yaw, nms_xy):
-            peaks.append({'yaw_rad': float(yaw), 'xyz': xyz.tolist(), 'score': sc, 'source_voxels': n})
-    peaks.sort(key=lambda p: -p['score'])
+    bar, skipped = -math.inf, 0
+    for i in spread_order(len(yaws)):
+        inside, n = field.correlate(source, yaws[i])
+        if inside.max() < bar:      # no peak of this yaw can be among the selected ones (tenth_of_separated)
+            skipped += 1
+            continue
+        for j, (xyz, sc) in enumerate(yaw_peaks(inside, lo, field.origin, field.res, per_yaw, nms_xy)):
+            peaks.append((sc, float(yaws[i]), xyz.tolist(), i, j, n))
+        bar = tenth_of_separated(peaks, nms_xy, nms_yaw_deg)
+    peaks.sort(key=lambda p: (-p[0], p[3], p[4]))     # ties in the order a plain 0..360 sweep would have produced them
+    peaks = [{'yaw_rad': p[1], 'xyz': p[2], 'score': p[0], 'source_voxels': p[5]} for p in peaks]
     selected = []
     for p in peaks:
         if all(np.linalg.norm(np.subtract(p['xyz'][:2], q['xyz'][:2])) > nms_xy or
@@ -165,8 +198,8 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
     scores = [p['score'] for p in peaks]
     return {'candidates': selected, 'grid_shape': list(field.shape), 'res_m': res, 'sigma_m': sigma,
             'yaw_step_deg': yaw_step_deg, 'radius_m': radius, 'source_points_used': int(len(source)),
-            'field_seconds': t_field, 'seconds': time.monotonic() - t0,
-            'score_quantiles_all_peaks': np.percentile(scores, [50, 90, 99, 100]).tolist(),
+            'field_seconds': t_field, 'seconds': time.monotonic() - t0, 'yaws_skipped': skipped,
+            'score_quantiles_all_peaks': np.percentile(scores, [50, 90, 99, 100]).tolist(),   # of the peaks of the yaws that were not skipped
             'truth_used': False}
 
 
