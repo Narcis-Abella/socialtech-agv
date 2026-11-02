@@ -22,6 +22,9 @@ def main():
     t0 = time.time()
     while rclpy.ok() and ('scan' not in got or 'cm' not in got) and time.time() - t0 < 60:
         rclpy.spin_once(n, timeout_sec=.2)
+    t1 = time.time()
+    while rclpy.ok() and time.time() - t1 < 4:           # let the TF listener fill its buffer
+        rclpy.spin_once(n, timeout_sec=.2)
     s, cm = got['scan'], got['cm']
     r = np.array(s.ranges); ang = s.angle_min + s.angle_increment * np.arange(len(r))
     near = np.flatnonzero(np.isfinite(r) & (r < 1.2))
