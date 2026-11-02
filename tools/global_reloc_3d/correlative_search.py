@@ -104,9 +104,15 @@ class MapField:
         z0 = np.arange(self.valid_lo[2], self.valid_hi[2] + 1)
         if z0[0] + k0 < 0 or z0[-1] + k1 >= self.shape[2]:
             raise ValueError('source reaches outside the field in z')
-        S = np.zeros((k1 - k0 + 1, *self.fft_xy), np.float32)
-        S[kz - k0, cells[:, 0] % self.fft_xy[0], cells[:, 1] % self.fft_xy[1]] = 1.
-        spectrum = fft.rfft2(S, axes=(1, 2), workers=self.workers)
+        nx, ny = self.fft_xy
+        # rfft2 is the real FFT along y then the complex FFT along x. A source occupies a few dozen of the nx rows (62 of 270 on a real map) and the real FFT of an empty row is zero, so only
+        # the occupied rows are transformed along y and the rest of the spectrum is left at zero: the same numbers, a fraction of the work
+        rows, ri = np.unique(cells[:, 0] % nx, return_inverse=True)
+        S = np.zeros((k1 - k0 + 1, len(rows), ny), np.float32)
+        S[kz - k0, ri, cells[:, 1] % ny] = 1.
+        spectrum = np.zeros((k1 - k0 + 1, nx, ny // 2 + 1), self.layers.dtype)
+        spectrum[:, rows] = fft.rfft(S, axis=2, workers=self.workers)
+        spectrum = fft.fft(spectrum, axis=1, workers=self.workers, overwrite_x=True)
         np.conjugate(spectrum, out=spectrum)
         acc = np.empty((len(z0), *self.layers.shape[1:]), self.layers.dtype)
         tmp = np.empty(self.layers.shape[1:], self.layers.dtype)
