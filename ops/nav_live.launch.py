@@ -28,7 +28,7 @@ def scan_nodes():
 def localizer_nodes(overrides):
     """Default: gn_loc (Gauss-Newton scan-to-map, built in the image). LOCALIZER=amcl: nav2_amcl in its place. Same /initialpose in, map->odom and /amcl_pose out."""
     gn = os.environ.get("LOCALIZER") != "amcl"
-    return [Node(package="gn_loc", executable="gn_loc_node", name="gn_loc", output="screen") if gn else
+    return [Node(package="gn_loc", executable="gn_loc_node", name="gn_loc", output="screen", parameters=[overrides]) if gn else
             Node(package="nav2_amcl", executable="amcl", parameters=[os.path.join(NAV_BENCH, "config/amcl.yaml"), overrides]),
             Node(package="nav2_lifecycle_manager", executable="lifecycle_manager", name="lifecycle_manager_localization",
                  parameters=[{"autostart": True, "node_names": ["map_server", "gn_loc" if gn else "amcl"]}])]
@@ -76,7 +76,7 @@ def generate_launch_description():
             "sensor_height": ParameterValue(LC("sensor_height"), value_type=float),
             "level": ParameterValue(["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])}]),
         *scan_nodes(),
-        Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}]),
+        Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}, LC("overrides")]),
         *localizer_nodes(LC("overrides")),
         # AMCL trail (/amcl_path) and its particles as a PoseArray (/particle_poses), which rviz2 can draw; "-" = no reference path. A rviz aid: viz:=false (PROD=1) leaves it out
         ExecuteProcess(cmd=["python3", os.path.join(NAV_BENCH, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen", condition=IfCondition(LC("viz"))),

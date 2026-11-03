@@ -5,6 +5,7 @@ import os
 from launch import LaunchContext
 from launch.utilities import perform_substitutions
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterFile
 
 here = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("nav_live_launch", os.path.join(here, "nav_live.launch.py"))
@@ -29,6 +30,16 @@ assert respawns(node("fastlio_mapping")), "fastlio_mapping is not respawned"
 # the others keep their behaviour: a dying Livox driver must stay visible, not be restarted silently under a moving robot
 assert not respawns(node("livox_ros_driver2_node")), "the Livox driver must not respawn"
 print("ok")
+
+# bond_heartbeat_period lives in the overrides file: gn_loc and map_server must read it, not only AMCL
+def reads_overrides(executable):
+    ctx = LaunchContext()
+    ctx.launch_configurations["overrides"] = "OVERRIDES"
+    return any(isinstance(p, ParameterFile) and perform_substitutions(ctx, p.param_file) == "OVERRIDES" for p in node(executable)._Node__parameters)
+
+
+for exe in ("gn_loc_node", "map_server"):
+    assert reads_overrides(exe), f"{exe} does not get the overrides file"
 
 # HEAVY_DDS: off by default (nothing changes for the driver and FAST-LIO2), on = a per-node loopback URI with 64 kB fragments for exactly those two nodes
 def env_of(executable):
