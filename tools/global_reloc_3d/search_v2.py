@@ -180,6 +180,7 @@ def main():
     p.add_argument('--gicp-voxel', type=float, default=.3)
     p.add_argument('--deadline-s', type=float, default=60., help='remaining decision budget from this process start')
     p.add_argument('--z-band', type=float, nargs=2, metavar=('LO', 'HI'), help='heights (m, map frame) the sensor can have: the search and the refined poses stay inside it (+- 0.25 m for the latter)')
+    p.add_argument('--corr-backend', choices=('python', 'cpp'), default='python', help='the correlative search: numpy/scipy, or cpp_search/libcorr_search.so (build.sh): the same operations, no scipy overhead')
     p.add_argument('--threads', type=int, default=2, help='OMP_NUM_THREADS of each register_v2 call (small_gicp is built without OpenMP, so GICP runs on one thread whatever this says); the FFT threads are --fft-workers')
     a = p.parse_args()
     global DEADLINE_S
@@ -195,7 +196,11 @@ def main():
     check = np.loadtxt(run / 'check.xyz')
     reach_z = source_reach_z(fit, check, a.radius)
     z_band = tuple(a.z_band) if a.z_band else None
-    field = MapField(full, a.res, .5, a.radius + a.res, reach_z + a.res, workers=a.fft_workers, z_band=z_band,
+    if a.corr_backend == 'cpp':
+        from corr_cpp import CppMapField as Field
+    else:
+        Field = MapField
+    field = Field(full, a.res, .5, a.radius + a.res, reach_z + a.res, workers=a.fft_workers, z_band=z_band,
                      z_cells=z_cell_range([fit, check], a.res, a.radius))
     t_field = time.monotonic() - t0
     temporal_ok, separation = temporal_evidence(manifest['stamps_s'], manifest['start_header_s'], manifest['duration_s'])

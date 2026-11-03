@@ -202,15 +202,19 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
     lo = field.valid_lo
     peaks = []                      # (score, yaw_rad, xyz, yaw index, rank in the yaw, source voxels)
     yaws = np.radians(np.arange(0., 360., yaw_step_deg))
-    bar, skipped = -math.inf, 0
-    for i in spread_order(len(yaws)):
-        inside, n = field.correlate(source, yaws[i])
-        if inside.max() < bar:      # no peak of this yaw can be among the selected ones (top_of_separated: the `top`-th score of far-apart peaks)
-            skipped += 1
-            continue
-        for j, (xyz, sc) in enumerate(yaw_peaks(inside, lo, field.origin, field.res, per_yaw, nms_xy)):
-            peaks.append((sc, float(yaws[i]), xyz.tolist(), i, j, n))
-        bar = top_of_separated(peaks, nms_xy, nms_yaw_deg, top)
+    if getattr(field, 'native', False):     # corr_cpp.CppMapField: the same loop in C++
+        rows, skipped = field.loop(source, yaws, spread_order(len(yaws)), per_yaw, nms_xy, nms_yaw_deg, top)
+        peaks = [(r[0], r[1], r[2:5].tolist(), int(r[5]), int(r[6]), int(r[7])) for r in rows]
+    else:
+        bar, skipped = -math.inf, 0
+        for i in spread_order(len(yaws)):
+            inside, n = field.correlate(source, yaws[i])
+            if inside.max() < bar:      # no peak of this yaw can be among the selected ones (top_of_separated: the `top`-th score of far-apart peaks)
+                skipped += 1
+                continue
+            for j, (xyz, sc) in enumerate(yaw_peaks(inside, lo, field.origin, field.res, per_yaw, nms_xy)):
+                peaks.append((sc, float(yaws[i]), xyz.tolist(), i, j, n))
+            bar = top_of_separated(peaks, nms_xy, nms_yaw_deg, top)
     peaks.sort(key=lambda p: (-p[0], p[3], p[4]))     # ties in the order a plain 0..360 sweep would have produced them
     peaks = [{'yaw_rad': p[1], 'xyz': p[2], 'score': p[0], 'source_voxels': p[5]} for p in peaks]
     selected = []

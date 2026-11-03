@@ -357,5 +357,60 @@ class SameCandidatesTest(unittest.TestCase):
 
 
 
+try:
+    import corr_cpp
+    corr_cpp.load()
+except OSError:                      # cpp_search/build.sh not run
+    corr_cpp = None
+
+
+@unittest.skipIf(corr_cpp is None, 'libcorr_search.so not built (cpp_search/build.sh)')
+class CppBackendTest(unittest.TestCase):
+    """The C++ field and search loop do what the numpy ones do: same grid, same candidates (positions and yaws exact, scores to float32 rounding)."""
+
+    def setUp(self):
+        rng = np.random.default_rng(3)
+        self.world = synthetic_map(rng)
+        T = pose(math.radians(137.), [17.3, 8.6, .55])
+        local = transform(self.world, np.linalg.inv(T))
+        self.local = local[np.linalg.norm(local[:, :2], axis=1) < 9.] + rng.normal(0, .02, (1, 3))
+
+    def fields(self, z_band):
+        from correlative_search import crop_source
+        src = crop_source(self.local, 9.)
+        reach_z = float(np.abs(src[:, 2]).max()) + .5
+        zc = z_cell_range([src], .5, 9.)
+        return (MapField(self.world, .5, .5, 9.5, reach_z, z_band=z_band, z_cells=zc), corr_cpp.CppMapField(self.world, .5, .5, 9.5, reach_z, z_band=z_band, z_cells=zc), src)
+
+    def test_the_grid_and_the_scores_of_a_yaw(self):
+        for z_band in (None, (.2, .9)):
+            py, cpp, src = self.fields(z_band)
+            self.assertEqual(py.shape, cpp.shape)
+            self.assertTrue((py.valid_lo == cpp.valid_lo).all() and (py.valid_hi == cpp.valid_hi).all())
+            self.assertTrue(np.array_equal(py.origin, cpp.origin))
+            for yaw in (0., 1.3, 4.0):
+                (a, na), (b, nb) = py.correlate(src, yaw), cpp.correlate(src, yaw)
+                self.assertEqual(na, nb)
+                self.assertEqual(a.shape, b.shape)
+                self.assertLess(float(np.abs(a - b).max()), 1e-5)
+
+    def test_the_same_candidates(self):
+        for z_band, top in ((None, 10), ((.2, .9), 10), ((.2, .9), 1), ((.2, .9), 20)):
+            py, cpp, _ = self.fields(z_band)
+            a, b = search(self.world, self.local, radius=9., top=top, field=py), search(self.world, self.local, radius=9., top=top, field=cpp)
+            self.assertEqual(a['yaws_skipped'], b['yaws_skipped'])
+            self.assertEqual(len(a['candidates']), len(b['candidates']))
+            for x, y in zip(a['candidates'], b['candidates']):
+                self.assertEqual(x['yaw_rad'], y['yaw_rad'])
+                self.assertEqual(x['xyz'], y['xyz'])
+                self.assertEqual(x['source_voxels'], y['source_voxels'])
+                self.assertAlmostEqual(x['score'], y['score'], places=5)
+
+    def test_a_source_outside_the_layers_of_the_field_is_refused(self):
+        _, cpp, src = self.fields(None)
+        with self.assertRaises(ValueError):
+            cpp.correlate(src + [0., 0., 50.], 0.)
+
+
 if __name__ == '__main__':
     unittest.main()

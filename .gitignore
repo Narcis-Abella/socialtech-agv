@@ -47,3 +47,4 @@ docker/ros_loc/gn_loc/test/shutdown_race/install_*/
 docker/ros_loc/gn_loc/test/shutdown_race/out_*
 docker/ros_loc/gn_loc/test/shutdown_race/*.run
 docker/ros_loc/gn_loc/test/shutdown_race/variants.done
+tools/global_reloc_3d/cpp_search/*.so
