@@ -56,7 +56,7 @@ def signal_by_comm(name, sig=signal.SIGTERM, proc='/proc', kill=os.kill):
 class Worker:
     """search_v2.py as a killable process group."""
     def __init__(self, binary, lib_dir, run_dir, out_dir, deadline_s, threads=2, z_band=None):
-        env = {**os.environ, 'LD_LIBRARY_PATH': f"{lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
+        env = {**os.environ, 'LD_LIBRARY_PATH': f"{lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}", 'CORR_SEARCH_LIB': f'{lib_dir}/libcorr_search.so'}      # the library the node and nav_live.sh checked, not a stray cpp_search/*.so
         cmd = [sys.executable, '-B', str(HERE / 'search_v2.py'), '--run', str(run_dir), '--out', str(out_dir), '--binary', binary,
                '--deadline-s', f'{deadline_s:.3f}', '--threads', str(threads)]
         if z_band:
@@ -68,8 +68,11 @@ class Worker:
         return self.p.poll()
 
     def kill(self):
-        if self.p.poll() is None:
-            os.killpg(self.p.pid, signal.SIGKILL); self.p.wait()
+        try:
+            os.killpg(self.p.pid, signal.SIGKILL)      # also with search_v2 dead (the OOM killer): a register_v2 it forked may live on in the group, beside the next attempt's
+        except (ProcessLookupError, PermissionError):  # nobody left in the group, or its number already belongs to another user's
+            pass
+        self.p.wait()
 
 
 class StillWindow:
@@ -213,6 +216,8 @@ class LiveReloc:
         return None
 
     def end(self, ok, why, pose=None, stamp=None):
+        if self.proc is not None:
+            self.proc.kill()                 # lio_restart_timeout ends a run while the worker still searches: the next start() would not find it, and two searches would share the board
         self.stage, self.proc = 'done', None
         self.info['wall_s'] = round(time.monotonic() - self.t_start, 3)
         self.result = {'ok': ok, 'pose': pose, 'stamp': stamp, 'why': why, 'info': self.info}

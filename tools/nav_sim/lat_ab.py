@@ -3,6 +3,7 @@ usage: lat_ab.py OUT.json INPUT_DIR [reps=4] [idle_s=30] [--z-band LO HI]   exit
 Modes: idle (no search), search (as gn_supervisor starts it), nice (the same under `nice -n 10`). Latency = sim clock at arrival - header stamp of the odometry (it includes the 0.1 s scan period);
 a gap is the sim time between two consecutive messages (nominal 0.1 s). The simulator runs at ~0.95 real time, so all numbers are in sim seconds."""
 import json
+import os
 import subprocess
 import sys
 import time
@@ -83,7 +84,7 @@ def main():
                     '--deadline-s', '60', '--threads', '2'] + zb
             w0, s0 = time.monotonic(), n.sim()
             with open(f'{out}.{mode}{k}.log', 'w') as log:
-                p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+                p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env={**os.environ, 'LD_LIBRARY_PATH': f"/greloc/build:{os.environ.get('LD_LIBRARY_PATH', '')}"})
                 while p.poll() is None:
                     rclpy.spin_once(n, timeout_sec=.05)
                     states.add(n.state)

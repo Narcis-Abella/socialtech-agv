@@ -665,7 +665,7 @@ class RelocNode(Node):
         out = self.stage_dir()
         env = {**os.environ, 'LD_LIBRARY_PATH': f"{self.lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
         cmd = [sys.executable, '-B', str(HERE / 'search_v2.py'), '--run', str(out / 'input'), '--out', str(out / 'search'),
-               '--binary', self.binary, '--deadline-s', f'{max(1., self.att.remaining() - .5):.3f}']
+               '--binary', self.binary, '--deadline-s', f'{max(1., self.att.remaining() - .5):.3f}', '--corr-backend', 'python']     # lib_dir holds what this frozen candidate was evaluated with, no libcorr_search.so
         self.search = subprocess.Popen(cmd, stdout=open(out / 'search.stdout', 'w'), stderr=subprocess.STDOUT, env=env,
                                        start_new_session=True, preexec_fn=_die_with_parent)
         self.att.mark(self.k('search_spawn'), pid=self.search.pid)

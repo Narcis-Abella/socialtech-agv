@@ -71,6 +71,13 @@ def yaw_peaks(inside, lo, origin, res, per_yaw, nms_xy):
     return [(xyz[j], float(flat[best[j]])) for j in chosen]
 
 
+MIN_SOURCE_POINTS = 50
+
+
+class SparseSource(ValueError):
+    """This scene has too little to search: the next exposure may have more."""
+
+
 class MapField:
     """Likelihood field of the map on a grid padded by the source reach.
 
@@ -193,8 +200,8 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
            top=10, per_yaw=8, nms_xy=1., nms_yaw_deg=10., field=None, z_band=None):
     t0 = time.monotonic()
     source = crop_source(source_points, radius)
-    if len(source) < 50:
-        raise ValueError('source has too few points inside the search radius')
+    if len(source) < MIN_SOURCE_POINTS:
+        raise SparseSource('source has too few points inside the search radius')
     reach_z = float(np.abs(source[:, 2]).max()) + res
     if field is None:
         field = MapField(map_points, res, sigma, radius + res, reach_z, z_band=z_band, z_cells=z_cell_range([source], res, radius))

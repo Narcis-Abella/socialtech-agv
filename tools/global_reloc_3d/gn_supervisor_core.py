@@ -52,7 +52,9 @@ class Params:
                                      # (FAILED needs_operator:...) when the relocalizer does not accept or gn_loc does not confirm its pose
 
 
-DETERMINISTIC = ('exception_in_', 'search_worker_exit_1', 'search_worker_exit_2')    # a Python exception / bad arguments: a new attempt cannot fix them; everything else (a push, an ambiguous scene, a worker killed by a signal or the OOM killer) can pass
+def is_deterministic(why):
+    """A Python exception / bad arguments (exit 1, 2: search_v2 exits 3 for a sparse scene or no memory): a new attempt cannot fix them; everything else (a push, an ambiguous scene, a worker killed by a signal or the OOM killer) can pass."""
+    return why.startswith('exception_in_') or why in ('search_worker_exit_1', 'search_worker_exit_2')
 
 
 def wrap(a):
@@ -188,7 +190,7 @@ class Supervisor:
                 return self.go(t, 'MONITOR', f'verify_no_pose_{why}')
             if self.attempts < self.p.max_attempts:
                 return self.start_reloc(t, self.reason.split('+')[0])      # the '+not_stopped' note belongs to the attempt that was reported
-            return self.fail(t, f'reloc_failed_{why}', retry=not why.startswith(DETERMINISTIC))      # a bug or a wrong parameter would loop: each retry restarts FAST-LIO2 and runs a search
+            return self.fail(t, f'reloc_failed_{why}', retry=not is_deterministic(why))      # a bug or a wrong parameter would loop: each retry restarts FAST-LIO2 and runs a search
         if self.gn_good and self.pose is not None and agree(self.pose, pose, self.p.agree_xy, self.p.agree_yaw_deg):
             return self.go(t, 'MONITOR', 'verified_gn_agrees')
         if verifying:
@@ -250,9 +252,12 @@ class Supervisor:
             return self.start_reloc(t, 'startup_auto')
         if self.hold and any(self.goals.values()) and (self.t_sent is None or t - self.t_sent >= p.recancel_s):
             self.actions.append(('cancel',)); self.t_sent = t
-        if self.state == 'FAILED' and self.retry and p.failed_retry_s > 0 and self.retries < p.failed_retry_max and t - self.t_enter >= p.failed_retry_s:
-            self.attempts, self.retries = 0, self.retries + 1
-            return self.start_reloc(t, 'failed_retry')
+        if self.state == 'FAILED' and self.retry and p.failed_retry_s > 0:
+            if self.retries >= p.failed_retry_max:                   # the state alone looks like a supervisor that tries again in 30 s; go() clears retry, so this is said once
+                return self.go(t, 'FAILED', f"needs_operator:{self.reason.removeprefix('needs_operator:')}")
+            if t - self.t_enter >= p.failed_retry_s:
+                self.attempts, self.retries = 0, self.retries + 1
+                return self.start_reloc(t, 'failed_retry')
         if self.state != 'CONFIRMING':
             self.samples = []
         if self.t_status is not None and t - self.t_status > p.status_stale_s and self.state != 'FAILED':
@@ -275,6 +280,7 @@ class Supervisor:
                         self.target, self.locked, self.t_lock_ref = self.pose, True, ts      # GN took the relocalizer's pose: it is followed from here, so a robot pushed meanwhile is not a failure, a jump is
                     if self.good >= p.confirm_n and ts - self.t_good0 >= p.confirm_s:
                         self.target = None
+                        self.t_lost, self.t_bad, self.stall = None, None, 0      # the good scans are newer than any status: gn_loc skips a status tick when a scan holds its lock, and a real LOST sets these again at the next status
                         return self.go(t, 'MONITOR', 'confirmed')
                 else:
                     self.good = 0
@@ -288,7 +294,7 @@ class Supervisor:
                 self.t_verify = t
                 return self.go(t, 'MONITOR', 'verify_timeout')
             if self.attempts < p.max_attempts:
-                return self.start_reloc(t, self.reason)
+                return self.start_reloc(t, self.reason.split('+')[0])
             return self.fail(t, 'reloc_timeout', retry=True)
         if self.state == 'RELOCALIZING' and self.wheel_moving and self.t_cancel is not None and t - self.t_cancel > p.stop_check_s \
                 and 'not_stopped' not in self.reason:

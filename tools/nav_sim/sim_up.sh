@@ -58,7 +58,7 @@ chain_map() {
 }
 
 # The robot's own ops/nav_live.launch.py (driver off, sim time) with gn_loc and the supervisor over the simulator, 10 s to come up (sup_sim.sh, lat_sim.sh). PROD (normalised by the caller): viz:=false.
-# mounts: docker/ros_loc/gn_loc at /locsrc (optional), ops/ at /ops, GRELOC_BUILD (register_v2, libsmall_gicp.so) at /greloc/build
+# mounts: docker/ros_loc/gn_loc at /locsrc (optional), ops/ at /ops, GRELOC_BUILD (register_v2, libsmall_gicp.so, libcorr_search.so) at /greloc/build
 stack_up() {
   if [ -d /locsrc ]; then   # gn_loc newer than the image's (gn_loc/scan_fit, which the supervisor confirms with): overlay
     mkdir -p /tmp/locws && (cd /tmp/locws && colcon build --base-paths /locsrc --packages-select gn_loc --merge-install --install-base /tmp/loc_install > "$out/build_loc.log" 2>&1)

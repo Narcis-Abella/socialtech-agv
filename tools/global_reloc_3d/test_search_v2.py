@@ -1,5 +1,8 @@
 import json
 import math
+import os
+import subprocess
+import sys
 import tempfile
 import textwrap
 import threading
@@ -67,6 +70,41 @@ class SearchV2Test(unittest.TestCase):
         self.assertAlmostEqual(wilson(0, 50)[1], .0714, places=3)
         pts = np.array([[0, 0, 0], [1, 0, 0], [9, 0, 0.]])
         self.assertEqual(len(hole(pts, (0, 0), 8.)), 1)
+
+
+class WorkerExitCodeTest(unittest.TestCase):
+    """The supervisor decides from the exit code whether a new attempt can help (gn_supervisor_core.is_deterministic)."""
+    def worker(self, manifest_frame='local_first_imu_levelled', backend=('--corr-backend', 'python'), points=(5, 5), with_map=True, **env):
+        d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup)
+        run = Path(d.name) / 'in'; run.mkdir()
+        rng = np.random.default_rng(0)
+        if with_map:
+            np.savetxt(run / 'map.xyz', rng.uniform(0., 20., (500, 3)))
+        for name, n in zip(('fit', 'check'), points):                         # 5: far under the 50 points of a search
+            np.savetxt(run / f'{name}.xyz', rng.uniform(-1., 1., (n, 3)))
+        (run / 'manifest.json').write_text(json.dumps({'frame_fit': manifest_frame, 'stamps_s': [0., 3.], 'start_header_s': 0., 'duration_s': 3.}))
+        cmd = [sys.executable, '-B', str(Path(__file__).parent / 'search_v2.py'), '--run', str(run), '--out', str(Path(d.name) / 'o'), '--binary', '/nonexistent', *backend]
+        return subprocess.run(cmd, capture_output=True, text=True, env={**os.environ, **env})
+
+    def test_a_scene_too_sparse_can_be_retried(self):
+        self.assertEqual(self.worker().returncode, 3)
+
+    def test_a_batch_of_one_point_or_none_is_just_as_sparse(self):
+        for points in ((1, 200), (200, 1), (0, 200), (200, 0), (0, 0)):
+            p = self.worker(points=points)
+            self.assertEqual(p.returncode, 3, (points, p.stderr[-200:]))
+
+    def test_sparseness_is_found_before_the_map_is_loaded(self):
+        # it is retried: every attempt must not pay for the map and the field of a scene that cannot be searched
+        self.assertEqual(self.worker(with_map=False).returncode, 3)
+
+    def test_bad_input_cannot(self):
+        self.assertEqual(self.worker(manifest_frame='other').returncode, 1)
+
+    def test_cpp_is_the_default_and_a_missing_library_is_no_silent_python(self):
+        p = self.worker(backend=(), points=(200, 200), CORR_SEARCH_LIB='/nonexistent/libcorr_search.so')
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn('libcorr_search', p.stderr)
 
 
 if __name__ == '__main__':

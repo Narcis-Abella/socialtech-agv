@@ -828,5 +828,94 @@ class GoalHoldTest(Fixture):
         self.assertIn('not_stopped', s.reason)
 
 
+class ConfirmedPoseClearsTheAlarmsTest(Fixture):
+    """A run of good scans (1.5 s) can end before any status says TRACKING: gn_loc skips a status tick when a scan holds its lock. What the older statuses said must not stop the robot again."""
+    def confirmed_with_no_status(self, s, t):
+        run(s, t, ('on_reloc_result', True, (1., 2., 0.), 'accepted'))
+        self.assertEqual(s.state, 'CONFIRMING')
+        tt = t
+        for k in range(1, 21):
+            tt = t + k * .1
+            a = run(s, tt, ('on_scan_fit', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))
+            self.assertNotIn('reloc_start', kinds(a))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+        return tt
+
+    def test_a_lost_status_before_the_pose(self):
+        s, t = self.new(status_stale_s=10.)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.confirmed_with_no_status(s, t + 1.)
+
+    def test_bad_scans_before_the_pose(self):
+        s, t = self.new(status_stale_s=10., bad_stop_s=1.)
+        for k in range(3):
+            run(s, t + k, ('on_status', 'TRACKING', 0., 0.))
+        self.assertEqual(s.reason, 'gn_bad_scans')
+        self.confirmed_with_no_status(s, t + 3.)
+
+    def test_a_stalled_scan_counter_before_the_pose(self):
+        s, t = self.new(status_stale_s=10.)
+        for k in range(4):
+            run(s, t + k, ('on_status', 'TRACKING', .9, .8, 5))
+        self.assertEqual(s.reason, 'gn_no_scans')
+        self.confirmed_with_no_status(s, t + 4.)
+
+    def test_a_lost_status_after_the_confirmation_still_stops(self):
+        s, t = self.new(status_stale_s=10.)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        tt = self.confirmed_with_no_status(s, t + 1.)
+        self.assertIn('reloc_start', kinds(run(s, tt + .1, ('on_status', 'LOST', 0., 0.))))
+
+
+class NotStoppedNoteTest(Fixture):
+    def test_a_timed_out_attempt_does_not_carry_the_note_of_the_last_one(self):
+        s, t = self.new(reloc_timeout_s=10., stop_check_s=1., status_stale_s=100.)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        run(s, t + 2., ('on_wheel', .5, 0.))
+        self.assertEqual(s.reason, 'gn_lost+not_stopped')
+        a = run(s, t + 11., ('on_wheel', 0., 0.))
+        self.assertIn(('reloc_start', 'gn_lost'), a)
+        self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'gn_lost'))
+
+
+class RetryPolicyTest(FailedRetryTest):
+    def attempts_fail(self, why):
+        s, t = self.new(failed_retry_max=2)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        run(s, t + 1., ('on_status', 'LOST', 0., 0.), ('on_reloc_result', False, None, why))
+        run(s, t + 2., ('on_status', 'LOST', 0., 0.), ('on_reloc_result', False, None, why))
+        self.assertEqual(s.state, 'FAILED')
+        return s
+
+    def test_only_a_bug_or_bad_arguments_are_not_retried(self):
+        for why in ('search_worker_exit_1', 'search_worker_exit_2', 'exception_in_poll'):
+            self.assertFalse(self.attempts_fail(why).retry, why)
+
+    def test_exit_codes_are_matched_whole(self):
+        for why in ('search_worker_exit_3', 'search_worker_exit_10', 'search_worker_exit_12', 'search_worker_exit_20', 'search_worker_exit_134', 'search_worker_exit_-9'):
+            self.assertTrue(self.attempts_fail(why).retry, why)
+
+    def test_retries_running_out_are_announced_once(self):
+        s, t = self.failed(failed_retry_max=1)
+        seen = []
+        for k in range(1, 200):
+            tt = t + float(k)
+            a = run(s, tt, ('on_status', 'LOST', 0., 0.))
+            if s.state == 'RELOCALIZING':
+                a += run(s, tt, ('on_reloc_result', False, None, 'x'))
+            seen += [e[2] for e in a if e[0] == 'state' and e[1] == 'FAILED']
+        self.assertEqual(s.state, 'FAILED')
+        self.assertEqual(s.reason, 'needs_operator:reloc_failed_x')
+        self.assertFalse(s.retry)
+        self.assertEqual(seen, ['reloc_failed_x', 'needs_operator:reloc_failed_x'])
+
+    def test_a_start_up_failure_is_not_prefixed_twice(self):
+        s, t = self.failed(failed_retry_max=1)
+        s.auto, s.retry, s.reason, s.retries = True, True, 'needs_operator:reloc_timeout', 1
+        run(s, t + 1., ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.reason, 'needs_operator:reloc_timeout')
+        self.assertFalse(s.retry)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,6 +1,6 @@
 # cpp_search
 
-C++ port of the hot part of `correlative_search.py` (MapField, correlate, `yaw_peaks`, the yaw loop with the skip bar). Same operations; `search()` keeps the final selection and the report. `search_v2.py --corr-backend cpp` uses it; the default stays `python`.
+C++ port of the hot part of `correlative_search.py` (MapField, correlate, `yaw_peaks`, the yaw loop with the skip bar). Same operations; `search()` keeps the final selection and the report. `search_v2.py` uses it by default (`--corr-backend python`: the numpy path, for images without the library). A missing library is an error, never a silent fallback. Staged on a robot as `GRELOC/build/libcorr_search.so`, next to `register_v2`.
 
 | file | what |
 |---|---|

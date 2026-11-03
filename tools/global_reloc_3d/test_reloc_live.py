@@ -1,3 +1,5 @@
+import subprocess
+import time
 import json
 import math
 import os
@@ -6,6 +8,8 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+
+from types import SimpleNamespace
 
 import reloc_live as rl
 
@@ -251,6 +255,14 @@ class RestartTest(LiveRelocBase):
         self.assertFalse(res['ok'])
         self.assertEqual(res['why'], 'lio_restart_timeout')
 
+    def test_a_filter_that_does_not_come_back_kills_the_search_under_way(self):
+        r = self.make_restart(lio_timeout_s=3.); r.start(restart=True)
+        worker = FakeProc('/nonexistent', 'accepted', np.eye(4), polls=10 ** 6)
+        r.stage, r.proc, r.t_restart, r.t_imu = 'search', worker, 0., 4.      # the old stage list could not hold a worker: this one outlived the run, beside the next attempt's
+        res = r.poll()
+        self.assertEqual(res['why'], 'lio_restart_timeout')
+        self.assertTrue(worker.killed)
+
 
 class SignalByCommTest(unittest.TestCase):
     """The restart kills FAST-LIO2 by its exact process name (never `pkill -f`, which matches command lines and kills the caller's own shell)."""
@@ -284,6 +296,38 @@ class SignalByCommTest(unittest.TestCase):
         sent = []
         proc = self.proc({os.getpid(): 'fastlio_mapping'})
         self.assertEqual(rl.signal_by_comm('fastlio_mapping', 15, proc=proc, kill=lambda pid, sig: sent.append(pid)), 0)
+
+
+class WorkerTest(unittest.TestCase):
+    def test_the_library_of_lib_dir_is_the_one_loaded(self):
+        # the one gn_supervisor_node and nav_live.sh checked: not a stray cpp_search/*.so shipped with the tools (another board's build)
+        seen = {}
+        real, rl.subprocess.Popen = rl.subprocess.Popen, lambda cmd, **k: seen.update(k['env']) or SimpleNamespace(pid=0)
+        self.addCleanup(setattr, rl.subprocess, 'Popen', real)
+        with tempfile.TemporaryDirectory() as d:
+            rl.Worker('/bin/true', '/staged/build', Path(d) / 'in', Path(d) / 'o', 60.)
+        self.assertEqual(seen['CORR_SEARCH_LIB'], '/staged/build/libcorr_search.so')
+
+    def test_kill_reaches_a_child_that_outlived_the_worker(self):
+        # the OOM killer takes search_v2 while its register_v2 runs: that one must not stay beside the next attempt's search
+        w = rl.Worker.__new__(rl.Worker)
+        w.p = subprocess.Popen(['bash', '-c', 'sleep 30 & echo $!; exit 9'], stdout=subprocess.PIPE, text=True, start_new_session=True)
+        child = int(w.p.stdout.readline())
+        w.p.stdout.close(); w.p.wait()
+        self.addCleanup(lambda: subprocess.run(['kill', '-9', str(child)], capture_output=True))
+        w.kill()
+        for _ in range(100):
+            stat = Path(f'/proc/{child}/stat')
+            if not stat.exists() or stat.read_text().split()[2] == 'Z':
+                return
+            time.sleep(.01)
+        self.fail('the child survived')
+
+    def test_kill_of_a_group_already_gone_is_quiet(self):
+        w = rl.Worker.__new__(rl.Worker)
+        w.p = subprocess.Popen(['true'], start_new_session=True)
+        w.p.wait()
+        w.kill()
 
 
 if __name__ == '__main__':

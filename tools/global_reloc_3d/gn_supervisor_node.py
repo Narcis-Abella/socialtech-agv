@@ -14,6 +14,7 @@ publishes a velocity. Goals are not re-sent after a relocalization: the operator
 import json
 import math
 import os
+import struct
 import time
 import traceback
 
@@ -72,7 +73,7 @@ class SupervisorNode(Node):
         self.init_std, self.init_yaw_std = P('init_std_m', .15).value, P('init_yaw_std_deg', 5.).value
         binary, lib = self.get_parameter('register_binary').value, self.get_parameter('lib_dir').value
         missing = [f for f, ok in ((self.reloc.map_xyz, os.path.isfile(self.reloc.map_xyz)), (binary, os.access(binary, os.X_OK)),
-                                   (f'{lib}/libsmall_gicp.so', os.path.isfile(f'{lib}/libsmall_gicp.so'))) if not ok]
+                                   (f'{lib}/libsmall_gicp.so', os.path.isfile(f'{lib}/libsmall_gicp.so')), (f'{lib}/libcorr_search.so', os.path.isfile(f'{lib}/libcorr_search.so'))) if not ok]
         if missing:                       # refuse to start: a supervisor that cannot relocalize would only find out at the first stop
             raise SystemExit(f'gn_supervisor: missing {missing} (parameters map_xyz, register_binary, lib_dir)')
         self.mono = time.monotonic
@@ -155,7 +156,7 @@ class SupervisorNode(Node):
     def on_imu(self, raw):        # always: the stillness window of the relocalizer is a sliding one and must be warm when a relocalization starts. Raw: 1 us to unpack vs 44 us to deserialize, 200 times a second
         try:
             t, g, a = lf.imu_fields(bytes(raw))
-        except ValueError:
+        except (ValueError, struct.error):
             self.get_logger().warn('unparsed /livox/imu message', throttle_duration_sec=10.)
             return
         self.guarded('imu', self.reloc.add_imu, t, g, a)
@@ -167,7 +168,7 @@ class SupervisorNode(Node):
     def on_lidar(self, raw):      # always: ~2-4 ms a frame, and it keeps "the lidar sees" current
         try:
             t, valid, xyz = lf.parse(raw, full=self.reloc.stage == 'expose', **self.frame_cfg)      # the whole cloud only while the exposure collects it
-        except ValueError:
+        except (ValueError, struct.error):
             self.get_logger().warn('unparsed /livox/lidar frame', throttle_duration_sec=10.)
             return
         self.guarded('lidar', self.reloc.add_lidar, t, xyz, valid)

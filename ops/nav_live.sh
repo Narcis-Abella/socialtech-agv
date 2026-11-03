@@ -49,7 +49,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   launch=nav_live; extra=()
   if [[ -n ${NAV:-} ]]; then   # navigation: Nav2 params of the sim + the real robot's differences
     python3 "$REPO/ops/merge_params.py" "$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml" "$REPO/ops/nav2_robot_overrides.yaml" >/tmp/nav2_params.yaml
-    sup_topics=(); [[ -z ${SUPERVISOR:-} ]] || sup_topics=(/gn_loc/status /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status)   # only where they exist
+    sup_topics=(); [[ -z ${SUPERVISOR:-} ]] || sup_topics=(/gn_loc/status /gn_loc/scan_fit /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status)   # only where they exist
     set -m   # job control: a background job of a non-interactive shell ignores SIGINT, and the recorder needs one to write its metadata.yaml
     python3 "$REPO/ops/nav_start_when_localized.py" &   # lifetime = the container's
     if [[ -z ${PROD:-} ]]; then   # PROD=1: no recording
@@ -104,10 +104,10 @@ if [[ -n ${SUPERVISOR:-} ]]; then   # validated first: an error must not come af
   [[ -n ${NAV:-} ]] || die "SUPERVISOR=1 holds Nav2 goals: it needs NAV=1 (alone it would only relocalize beside a manual 2D Pose Estimate)"
   [[ ${LOCALIZER:-} != amcl ]] || die "SUPERVISOR=1 supervises gn_loc: unset LOCALIZER=amcl"
   G=${GRELOC:-$HOME/greloc}
-  for f in tools/global_reloc_3d/gn_supervisor_node.py build/register_v2 build/libsmall_gicp.so prior/$MAP_NAME/prior/map.xyz; do
+  for f in tools/global_reloc_3d/gn_supervisor_node.py build/register_v2 build/libsmall_gicp.so build/libcorr_search.so prior/$MAP_NAME/prior/map.xyz; do
     [[ -f $G/$f ]] || die "$G/$f missing: stage the supervisor tools, register_v2 and the 3D prior of the map into GRELOC (stage_supervisor.sh, in the team's SocialTech workspace repo)"
   done
-  docker run --rm "$IMAGE" python3 -c "import numpy, scipy, rclpy, action_msgs.msg, diagnostic_msgs.msg" >/dev/null 2>&1 || die "$IMAGE lacks a python module the supervisor imports (numpy, scipy, rclpy, action_msgs, diagnostic_msgs)"
+  docker run --rm -v "$G:/greloc:ro" -w /greloc/tools/global_reloc_3d "$IMAGE" python3 -B -c "import numpy, scipy, rclpy, action_msgs.msg, diagnostic_msgs.msg, gn_supervisor_node, corr_cpp; from rclpy.experimental import EventsExecutor; corr_cpp.load('/greloc/build/libcorr_search.so')" >/dev/null 2>&1 || die "$IMAGE cannot import what the supervisor needs (numpy, scipy, rclpy, action_msgs, diagnostic_msgs, the tools staged in $G, build/libcorr_search.so): run the import of this check by hand to see which"
   SUP=(-e SUPERVISOR=1 -e "SUP_PRIOR=/greloc/prior/$MAP_NAME/prior/map.xyz" -v "$G:/greloc:ro")
   echo "SUPERVISOR=1: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
 fi

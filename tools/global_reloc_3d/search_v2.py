@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import resource
 import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -20,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from scipy.spatial import cKDTree
 
-from correlative_search import MapField, crop_source, search, z_cell_range
+from correlative_search import MIN_SOURCE_POINTS, MapField, SparseSource, crop_source, search, z_cell_range
 from search_tiles import agreement, distinct, pose_difference, temporal_evidence
 from verify import decide, score
 
@@ -180,7 +181,7 @@ def main():
     p.add_argument('--gicp-voxel', type=float, default=.3)
     p.add_argument('--deadline-s', type=float, default=60., help='remaining decision budget from this process start')
     p.add_argument('--z-band', type=float, nargs=2, metavar=('LO', 'HI'), help='heights (m, map frame) the sensor can have: the search and the refined poses stay inside it (+- 0.25 m for the latter)')
-    p.add_argument('--corr-backend', choices=('python', 'cpp'), default='python', help='the correlative search: numpy/scipy, or cpp_search/libcorr_search.so (build.sh): the same operations, no scipy overhead')
+    p.add_argument('--corr-backend', choices=('python', 'cpp'), default='cpp', help='the correlative search: cpp_search/libcorr_search.so (build.sh; no fallback when it is missing), or numpy/scipy: the same operations, slower')
     p.add_argument('--threads', type=int, default=2, help='OMP_NUM_THREADS of each register_v2 call (small_gicp is built without OpenMP, so GICP runs on one thread whatever this says); the FFT threads are --fft-workers')
     a = p.parse_args()
     global DEADLINE_S
@@ -191,9 +192,11 @@ def main():
     manifest = json.loads((run / 'manifest.json').read_text())
     if manifest['frame_fit'] != 'local_first_imu_levelled':
         raise ValueError('search_v2 needs a gravity-levelled source (lio_submap.py --imu-bag)')
+    fit = np.loadtxt(run / 'fit.xyz').reshape(-1, 3)      # reshape: one point or none load as 1-D
+    check = np.loadtxt(run / 'check.xyz').reshape(-1, 3)
+    if min(len(crop_source(s, a.radius)) for s in (fit, check)) < MIN_SOURCE_POINTS:      # before the map and the field: this exit is retried, on a shared board
+        raise SparseSource('source has too few points inside the search radius')
     full = np.loadtxt(run / 'map.xyz')
-    fit = np.loadtxt(run / 'fit.xyz')
-    check = np.loadtxt(run / 'check.xyz')
     reach_z = source_reach_z(fit, check, a.radius)
     z_band = tuple(a.z_band) if a.z_band else None
     if a.corr_backend == 'cpp':
@@ -260,4 +263,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except (SparseSource, MemoryError) as e:      # this scene or this moment: the supervisor tries again. Any other exception is a bug or bad input (exit 1): it does not
+        print(f'search_v2: {e!r}', file=sys.stderr)
+        sys.exit(3)
