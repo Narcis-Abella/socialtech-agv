@@ -176,8 +176,8 @@ protected:
 
   CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override
   {
-    scan_filter_.reset(); scan_sub_.reset(); init_sub_.reset(); map_sub_.reset();   // no new callbacks after this; not under mtx_ (a callback in flight needs it to end)
-    tf_listener_.reset();   // joins the TF thread, which can still be delivering an onScan (the filter does not wait for it): never under mtx_, or that onScan deadlocks the join
+    tf_listener_.reset();   // first: joins the TF thread, which can be delivering an onScan from inside the filter, whose destructor does not wait for it. Never under mtx_, or that onScan deadlocks the join
+    scan_filter_.reset(); scan_sub_.reset(); init_sub_.reset(); map_sub_.reset();   // no new callbacks after this (the filter's disconnect waits for a delivery on the executor); not under mtx_, which that delivery needs to end
     std::lock_guard<std::mutex> lk(mtx_);   // from the pre-shutdown hook the executor still spins: a scan in flight there may be using the TF buffer, the broadcaster and the publishers
     pose_pub_.reset(); status_pub_.reset(); fit_pub_.reset(); reloc_pub_.reset(); br_.reset(); tf_buffer_.reset();
     core_.reset(); pending_init_.reset(); ratio_ = tight_ = 0; n_ = 0;
