@@ -4,6 +4,15 @@ import unittest
 import gn_supervisor_core as sc
 
 
+class Supervisor(sc.Supervisor):
+    """The node feeds the supervisor two streams from gn_loc: the 1 Hz status (heartbeat, alarms) and one fit sample per scan (confirmation). The tests that only
+    describe 1 Hz statuses mean both: every status that carries a new scan is also one sample."""
+    def on_status(self, t, state, inliers, tight, scans=None):
+        super().on_status(t, state, inliers, tight, scans)
+        if self.stall == 0:
+            self.on_scan_fit(t, state, inliers, tight)
+
+
 def run(s, t, *events):
     """Feed (method, args...) events at time t, then tick; return the actions emitted."""
     for e in events:
@@ -24,7 +33,7 @@ class Fixture(unittest.TestCase):
         return t0 + n
 
     def new(self, **kw):
-        s = sc.Supervisor(sc.Params(**kw))
+        s = Supervisor(sc.Params(**kw))
         t = self.tracking(s, 0.)
         self.assertEqual(s.state, 'MONITOR')
         return s, t
@@ -32,7 +41,7 @@ class Fixture(unittest.TestCase):
 
 class StartupTest(Fixture):
     def test_navigation_is_held_until_gn_confirms_a_pose(self):
-        s = sc.Supervisor(sc.Params())
+        s = Supervisor(sc.Params(auto_init_s=0.))                      # a pose from elsewhere (the operator): the start-up localization is not what is tested
         self.assertTrue(s.hold)
         run(s, 0., ('on_status', 'WAITING_POSE', 0., 0.))
         run(s, 1., ('on_status', 'TRACKING', .9, .3))       # a pose that does not fit the map yet
@@ -55,38 +64,56 @@ class AutoInitTest(Fixture):
         for k in range(int(t0), int(t1) + 1):
             run(s, float(k), ('on_status', 'WAITING_POSE', 0., 0.))
 
-    def test_it_localizes_by_itself_after_the_wait_when_nobody_gave_a_pose(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+    def test_it_localizes_by_itself_at_once_when_gn_loc_waits_for_a_pose(self):
+        s = Supervisor(sc.Params(auto_init_s=8.))
         t, a = self.waiting(s, 0, 20)
-        self.assertEqual(t, 8)
+        self.assertEqual(t, 0)                                            # the first status: no wait for an operator that may click
         self.assertIn(('reloc_start', 'startup_auto'), a)
         self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'startup_auto'))
 
     def test_it_can_be_switched_off(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=0.))
+        s = Supervisor(sc.Params(auto_init_s=0.))
         t, _ = self.waiting(s, 0, 60)
         self.assertIsNone(t)
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'startup'))
 
-    def test_an_operator_pose_given_first_cancels_the_wait(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+    def test_an_operator_pose_given_first_wins_over_the_start_up_localization(self):
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 3)
         run(s, 3.5, ('on_operator_pose', (1., 2., 0.)))
         t, _ = self.waiting(s, 4, 30)
         self.assertIsNone(t)
 
+    def test_an_operator_pose_before_any_status_means_no_start_up_localization(self):
+        s = Supervisor(sc.Params(auto_init_s=8.))
+        run(s, 0., ('on_operator_pose', (1., 2., 0.)))
+        t, _ = self.waiting(s, 1, 5)
+        self.assertIsNone(t)
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
+
+    def test_a_stale_waiting_status_does_not_start_it(self):
+        s = Supervisor(sc.Params(auto_init_s=8.))
+        s.gn_state, s.t_status = 'WAITING_POSE', 0.                 # gn_loc said it waits, then went silent for longer than the stale limit
+        self.assertNotIn('reloc_start', kinds(run(s, 5.)))
+
+    def test_a_silent_gn_loc_is_waited_for_before_localizing(self):
+        s = Supervisor(sc.Params(auto_init_s=8.))
+        seen = [k for k in range(7) if 'reloc_start' in kinds(run(s, float(k)))]
+        self.assertEqual(seen, [])
+        self.assertIn('reloc_start', kinds(run(s, 8.)))
+
     def test_an_operator_pose_during_the_auto_init_aborts_it_and_wins(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
-        self.hold(s, 9, 11)
+        self.hold(s, 1, 11)
         a = run(s, 12., ('on_operator_pose', (1., 2., 0.)))
         self.assertIn('reloc_abort', kinds(a))
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
 
     def test_the_accepted_pose_is_published_and_confirmed_without_the_operator(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
-        self.hold(s, 9, 19)
+        self.hold(s, 1, 19)
         a = run(s, 20., ('on_reloc_result', True, (1., 2., .3), 'accepted'))
         self.assertIn(('initialpose', (1., 2., .3)), a)
         self.assertEqual(s.state, 'CONFIRMING')
@@ -94,9 +121,9 @@ class AutoInitTest(Fixture):
         self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
 
     def test_two_rejections_ask_the_operator(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
-        self.hold(s, 9, 19)
+        self.hold(s, 1, 19)
         run(s, 20., ('on_reloc_result', False, None, 'ambiguous'))
         self.assertEqual(s.state, 'RELOCALIZING')                         # the second attempt
         self.hold(s, 21, 39)
@@ -107,9 +134,9 @@ class AutoInitTest(Fixture):
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
 
     def test_a_pose_gn_does_not_confirm_asks_the_operator(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
-        self.hold(s, 9, 19)
+        self.hold(s, 1, 19)
         run(s, 20., ('on_reloc_result', True, (1., 2., .3), 'accepted'))
         for k in range(21, 40):                                            # GN sits on another pose with a poor fit
             run(s, float(k), ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (5., 5., 0.)))
@@ -117,7 +144,7 @@ class AutoInitTest(Fixture):
         self.assertEqual(s.reason, 'needs_operator:gn_not_confirmed')
 
     def test_gn_settling_by_itself_is_not_overridden(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         seen = []
         for k in range(15):                                               # TRACKING since the start, the fit still poor: gn_loc is settling, not waiting
             seen += kinds(run(s, float(k), ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (1., 2., 0.))))
@@ -125,7 +152,7 @@ class AutoInitTest(Fixture):
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'startup'))
 
     def test_a_tracking_that_never_confirms_is_localized_after_a_bounded_wait(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         t = None
         for k in range(40):                                               # TRACKING with a poor fit for ever: the start-up has no timeout of its own
             if 'reloc_start' in kinds(run(s, float(k), ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (1., 2., 0.)))):
@@ -134,7 +161,7 @@ class AutoInitTest(Fixture):
         self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'startup_auto'))
 
     def test_leaving_the_auto_init_through_a_verification_forgets_it(self):
-        s = sc.Supervisor(sc.Params(auto_init_s=8.))
+        s = Supervisor(sc.Params(auto_init_s=8.))
         self.waiting(s, 0, 8)
         run(s, 9., ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))   # gn_loc got there by itself meanwhile
         run(s, 10., ('on_reloc_result', True, (1., 2., 0.), 'accepted'))
@@ -411,7 +438,7 @@ class StarvedScanTest(Fixture):
         self.assertEqual(s.reason, 'gn_no_scans')
 
     def test_confirmation_needs_new_scans(self):
-        s = sc.Supervisor(sc.Params())
+        s = Supervisor(sc.Params())
         self.statuses(s, 0., 6, .9, .8, scans0=50, step=0)
         self.assertEqual(s.state, 'CONFIRMING')
         self.statuses(s, 6., 4, .9, .8, scans0=60)
@@ -477,9 +504,304 @@ class ReviewFixesTest(Fixture):
         self.assertFalse(sc.same_pose((1., 2., 0.), (1., 2., .5)))
 
 
+class MovedWhileConfirmingTest(Fixture):
+    """A robot that is moved right after the relocalizer's pose (a push, a kidnapping) while GN is tracking well is not a failed confirmation."""
+    def relocalized(self, pose=(1., 2., .3)):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))                            # lost_stop_s = 0: the stop and the relocalization start at once
+        for k in range(1, 5):
+            run(s, t + k, ('on_status', 'LOST', 0., 0.))                    # gn_loc keeps publishing its 1 Hz status while the relocalizer works
+        run(s, t + 5, ('on_reloc_result', True, pose, 'accepted'))
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'relocalized_confirming'))
+        return s, t + 5
+
+    def good(self, s, t, pose):
+        return run(s, t, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', pose))
+
+    def test_gn_close_to_the_pose_and_then_carried_along_with_a_good_fit_is_confirmed(self):
+        s, t = self.relocalized()
+        self.good(s, t + 1, (1., 2., .3))                                    # GN took the pose: the lock is the relocalizer's
+        self.good(s, t + 2, (1.6, 2.4, .3))                                  # the robot is pushed ~0.7 m per status (1 Hz): GN follows it
+        self.good(s, t + 3, (2.2, 2.8, .3))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+
+    def test_gn_that_jumps_elsewhere_with_a_good_fit_after_the_close_sample_is_not_confirmed(self):
+        s, t = self.relocalized()
+        self.good(s, t + 1, (1., 2., .3))
+        for k in range(2, 20):
+            self.good(s, t + k, (6., 2., .3))                                # a snap to another well-fitting place (symmetric corridor): not the pose it was given
+        self.assertEqual((s.state, s.reason), ('FAILED', 'gn_not_confirmed'))
+
+    def test_gn_that_was_never_close_to_the_pose_is_still_not_confirmed(self):
+        s, t = self.relocalized()
+        for k in range(1, 20):
+            self.good(s, t + k, (5., 5., 0.))                                # a good fit somewhere else: a lock on a pose nobody gave
+        self.assertEqual((s.state, s.reason), ('FAILED', 'gn_not_confirmed'))
+
+    def test_a_poor_fit_after_the_close_sample_does_not_confirm(self):
+        s, t = self.relocalized()
+        self.good(s, t + 1, (1., 2., .3))
+        for k in range(2, 6):
+            run(s, t + k, ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (3., 4., 0.)))      # moved and GN lost its quality
+        self.assertEqual(s.state, 'CONFIRMING')
+
+
+class LockGateTest(Fixture):
+    def test_the_lock_follows_a_speed_not_a_distance_per_sample(self):
+        # samples at 10 Hz: GN may follow a robot pushed at ~1 m/s (0.1 m per sample) but not slide 0.5 m between two samples
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', .1, .1))
+        run(s, t + 1, ('on_reloc_result', True, (2.5, 2., 0.), 'accepted'))
+        t0 = t + 1.6
+        confirmed = False
+        for k in range(40):
+            x = 2.5 + (0.05 * k if k < 3 else 0.15 + 0.5 * (k - 2))           # 0.5 m/s for 0.3 s, then 5 m/s
+            run(s, t0 + .1 * k, ('on_scan_fit', 'TRACKING', .9, .8), ('on_gn_pose', (x, 2., 0.)))
+            confirmed = confirmed or (s.state, s.reason) == ('MONITOR', 'confirmed')
+        self.assertFalse(confirmed)                                          # the 5 m/s slide broke the lock: the run of good samples started again every time
+
+
+class LockAcrossBadSamplesTest(Fixture):
+    def test_a_robot_that_goes_on_moving_through_a_few_bad_samples_is_still_followed(self):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', .1, .1))
+        run(s, t + 1, ('on_reloc_result', True, (2.5, 2., 0.), 'accepted'))
+        t0, confirmed = t + 1.6, False
+        for k in range(60):
+            tight = .3 if 4 <= k < 7 else .8                                  # a momentary dip of the fit while the robot is pushed at 0.3 m/s
+            if k % 10 == 0:
+                sc.Supervisor.on_status(s, t0 + .1 * k, 'TRACKING', .9, tight, k)       # the 1 Hz heartbeat
+            run(s, t0 + .1 * k, ('on_scan_fit', 'TRACKING', .9, tight), ('on_gn_pose', (2.5 + .03 * k, 2., 0.)))
+            confirmed = confirmed or (s.state, s.reason) == ('MONITOR', 'confirmed')
+        self.assertTrue(confirmed)
+
+
+class ScanRateConfirmTest(Fixture):
+    """Confirmation counts one sample per GN scan (~10 Hz): a run of good samples at least confirm_s long, so the relocalized pose is released ~1 s after GN takes it, not after three 1 Hz statuses."""
+    def relocalized(self, pose=(2.5, 2., 0.)):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', .1, .1))
+        run(s, t + 1, ('on_reloc_result', True, pose, 'accepted'))
+        self.assertEqual(s.state, 'CONFIRMING')
+        return s, t + 1
+
+    def scan(self, s, t, pose=(2.5, 2., 0.), tight=.8, state='TRACKING'):
+        self.n = getattr(self, 'n', 0) + 1
+        if self.n % 10 == 1:                                                 # gn_loc keeps publishing its 1 Hz status (silence would be gn_status_stale)
+            sc.Supervisor.on_status(s, t, state, .9, tight, self.n)
+        return run(s, t, ('on_scan_fit', state, .9, tight), ('on_gn_pose', pose))
+
+    def test_a_second_of_good_scans_confirms(self):
+        s, t = self.relocalized()
+        t0 = t + .6                                                          # confirm_lag_s = 0.5
+        for k in range(10):
+            self.scan(s, t0 + .1 * k)
+        self.assertEqual(s.state, 'CONFIRMING')                              # 0.9 s of samples: not yet
+        self.scan(s, t0 + 1.0)
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+
+    def test_confirmation_takes_about_a_second_not_three(self):
+        s, t = self.relocalized()
+        k = 0
+        while s.state == 'CONFIRMING' and k < 100:
+            self.scan(s, t + .1 * k)
+            k += 1
+        self.assertEqual(s.state, 'MONITOR')
+        self.assertLess(.1 * k, 1.8)
+
+    def test_one_bad_scan_restarts_the_run(self):
+        s, t = self.relocalized()
+        t0 = t + .6
+        for k in range(8):
+            self.scan(s, t0 + .1 * k)
+        self.scan(s, t0 + .8, tight=.3)                                      # a poor fit
+        for k in range(9, 19):
+            self.scan(s, t0 + .1 * k)
+        self.assertEqual(s.state, 'CONFIRMING')                              # 1.0 s since the bad one has not passed
+        self.scan(s, t0 + 1.9)
+        self.assertEqual(s.state, 'MONITOR')
+
+    def test_samples_within_the_lag_of_the_pose_do_not_count(self):
+        s, t = self.relocalized()
+        for k in range(1, 5):                                                # 0.1 ... 0.4 s after the pose: they may describe a scan before it
+            self.scan(s, t + .1 * k)
+        self.assertEqual(s.state, 'CONFIRMING')
+        self.assertEqual(s.good, 0)
+
+    def test_a_jump_to_another_pose_restarts_the_run_and_never_confirms(self):
+        s, t = self.relocalized()
+        for k in range(6, 40):
+            self.scan(s, t + .1 * k, pose=(6., 2., 0.))                      # a good fit far from the relocalizer's pose
+        self.assertNotEqual(s.state, 'MONITOR')
+
+    def test_the_1_hz_status_alone_does_not_confirm(self):
+        s, t = self.relocalized()
+        for k in range(1, 10):
+            sc.Supervisor.on_status(s, t + k, 'TRACKING', .9, .8, k)         # the heartbeat, without the scan stream
+            run(s, t + k, ('on_gn_pose', (2.5, 2., 0.)))
+        self.assertNotEqual(s.state, 'MONITOR')
+
+    def test_a_bad_status_alarm_is_still_the_status_stream_s(self):
+        s, t = self.new()
+        for k in range(5):
+            run(s, t + k, ('on_status', 'TRACKING', .9, .2, 100 + k), ('on_gn_pose', (1., 2., 0.)))
+        self.assertEqual(s.state, 'RELOCALIZING')                            # bad_stop_s alarm, unchanged by the scan stream
+
+
+class FailedRetryTest(Fixture):
+    """FAILED after a relocalization that did not work retries by itself: the lidar may have been uncovered, the robot parked, since."""
+    def lost(self, s, t0, t1):
+        for k in range(int(t0), int(t1)):
+            run(s, float(k), ('on_status', 'LOST', 0., 0.))                    # gn_loc keeps publishing its 1 Hz status
+
+    def failed(self, **kw):
+        s, t = self.new(**kw)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 5)
+        run(s, t + 5, ('on_reloc_result', False, None, 'x'))
+        self.lost(s, t + 6, t + 9)
+        run(s, t + 9, ('on_reloc_result', False, None, 'x'))
+        self.assertEqual((s.state, s.reason), ('FAILED', 'reloc_failed_x'))
+        return s, t + 9
+
+    def test_it_starts_a_new_relocalization_30_s_after_the_failure(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 30)
+        self.assertEqual(s.state, 'FAILED')
+        a = run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.assertIn(('reloc_start', 'failed_retry'), a)
+        self.assertEqual((s.state, s.reason, s.hold), ('RELOCALIZING', 'failed_retry', True))
+
+    def test_an_accepted_retry_is_confirmed_and_navigation_is_released(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 31, t + 42)
+        a = run(s, t + 42., ('on_reloc_result', True, (1., 2., .3), 'accepted'))
+        self.assertIn(('initialpose', (1., 2., .3)), a)
+        for k in range(1, 5):
+            run(s, t + 42. + k, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., .3)))
+        self.assertEqual((s.state, s.reason, s.hold), ('MONITOR', 'confirmed', False))
+
+    def test_a_retry_that_fails_twice_waits_another_30_s(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 31, t + 35)
+        run(s, t + 35., ('on_reloc_result', False, None, 'x'))
+        self.assertEqual(s.state, 'RELOCALIZING')                           # its second attempt
+        self.lost(s, t + 36, t + 40)
+        run(s, t + 40., ('on_reloc_result', False, None, 'x'))
+        self.assertEqual(s.state, 'FAILED')
+        self.lost(s, t + 41, t + 69)
+        self.assertEqual(s.state, 'FAILED')
+        run(s, t + 70., ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.reason, 'failed_retry')
+
+    def failed_by(self, reason_setup):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 5)
+        run(s, t + 5, ('on_reloc_result', False, None, reason_setup))
+        self.lost(s, t + 6, t + 9)
+        run(s, t + 9, ('on_reloc_result', False, None, reason_setup))
+        return s, t + 9
+
+    def test_a_relocalizer_exception_is_not_retried(self):
+        s, t = self.failed_by('exception_in_start')
+        self.assertEqual(s.state, 'FAILED')
+        a = []
+        for k in range(1, 130):
+            a += run(s, t + float(k), ('on_status', 'LOST', 0., 0.))
+        self.assertNotIn('reloc_start', kinds(a))                            # a bug would loop: each cycle restarts FAST-LIO2
+
+    def test_a_deterministic_failure_is_not_retried_either(self):
+        for why in ('search_worker_exit_1', 'exception_in_poll'):
+            s, t = self.failed_by(why)
+            a = []
+            for k in range(1, 130):
+                a += run(s, t + float(k), ('on_status', 'LOST', 0., 0.))
+            self.assertNotIn('reloc_start', kinds(a), why)                    # a wrong parameter or a missing map would restart FAST-LIO2 every 30 s for ever
+
+    def test_a_transient_failure_is_retried(self):
+        for why in ('moved_since_exposure', 'ambiguous_no_alternative_margin', 'lio_restart_timeout', 'search_worker_exit_-9'):
+            s, t = self.failed_by(why)
+            a = []
+            for k in range(1, 40):
+                a += run(s, t + float(k), ('on_status', 'LOST', 0., 0.))
+            self.assertIn('reloc_start', kinds(a), why)
+
+    def test_the_retry_cycles_are_capped(self):
+        s, t = self.failed(failed_retry_max=2)
+        starts = 0
+        for k in range(1, 400):
+            tt = t + float(k)
+            a = run(s, tt, ('on_status', 'LOST', 0., 0.))
+            if s.state == 'RELOCALIZING':
+                a += run(s, tt, ('on_reloc_result', False, None, 'x'))        # every attempt of every cycle fails
+            starts += kinds(a).count('reloc_start')
+        self.assertEqual(starts, 2 * 2)                                       # 2 cycles x 2 attempts, then the operator
+        self.assertEqual(s.state, 'FAILED')
+
+    def test_an_operator_pose_gives_the_retries_back(self):
+        s, t = self.failed(failed_retry_max=1)
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.reason, 'failed_retry')
+        run(s, t + 31., ('on_operator_pose', (1., 2., 0.)))
+        for k in range(32, 36):
+            run(s, t + float(k), ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))
+        self.assertEqual(s.state, 'MONITOR')
+        self.assertEqual(s.retries, 0)
+
+    def test_a_failure_that_is_not_a_relocalization_one_is_never_retried(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))                        # the retry starts ...
+        self.assertEqual(s.reason, 'failed_retry')
+        for k in range(1, 40):
+            run(s, t + 30. + k)                                                # ... and gn_loc goes silent: gn_status_stale
+        self.assertEqual((s.state, s.reason), ('FAILED', 'gn_status_stale'))
+        a = []
+        for k in range(40, 200):
+            a += run(s, t + 30. + k)
+        self.assertNotIn('reloc_start', kinds(a))
+        s2, t2 = self.failed()                                                # the same for the node's internal_error hold
+        s2.go(t2 + 1., 'FAILED', 'internal_error'); s2.drain()
+        a = []
+        for k in range(2, 200):
+            a += run(s2, t2 + float(k), ('on_status', 'LOST', 0., 0.))
+        self.assertNotIn('reloc_start', kinds(a))
+
+    def test_a_pose_that_gn_did_not_confirm_is_not_searched_again(self):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 5)
+        run(s, t + 5, ('on_reloc_result', True, (1., 2., .3), 'accepted'))
+        for k in range(1, 20):
+            run(s, t + 5 + k, ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (5., 5., 0.)))
+        self.assertEqual(s.reason, 'gn_not_confirmed')
+        a = []
+        for k in range(20, 90):
+            a += run(s, t + 5 + k, ('on_status', 'TRACKING', .9, .3), ('on_gn_pose', (5., 5., 0.)))
+        self.assertNotIn('reloc_start', kinds(a))                            # the search would give the same pose: the operator decides
+
+    def test_it_can_be_switched_off(self):
+        s, t = self.failed(failed_retry_s=0.)
+        self.lost(s, t + 1, t + 100)
+        self.assertEqual(s.state, 'FAILED')
+
+    def test_the_operator_pose_during_the_wait_wins(self):
+        s, t = self.failed()
+        self.lost(s, t + 1, t + 20)
+        a = run(s, t + 20., ('on_operator_pose', (1., 2., 0.)))
+        self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
+        self.assertNotIn('reloc_start', kinds(a))
+
+
 class GoalHoldTest(Fixture):
     def test_a_goal_active_at_start_up_is_cancelled(self):
-        s = sc.Supervisor(sc.Params())
+        s = Supervisor(sc.Params())
         self.assertIn('cancel', kinds(run(s, 0., ('on_goal_status', 'navigate_to_pose', True))))
 
     def test_an_active_goal_is_cancelled_again_until_it_stops(self):
@@ -504,6 +826,95 @@ class GoalHoldTest(Fixture):
         for k in range(1, 5):
             run(s, t + k, ('on_status', 'LOST', .1, .1), ('on_wheel', .3, 0.))
         self.assertIn('not_stopped', s.reason)
+
+
+class ConfirmedPoseClearsTheAlarmsTest(Fixture):
+    """A run of good scans (1.5 s) can end before any status says TRACKING: gn_loc skips a status tick when a scan holds its lock. What the older statuses said must not stop the robot again."""
+    def confirmed_with_no_status(self, s, t):
+        run(s, t, ('on_reloc_result', True, (1., 2., 0.), 'accepted'))
+        self.assertEqual(s.state, 'CONFIRMING')
+        tt = t
+        for k in range(1, 21):
+            tt = t + k * .1
+            a = run(s, tt, ('on_scan_fit', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))
+            self.assertNotIn('reloc_start', kinds(a))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+        return tt
+
+    def test_a_lost_status_before_the_pose(self):
+        s, t = self.new(status_stale_s=10.)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.confirmed_with_no_status(s, t + 1.)
+
+    def test_bad_scans_before_the_pose(self):
+        s, t = self.new(status_stale_s=10., bad_stop_s=1.)
+        for k in range(3):
+            run(s, t + k, ('on_status', 'TRACKING', 0., 0.))
+        self.assertEqual(s.reason, 'gn_bad_scans')
+        self.confirmed_with_no_status(s, t + 3.)
+
+    def test_a_stalled_scan_counter_before_the_pose(self):
+        s, t = self.new(status_stale_s=10.)
+        for k in range(4):
+            run(s, t + k, ('on_status', 'TRACKING', .9, .8, 5))
+        self.assertEqual(s.reason, 'gn_no_scans')
+        self.confirmed_with_no_status(s, t + 4.)
+
+    def test_a_lost_status_after_the_confirmation_still_stops(self):
+        s, t = self.new(status_stale_s=10.)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        tt = self.confirmed_with_no_status(s, t + 1.)
+        self.assertIn('reloc_start', kinds(run(s, tt + .1, ('on_status', 'LOST', 0., 0.))))
+
+
+class NotStoppedNoteTest(Fixture):
+    def test_a_timed_out_attempt_does_not_carry_the_note_of_the_last_one(self):
+        s, t = self.new(reloc_timeout_s=10., stop_check_s=1., status_stale_s=100.)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        run(s, t + 2., ('on_wheel', .5, 0.))
+        self.assertEqual(s.reason, 'gn_lost+not_stopped')
+        a = run(s, t + 11., ('on_wheel', 0., 0.))
+        self.assertIn(('reloc_start', 'gn_lost'), a)
+        self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'gn_lost'))
+
+
+class RetryPolicyTest(FailedRetryTest):
+    def attempts_fail(self, why):
+        s, t = self.new(failed_retry_max=2)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        run(s, t + 1., ('on_status', 'LOST', 0., 0.), ('on_reloc_result', False, None, why))
+        run(s, t + 2., ('on_status', 'LOST', 0., 0.), ('on_reloc_result', False, None, why))
+        self.assertEqual(s.state, 'FAILED')
+        return s
+
+    def test_only_a_bug_or_bad_arguments_are_not_retried(self):
+        for why in ('search_worker_exit_1', 'search_worker_exit_2', 'exception_in_poll'):
+            self.assertFalse(self.attempts_fail(why).retry, why)
+
+    def test_exit_codes_are_matched_whole(self):
+        for why in ('search_worker_exit_3', 'search_worker_exit_10', 'search_worker_exit_12', 'search_worker_exit_20', 'search_worker_exit_134', 'search_worker_exit_-9'):
+            self.assertTrue(self.attempts_fail(why).retry, why)
+
+    def test_retries_running_out_are_announced_once(self):
+        s, t = self.failed(failed_retry_max=1)
+        seen = []
+        for k in range(1, 200):
+            tt = t + float(k)
+            a = run(s, tt, ('on_status', 'LOST', 0., 0.))
+            if s.state == 'RELOCALIZING':
+                a += run(s, tt, ('on_reloc_result', False, None, 'x'))
+            seen += [e[2] for e in a if e[0] == 'state' and e[1] == 'FAILED']
+        self.assertEqual(s.state, 'FAILED')
+        self.assertEqual(s.reason, 'needs_operator:reloc_failed_x')
+        self.assertFalse(s.retry)
+        self.assertEqual(seen, ['reloc_failed_x', 'needs_operator:reloc_failed_x'])
+
+    def test_a_start_up_failure_is_not_prefixed_twice(self):
+        s, t = self.failed(failed_retry_max=1)
+        s.auto, s.retry, s.reason, s.retries = True, True, 'needs_operator:reloc_timeout', 1
+        run(s, t + 1., ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.reason, 'needs_operator:reloc_timeout')
+        self.assertFalse(s.retry)
 
 
 if __name__ == '__main__':

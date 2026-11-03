@@ -22,11 +22,11 @@ if ! timeout "${NAV_TIMEOUT:-180}" bash -c 'until [ "$(ros2 lifecycle get /bt_na
 fi
 sleep 5
 ps -eo pid,args | grep -E 'nav2|opennav|gz|noisy|bridge' | grep -v grep | cut -c1-160 > "$out/ps.txt"
-python3 /tools/nav_bench/cost_sampler.py sample "$out/cost.csv" --every 1.0 &
+python3 /tools/nav_bench/procmon.py sample "$out/cost.csv" 1 &
 sampler=$!
 for r in $(seq 1 "$reps"); do
   python3 /tools/nav_sim/eval_goals.py /tools/nav_sim/goals.yaml "$map" "$out/run$r.json" --ros-args -p use_sim_time:=true > "$out/run$r.log" 2>&1 || echo "run $r failed (see run$r.log)"
 done
 kill $sampler 2>/dev/null || true
-python3 /tools/nav_bench/cost_sampler.py summarize "$out/cost.csv" > "$out/cost_summary.txt" 2>&1 || true
+python3 /tools/nav_bench/procmon.py report "$out/cost.csv" > "$out/cost_summary.txt" 2>&1 || true
 echo done

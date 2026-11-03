@@ -21,3 +21,12 @@ class VerifyTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SharedTreeTest(unittest.TestCase):
+    def test_a_prebuilt_tree_gives_the_same_score(self):
+        from scipy.spatial import cKDTree
+        rng = np.random.default_rng(0)
+        m = rng.uniform(-5, 5, (800, 3)); c = m[:200] + rng.normal(0, .02, (200, 3))
+        T = np.eye(4)
+        self.assertEqual(score(m, c, T), score(m, c, T, tree=cKDTree(m)))

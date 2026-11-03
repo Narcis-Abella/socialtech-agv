@@ -1,8 +1,8 @@
 diff --git a/launch/simulation.launch.py b/launch/simulation.launch.py
-index 7db4a7d..0fe5f6b 100644
+index 7db4a7d..c0bc685 100644
 --- a/launch/simulation.launch.py
 +++ b/launch/simulation.launch.py
-@@ -85,9 +85,14 @@ def generate_launch_description():
+@@ -85,9 +85,19 @@ def generate_launch_description():
          ),
      )
  
@@ -10,15 +10,20 @@ index 7db4a7d..0fe5f6b 100644
 +    # Gazebo's acceleration limits are raised, the bridge hands /cmd_vel_gz to the DiffDrive, the legacy noisy_imu / noisy_lidar are not started and noisy_odom (the LiDAR-inertial stand-in, odom -> base_footprint TF)
 +    # publishes /odom_lio instead of /odom. Use odom_source:=ground_truth with it. Start socialtech_simreal's sim_realism.launch.py next to this launch.
 +    realism = os.environ.get("SIM_REALISM", "0") == "1"
++    # SIM_LIO=1 (with SIM_REALISM=1): a real FAST-LIO2 runs on the simulated Mid-360 (socialtech_livox_sim) and the IMU, so the LiDAR-inertial stand-in (noisy_odom, odom -> base_footprint TF)
++    # is not started (planar_odom publishes that TF), the IMU runs at the Mid-360's 200 Hz and sits where FAST-LIO2 assumes it: the lidar origin minus extrinsic_T (-0.011, -0.02329, 0.04412).
++    lio = realism and os.environ.get("SIM_LIO", "0") == "1"
++    # LIDAR_Z: height of the Mid-360 over the floor. 0.57 is the real robot's (the relocalizer's 17 saved searches put its IMU at 0.52-0.55 m: SocialTech notes/optimizacion_localizacion_2026-11-02.md); the IMU is extrinsic_T below it.
++    lidar_z = float(os.environ.get("LIDAR_Z", "0.57"))
 +
      # ── 3. ROBOT DESCRIPTION ──────────────────────────────────────────────────
      doc = xacro.parse(open(xacro_file))
 -    xacro.process_doc(doc)
-+    xacro.process_doc(doc, mappings={"max_lin_acc": "20.0", "max_ang_acc": "40.0"} if realism else {})
++    xacro.process_doc(doc, mappings={"max_lin_acc": "20.0", "max_ang_acc": "40.0", **({"imu_rate": "200", "imu_xyz": f"0.011 0.02329 {lidar_z - 0.04412:.5f}", "lidar_z": f"{lidar_z}"} if lio else {})} if realism else {})
      robot_description = {"robot_description": doc.toxml(), "use_sim_time": True}
  
      # ── 4. SIMULATION (IGNITION GAZEBO) ───────────────────────────────────────────
-@@ -157,6 +162,7 @@ def generate_launch_description():
+@@ -157,6 +167,7 @@ def generate_launch_description():
              # Critical routing: Gazebo -> bridge -> *_raw -> noise node -> final topic
              ("/model/tracer_robot/pose", "/gt/pose"),
              ("/imu", "/imu_raw"),
@@ -26,7 +31,7 @@ index 7db4a7d..0fe5f6b 100644
              ("/odom", "/odom_raw"),
              ("/odom_gt", "/odom_gt_raw"),
              ("/scan", "/scan_raw"),
-@@ -213,7 +219,7 @@ def generate_launch_description():
+@@ -213,7 +224,7 @@ def generate_launch_description():
          package="hospital-agv-sim",
          executable="noisy_odom_cpp",
          name="noisy_odom_node",
@@ -35,16 +40,38 @@ index 7db4a7d..0fe5f6b 100644
          parameters=[
              {
                  "use_sim_time": True,
-@@ -272,8 +278,7 @@ def generate_launch_description():
+@@ -272,9 +283,8 @@ def generate_launch_description():
              spawn_entity,
              bridge,
              image_bridge,
 -            noisy_imu_node,
 -            noisy_lidar_node,
+-            noisy_odom_node,
 +            *([] if realism else [noisy_imu_node, noisy_lidar_node]),
-             noisy_odom_node,
++            *([] if lio else [noisy_odom_node]),
              noisy_mid70_node,
              noisy_mid360_node,
+         ]
+diff --git a/urdf/sensors/imu.xacro b/urdf/sensors/imu.xacro
+index b0f82f0..6bda981 100644
+--- a/urdf/sensors/imu.xacro
++++ b/urdf/sensors/imu.xacro
+@@ -1,5 +1,6 @@
+ <?xml version="1.0"?>
+ <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
++  <xacro:arg name="imu_rate" default="100"/>
+   <xacro:macro name="sensor_imu" params="parent xyz:='0 0 0' rpy:='0 0 0'">
+   
+     <link name="imu_link">
+@@ -21,7 +22,7 @@
+     <gazebo reference="imu_link">
+       <sensor name="imu_sensor" type="imu">
+         <always_on>1</always_on>
+-        <update_rate>100</update_rate> 
++        <update_rate>$(arg imu_rate)</update_rate>
+         <visualize>false</visualize>
+         <topic>imu</topic>
+         <gz_frame_id>imu_link</gz_frame_id>
 diff --git a/urdf/tracer2.gazebo b/urdf/tracer2.gazebo
 index b13e2e4..6a26513 100644
 --- a/urdf/tracer2.gazebo
@@ -76,3 +103,30 @@ index b13e2e4..6a26513 100644
  
      </plugin>
      
+diff --git a/urdf/tracer2.xacro b/urdf/tracer2.xacro
+index 54af015..334a739 100644
+--- a/urdf/tracer2.xacro
++++ b/urdf/tracer2.xacro
+@@ -5,6 +5,8 @@
+   <xacro:include filename="$(find hospital-agv-sim)/urdf/tracer2.gazebo" />
+   
+   <xacro:include filename="$(find hospital-agv-sim)/urdf/sensors/odom.xacro" />
++  <xacro:arg name="imu_xyz" default="0 0 0.175"/>
++  <xacro:arg name="lidar_z" default="0.28"/>
+   <xacro:include filename="$(find hospital-agv-sim)/urdf/sensors/imu.xacro" />
+   <xacro:include filename="$(find hospital-agv-sim)/urdf/sensors/lidar.xacro" />
+   <xacro:include filename="$(find hospital-agv-sim)/urdf/sensors/camera.xacro" />
+@@ -73,11 +75,11 @@
+   <xacro:apoyo_macro name="apoyo_derecho_trasero_Link"     x="-0.21" y="-0.1425" rpy_offset="-0.0407"/>
+ 
+   <xacro:tracer_odom parent="base_link" />
+-  <xacro:sensor_imu parent="base_link"            xyz="0 0 0.175" rpy="0 0 0"/>
++  <xacro:sensor_imu parent="base_link"            xyz="$(arg imu_xyz)" rpy="0 0 0"/>
+   <xacro:sensor_lidar parent="base_link"          xyz="0.0 0.0 0.32" rpy="0 0 0"/>
+   <xacro:sensor_camera parent="base_link"         xyz="0.213 0 0.215" rpy="0 0 0"/>
+   <xacro:sensor_livox_mid70 parent="base_link"    xyz="0.213 0 0.175" rpy="0 -0.2618 0"/>
+-  <xacro:sensor_livox_mid360 parent="base_link"   xyz="0.0 0.0 0.28" rpy="0 0 0"/>
++  <xacro:sensor_livox_mid360 parent="base_link"   xyz="0.0 0.0 $(arg lidar_z)" rpy="0 0 0"/>
+ 
+ 
+ </robot>

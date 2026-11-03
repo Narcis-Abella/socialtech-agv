@@ -31,7 +31,7 @@ echo "initial pose (map frame): $x $y $yaw; level quaternion: $qx $qy $qz $qw" |
 ros2 launch "$tools/launch/bench_a.launch.py" fastlio_params:="$out/fastlio.yaml" map:="$map" init_x:="$x" init_y:="$y" init_yaw:="$yaw" \
     overrides:="$out/overrides.yaml" sensor_height:="$h" level_qx:="$qx" level_qy:="$qy" level_qz:="$qz" level_qw:="$qw" > "$out/launch.log" 2>&1 &
 launch=$!
-if [ -n "${COST:-}" ]; then python3 "$tools/cost_sampler.py" sample "$out/cost.csv" > "$out/cost.log" 2>&1 & cost=$!; fi
+if [ -n "${COST:-}" ]; then python3 "$tools/procmon.py" sample "$out/cost.csv" > "$out/cost.log" 2>&1 & cost=$!; fi
 python3 "$tools/record_poses.py" /amcl_pose amcl "$out/amcl.tum" --idle 0 > "$out/rec_amcl.log" 2>&1 & rec_a=$!
 python3 "$tools/record_poses.py" /Odometry odom "$out/odom.tum" --idle 0 > "$out/rec_odom.log" 2>&1 & rec_o=$!
 if [ -n "${RECORD:-}" ]; then   # python resets SIGINT (ignored in background jobs) before exec, so the recorder can close the bag cleanly
@@ -55,7 +55,7 @@ ros2 bag play "$bag" --clock --rate "${PLAY_RATE:-1.0}" ${PLAY_ARGS:-} > "$out/p
 # AMCL publishes only after moving, so a recorder cannot tell "bag over" from "robot stopped": stop them here, after a short grace period
 sleep 5; kill -TERM "$rec_a" "$rec_o" 2>/dev/null || true; wait "$rec_a" "$rec_o" 2>/dev/null || true
 if [ -n "${bagrec:-}" ]; then kill -INT "$bagrec" 2>/dev/null || true; wait "$bagrec" 2>/dev/null || true; fi
-if [ -n "${cost:-}" ]; then kill -TERM "$cost" 2>/dev/null || true; wait "$cost" 2>/dev/null || true; python3 "$tools/cost_sampler.py" summarize "$out/cost.csv" | tee "$out/cost.txt"; fi
+if [ -n "${cost:-}" ]; then kill -TERM "$cost" 2>/dev/null || true; wait "$cost" 2>/dev/null || true; python3 "$tools/procmon.py" report "$out/cost.csv" | tee "$out/cost.txt"; fi
 # background jobs of a non-interactive shell start with SIGINT ignored, so ask the launch to stop with SIGTERM and force it after 20 s
 kill -TERM "$launch" 2>/dev/null || true
 for _ in $(seq 20); do kill -0 "$launch" 2>/dev/null || break; sleep 1; done

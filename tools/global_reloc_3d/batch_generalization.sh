@@ -30,7 +30,7 @@ for ds in ${DATASETS:-eco01_1x hospital_02_r05b}; do
         --map-xyz /map/map.xyz --start $start --duration $dur --imu-bag /raw --max-radius 2.8 --max-path 6 \
         --out /out/$in > $C/inputs/$in.log 2>&1
       docker run --rm --network none -v $C/inputs/$in:/input:ro -v $C/code:/tool:ro $LIB -v $C/search:/out \
-        socialtech:mapper-verify bash -lc "export LD_LIBRARY_PATH=/opt:\$LD_LIBRARY_PATH; python3 /tool/search_v2.py --run /input --out /out/$in --binary /tool/register_v2" \
+        socialtech:mapper-verify bash -lc "export LD_LIBRARY_PATH=/opt:\$LD_LIBRARY_PATH; python3 /tool/search_v2.py --run /input --out /out/$in --binary /tool/register_v2 --corr-backend python" \
         > $C/search/$in.stdout 2>&1
       echo "$in $(grep -o '"decision": "[a-z_]*"' $C/search/$in/search.json 2>/dev/null)"
     done

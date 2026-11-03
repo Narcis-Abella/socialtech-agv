@@ -15,7 +15,7 @@ public:
     p.noise_scale = declare_parameter("noise_scale", p.noise_scale);
     model_ = std::make_unique<simreal::ScanModel>(p, seed < 0 ? -1 : seed + 3);
     RCLCPP_INFO(get_logger(), "scan model: gaussian core %.0f-%.0f mm, dropout %.0f-%.0f %% by range, surface jumps x%.2f, noise x%.2f", p.core_sigma.at(2.5) * 1e3, p.core_sigma.at(10) * 1e3, p.dropout.at(1.5) * 100, p.dropout.at(16) * 100, p.outlier_scale, p.noise_scale);
-    sub_ = create_subscription<sensor_msgs::msg::LaserScan>(declare_parameter("in_topic", "/scan_raw"), 10, [this](sensor_msgs::msg::LaserScan::ConstSharedPtr m) {
+    sub_ = create_subscription<sensor_msgs::msg::LaserScan>(declare_parameter("in_topic", "/scan_raw"), rclcpp::SensorDataQoS(), [this](sensor_msgs::msg::LaserScan::ConstSharedPtr m) {
         auto o = *m; model_->apply(o.ranges, o.range_min, o.range_max); pub_->publish(o);
       });
     pub_ = create_publisher<sensor_msgs::msg::LaserScan>(declare_parameter("out_topic", "/scan"), 10);

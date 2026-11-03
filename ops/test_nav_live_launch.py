@@ -5,6 +5,7 @@ import os
 from launch import LaunchContext
 from launch.utilities import perform_substitutions
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterFile
 
 here = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("nav_live_launch", os.path.join(here, "nav_live.launch.py"))
@@ -29,3 +30,62 @@ assert respawns(node("fastlio_mapping")), "fastlio_mapping is not respawned"
 # the others keep their behaviour: a dying Livox driver must stay visible, not be restarted silently under a moving robot
 assert not respawns(node("livox_ros_driver2_node")), "the Livox driver must not respawn"
 print("ok")
+
+# bond_heartbeat_period lives in the overrides file: gn_loc and map_server must read it, not only AMCL
+def reads_overrides(executable):
+    ctx = LaunchContext()
+    ctx.launch_configurations["overrides"] = "OVERRIDES"
+    return any(isinstance(p, ParameterFile) and perform_substitutions(ctx, p.param_file) == "OVERRIDES" for p in node(executable)._Node__parameters)
+
+
+for exe in ("gn_loc_node", "map_server"):
+    assert reads_overrides(exe), f"{exe} does not get the overrides file"
+
+# HEAVY_DDS: off by default (nothing changes for the driver and FAST-LIO2), on = a per-node loopback URI with 64 kB fragments for exactly those two nodes
+def env_of(executable):
+    return node(executable).additional_env
+
+
+os.environ.pop("HEAVY_DDS", None)
+assert not launch.heavy_env(), "HEAVY_DDS must be off by default"
+os.environ["HEAVY_DDS"] = "1"
+heavy = launch.heavy_env()
+assert "FragmentSize>64000B" in heavy["additional_env"]["CYCLONEDDS_URI"] and "SocketReceiveBufferSize" in heavy["additional_env"]["CYCLONEDDS_URI"]
+for exe in ("fastlio_mapping", "livox_ros_driver2_node"):
+    assert env_of(exe), f"{exe} does not get the heavy URI"
+assert not env_of("planar_odom"), "only the two ends of the lidar topic get it"
+os.environ["HEAVY_DDS"] = "0"
+assert not launch.heavy_env()
+print("ok heavy")
+
+# viz: live_paths.py is a rviz aid; PROD=1 (nav_live.sh) turns it off with viz:=false, the default keeps it
+from launch.actions import ExecuteProcess
+
+
+def live_paths():
+    ctx = LaunchContext()
+    ctx.launch_configurations["map"] = "m.yaml"
+    for e in launch.generate_launch_description().entities:
+        if type(e) is ExecuteProcess and any("live_paths" in perform_substitutions(ctx, c) for c in e.cmd):
+            return e
+    raise AssertionError("no live_paths process in nav_live.launch.py")
+
+
+def runs(entity, viz):
+    ctx = LaunchContext()
+    ctx.launch_configurations["viz"] = viz
+    return entity.condition is None or entity.condition.evaluate(ctx)
+
+
+from launch.actions import DeclareLaunchArgument
+viz_default = [e for e in launch.generate_launch_description().entities if isinstance(e, DeclareLaunchArgument) and e.name == "viz"]
+assert viz_default and perform_substitutions(LaunchContext(), viz_default[0].default_value) == "true", "viz must default to true (DEV)"
+assert runs(live_paths(), "true"), "live_paths must run with viz:=true"
+assert not runs(live_paths(), "false"), "viz:=false must stop live_paths"
+print("ok viz")
+
+# /scan comes from the stock pointcloud_to_laserscan (the quantile-0 scan_median package was removed: it did the same, and the median it was written for was rejected)
+launch_text = [e for e in launch.generate_launch_description().entities if isinstance(e, Node)]
+assert any(e.node_executable == "pointcloud_to_laserscan_node" for e in launch_text), "no pointcloud_to_laserscan_node"
+assert not any(e.node_package == "scan_median" for e in launch_text), "scan_median must be gone"
+print("ok scan")

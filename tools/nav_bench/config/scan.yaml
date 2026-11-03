@@ -14,3 +14,5 @@
     range_max: 60.0
     use_inf: true
     inf_epsilon: 1.0
+    queue_size: 10             # the stock node defaults to the core count (12 / 8 / 6 on AGX / NX / Nano): the same on every board
+    # angle_max - angle_min must not be an exact multiple of angle_increment: the stock node does not bound-check the bin index (here 720 bins, the last index 719)

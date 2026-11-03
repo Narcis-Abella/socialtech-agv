@@ -9,11 +9,12 @@ from scipy.spatial import cKDTree
 from offline_s2 import transform
 
 
-def score(map_points, check_points, T):
+def score(map_points, check_points, T, tree=None):
+    """tree: a cKDTree of map_points when the caller scores many poses on the same map (it is the cost of the call)."""
     T = np.asarray(T, float)
     if T.shape != (4, 4) or not np.isfinite(T).all():
         return {'valid': False, 'reason': 'nonfinite_transform'}
-    d = cKDTree(map_points).query(transform(check_points, T), workers=1)[0]
+    d = (tree if tree is not None else cKDTree(map_points)).query(transform(check_points, T), workers=1)[0]
     supported = d <= .15
     return {'valid': True, 'support_015': float(np.mean(supported)),
             'matched_rmse_m': float(np.sqrt(np.mean(d[supported]**2))) if np.any(supported) else None,

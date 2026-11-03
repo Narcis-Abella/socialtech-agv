@@ -1,7 +1,7 @@
 """ROS 2 node: supervisor of gn_loc with on-demand global relocalization (logic in gn_supervisor_core.py, relocalizer in reloc_live.py).
 
-In:  gn_loc/status (String, 1 Hz), gn_loc/need_reloc (Bool, latched), amcl_pose (GN's pose), wheel_topic (Tracer /odom; 'none' = no parked checks),
-     /livox/imu, /Odometry, /cloud_registered_body (the robot's FAST-LIO2; clouds are deserialized only while relocalizing), /initialpose (operator),
+In:  gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, per scan: confirms a pose), gn_loc/need_reloc (Bool, latched), amcl_pose (GN's pose), wheel_topic (Tracer /odom; 'none' = no parked checks),
+     /livox/imu, /livox/lidar (raw frames, parsed by livox_frames.py: the relocalizer's exposure), /Odometry (only: is the restarted FAST-LIO2 publishing again), /initialpose (operator),
      <nav action>/_action/status of NavigateToPose and NavigateThroughPoses.
 Out: /initialpose (only a relocalized pose), gn_supervisor/state (String JSON, latched), /diagnostics.
 Stop: CancelGoal with an empty request (= every goal) on both Nav2 actions, again every recancel_s while navigation is held and an action still
@@ -14,6 +14,7 @@ publishes a velocity. Goals are not re-sent after a relocalization: the operator
 import json
 import math
 import os
+import struct
 import time
 import traceback
 
@@ -22,20 +23,22 @@ from action_msgs.msg import GoalStatus, GoalStatusArray
 from action_msgs.srv import CancelGoal
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from livox_ros_driver2.msg import CustomMsg
 from nav_msgs.msg import Odometry
 from rclpy.clock import Clock, ClockType
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from rclpy.serialization import deserialize_message
-from sensor_msgs.msg import Imu, PointCloud2
+from sensor_msgs.msg import Imu
 from std_msgs.msg import Bool, String
 
 import gn_supervisor_core as sc
+import livox_frames as lf
 import reloc_live as rl
-from lio_submap import cloud_xyz, pose as odom_pose, stamp
+from lio_submap import stamp
 
 BEST = QoSProfile(depth=500, reliability=ReliabilityPolicy.BEST_EFFORT)
+LIDAR = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)     # 500 raw frames of 400 kB would be 200 MB in a stall; a frame older than 0.3 s is of no use here
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
 ACTIONS = ('navigate_to_pose', 'navigate_through_poses')
 LEVEL = {'MONITOR': DiagnosticStatus.OK, 'VERIFYING': DiagnosticStatus.OK, 'CONFIRMING': DiagnosticStatus.WARN,
@@ -47,6 +50,13 @@ def yaw_of(q):
 
 
 class SupervisorNode(Node):
+    @staticmethod
+    def z_band(P):
+        """[lo, hi] heights of the sensor in the map frame, from sensor_z (the mounting height over the floor of the map) +- sensor_z_margin; no sensor_z: the whole map box."""
+        z = P('sensor_z', -1.).value
+        m = P('sensor_z_margin', .5).value
+        return (z - m, z + m) if z >= 0 else None
+
     def __init__(self):
         super().__init__('gn_supervisor')
         P = self.declare_parameter
@@ -56,12 +66,14 @@ class SupervisorNode(Node):
         self.reloc = rl.LiveReloc(P('map_xyz', '').value, P('register_binary', '').value, P('lib_dir', '/opt').value,
                                   P('work_dir', '/tmp/gn_supervisor').value, P('search_deadline_s', 60.).value,
                                   tuple(P('base_from_body_xyyaw', [0., 0., 0.]).value),
-                                  restart=self.restart_lio if P('restart_lio', True).value else None, settle_s=P('lio_settle_s', 3.).value,
-                                  lio_timeout_s=P('lio_timeout_s', 15.).value)
+                                  restart=self.restart_lio if P('restart_lio', True).value else None, lio_timeout_s=P('lio_timeout_s', 15.).value,
+                                  threads=P('search_threads', 2).value, z_band=self.z_band(P), min_points=P('lidar_min_points', 3000).value, flow_s=P('lidar_flow_s', .5).value)
+        # the FAST-LIO2 config the raw frames are filtered with (ops/nav_live.sh: blind 0.1, point_filter_num 2; extrinsic_T of the upstream mid360.yaml)
+        self.frame_cfg = dict(blind=P('lidar_blind', .1).value, decimate=P('lidar_decimate', 2).value, extrinsic=tuple(P('lidar_to_body_xyz', [-.011, -.02329, .04412]).value))
         self.init_std, self.init_yaw_std = P('init_std_m', .15).value, P('init_yaw_std_deg', 5.).value
         binary, lib = self.get_parameter('register_binary').value, self.get_parameter('lib_dir').value
         missing = [f for f, ok in ((self.reloc.map_xyz, os.path.isfile(self.reloc.map_xyz)), (binary, os.access(binary, os.X_OK)),
-                                   (f'{lib}/libsmall_gicp.so', os.path.isfile(f'{lib}/libsmall_gicp.so'))) if not ok]
+                                   (f'{lib}/libsmall_gicp.so', os.path.isfile(f'{lib}/libsmall_gicp.so')), (f'{lib}/libcorr_search.so', os.path.isfile(f'{lib}/libcorr_search.so'))) if not ok]
         if missing:                       # refuse to start: a supervisor that cannot relocalize would only find out at the first stop
             raise SystemExit(f'gn_supervisor: missing {missing} (parameters map_xyz, register_binary, lib_dir)')
         self.mono = time.monotonic
@@ -71,15 +83,16 @@ class SupervisorNode(Node):
         self.diag_pub = self.create_publisher(DiagnosticArray, '/diagnostics', 10)
         self.cancel = {a: self.create_client(CancelGoal, f'/{a}/_action/cancel_goal') for a in ACTIONS}
         self.create_subscription(String, 'gn_loc/status', self.on_status, 10)
+        self.create_subscription(String, 'gn_loc/scan_fit', self.on_scan_fit, 10)
         self.create_subscription(Bool, 'gn_loc/need_reloc', lambda m: self.core.on_need_reloc(self.mono(), m.data), LATCHED)
         self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose', self.on_gn_pose, LATCHED)
         self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.on_initialpose, 10)
         wheel = P('wheel_topic', '/odom').value
         if wheel and wheel != 'none':
-            self.create_subscription(Odometry, wheel, lambda m: self.core.on_wheel(self.mono(), m.twist.twist.linear.x, m.twist.twist.angular.z), 50)
-        self.create_subscription(Imu, '/livox/imu', self.on_imu, BEST)
+            self.create_subscription(Odometry, wheel, self.on_wheel, 50)
+        self.create_subscription(Imu, '/livox/imu', self.on_imu, BEST, raw=True)
         self.create_subscription(Odometry, '/Odometry', self.on_odom, BEST)
-        self.create_subscription(PointCloud2, '/cloud_registered_body', self.on_cloud, BEST, raw=True)
+        self.create_subscription(CustomMsg, '/livox/lidar', self.on_lidar, LIDAR, raw=True)
         for a in ACTIONS:            # rclcpp_action publishes its status transient-local (rcl_action_qos_profile_status_default)
             self.create_subscription(GoalStatusArray, f'/{a}/_action/status', lambda m, a=a: self.on_goals(a, m), LATCHED)
         self.create_timer(.1, self.tick, clock=Clock(clock_type=ClockType.STEADY_TIME))   # watchdogs on wall time, whatever /clock does
@@ -92,6 +105,13 @@ class SupervisorNode(Node):
             self.core.on_status(self.mono(), f[0], float(f[2]), float(f[4]), int(f[6]))
         except (IndexError, ValueError):
             self.get_logger().warn(f'unparsed gn_loc/status: {m.data!r}', throttle_duration_sec=10.)
+
+    def on_scan_fit(self, m):
+        f = m.data.split()            # same text as the status
+        try:
+            self.core.on_scan_fit(self.mono(), f[0], float(f[2]), float(f[4]))
+        except (IndexError, ValueError):
+            self.get_logger().warn(f'unparsed gn_loc/scan_fit: {m.data!r}', throttle_duration_sec=10.)
 
     def on_gn_pose(self, m):
         p = m.pose.pose
@@ -107,8 +127,8 @@ class SupervisorNode(Node):
         self.core.on_goal_status(self.mono(), action, any(s.status in (GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING) for s in m.status_list))
 
     def restart_lio(self):
-        """Called by the relocalizer once the robot has been still for 2 s: FAST-LIO2 is killed by its exact name and the launch respawns it, so the exposure
-        runs on a filter that took gravity from a still IMU and starts at z = 0 (the old one keeps whatever a blind period did to it)."""
+        """Called by the relocalizer when its exposure begins (the robot still for 2 s, the lidar seeing): FAST-LIO2 is killed by its exact name and the launch respawns it,
+        so the filter the robot goes on with took gravity from a still IMU and starts at z = 0 (the old one keeps whatever a blind period did to it)."""
         n = rl.signal_by_comm(self.lio_process)
         self.get_logger().warn(f'restarting FAST-LIO2 ({self.lio_process}): {n} process(es) signalled' if n else f'no {self.lio_process} process to restart')
         return n > 0
@@ -119,28 +139,39 @@ class SupervisorNode(Node):
         self.reloc.abort()
         self.core.on_reloc_result(self.mono(), False, None, f'exception_in_{what}')
 
-    def on_imu(self, m):
-        if self.reloc.active:
-            g, a = m.angular_velocity, m.linear_acceleration
-            try:
-                self.reloc.add_imu(stamp(m), (g.x, g.y, g.z), (a.x, a.y, a.z))
-            except Exception:
-                self.reloc_failed('imu')
+    def guarded(self, what, f, *a):
+        try:
+            f(*a)
+        except Exception:
+            if self.reloc.active:
+                self.reloc_failed(what)
+            else:      # a feed that fails while nothing is relocalizing must not count as a failed relocalization
+                self.get_logger().error(f'{what} feed failed: {traceback.format_exc()}', throttle_duration_sec=10.)
+
+    def on_wheel(self, m):
+        v, w = m.twist.twist.linear.x, m.twist.twist.angular.z
+        self.core.on_wheel(self.mono(), v, w)
+        self.reloc.add_wheel(self.core.wheel_moving)
+
+    def on_imu(self, raw):        # always: the stillness window of the relocalizer is a sliding one and must be warm when a relocalization starts. Raw: 1 us to unpack vs 44 us to deserialize, 200 times a second
+        try:
+            t, g, a = lf.imu_fields(bytes(raw))
+        except (ValueError, struct.error):
+            self.get_logger().warn('unparsed /livox/imu message', throttle_duration_sec=10.)
+            return
+        self.guarded('imu', self.reloc.add_imu, t, g, a)
 
     def on_odom(self, m):
         if self.reloc.active:
-            try:
-                self.reloc.add_odom(stamp(m), odom_pose(m))
-            except Exception:
-                self.reloc_failed('odom')
+            self.guarded('odom', self.reloc.add_odom, stamp(m))
 
-    def on_cloud(self, raw):
-        if self.reloc.stage == 'expose':          # ~20k points at 10 Hz: never deserialized while not needed
-            try:
-                m = deserialize_message(raw, PointCloud2)
-                self.reloc.add_cloud(stamp(m), cloud_xyz(m))
-            except Exception:
-                self.reloc_failed('cloud')
+    def on_lidar(self, raw):      # always: ~2-4 ms a frame, and it keeps "the lidar sees" current
+        try:
+            t, valid, xyz = lf.parse(raw, full=self.reloc.stage == 'expose', **self.frame_cfg)      # the whole cloud only while the exposure collects it
+        except (ValueError, struct.error):
+            self.get_logger().warn('unparsed /livox/lidar frame', throttle_duration_sec=10.)
+            return
+        self.guarded('lidar', self.reloc.add_lidar, t, xyz, valid)
 
     # ------------------------------------------------------------------ outputs
     def tick(self):
@@ -217,8 +248,16 @@ class SupervisorNode(Node):
 def main():
     rclpy.init()
     n = SupervisorNode()
+    # the default executor costs ~1 ms of CPU per wakeup and this node wakes ~280 times a second (IMU 200 Hz, wheels 50 Hz, lidar and scan_fit 10 Hz): the events executor
+    # takes the same work with a third of the CPU (laptop rclpy 7.1.12). SUP_EXECUTOR=default goes back.
+    if os.environ.get('SUP_EXECUTOR', 'events') == 'events':
+        from rclpy.experimental import EventsExecutor
+        ex = EventsExecutor()
+    else:
+        ex = rclpy.executors.SingleThreadedExecutor()
+    ex.add_node(n)
     try:
-        rclpy.spin(n)
+        ex.spin()
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
