@@ -6,9 +6,14 @@
 behavior_server:
   ros__parameters:
     robot_base_frame: base_footprint   # the real robot has no base_link in its TF tree (the sim has)
+    local_frame: odom_aligned          # the local costmap's global_frame: Spin and BackUp check poses in this frame against its cells without transforming (spin.cpp)
+docking_server:
+  ros__parameters:
+    fixed_frame: odom_aligned          # same: the collision check of its trajectory does not transform again (opennav_docking controller.cpp)
 local_costmap:
   local_costmap:
     ros__parameters:
+      global_frame: odom_aligned   # odom with the axes of map, so that the walls stay straight rows of cells (ops/local_frame_aligner.py). Not map itself: a frozen localizer would not stop the controller
       footprint: "[[0.33, 0.27], [0.33, -0.27], [-0.33, -0.27], [-0.33, 0.27]]"   # 2026-10-26 (Narcis): half-width 0.29 -> 0.27 (inscribed radius = 0.27)
       obstacle_layer:
         # odom is not at floor level: planar_odom sets odom -> base_footprint z = FAST-LIO z - sensor_height, relative to where FAST-LIO started (measured -0.51 m and -1.24 m on two boots). /scan, in lidar_level, sits at

@@ -13,7 +13,7 @@ buf = Buffer()
 TransformListener(buf, node)
 client = node.create_client(ManageLifecycleNodes, "/lifecycle_manager_navigation/manage_nodes")
 node.get_logger().info("waiting for the initial pose (2D Pose Estimate in rviz2) before starting Nav2")
-while rclpy.ok() and not buf.can_transform("map", "base_footprint", rclpy.time.Time()):
+while rclpy.ok() and not (buf.can_transform("map", "base_footprint", rclpy.time.Time()) and buf.can_transform("odom_aligned", "base_footprint", rclpy.time.Time())):   # the local costmap's frame comes right after map -> odom
     rclpy.spin_once(node, timeout_sec=0.5)
 node.get_logger().info("localized: starting Nav2")
 client.wait_for_service()

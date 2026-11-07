@@ -90,5 +90,6 @@ def generate_launch_description():
         *localizer_nodes(LC("overrides")),
         # gn_loc's trail (/gn_path); "-" = no reference path. A rviz aid: viz:=false (PROD=1) leaves it out
         ExecuteProcess(cmd=["python3", os.path.join(NAV_BENCH, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen", condition=IfCondition(LC("viz"))),
+        ExecuteProcess(name="local_frame_aligner", output="screen", respawn=True, respawn_delay=2.0, cmd=["python3", "-B", os.path.join(os.path.dirname(os.path.realpath(__file__)), "local_frame_aligner.py"), "--ros-args", "-p", ["use_sim_time:=", LC("sim_time")]]),
         *supervisor_nodes(),
     ])

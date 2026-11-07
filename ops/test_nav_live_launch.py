@@ -101,4 +101,7 @@ assert yaml.safe_load(perform_substitutions(ctx, values["target_frame"])) == "li
 h = 0.5 + 0.04412
 assert abs(values["min_height"] - (0.10 - h)) < 1e-9 and abs(values["max_height"] - (1.80 - h)) < 1e-9, values
 print("ok scan height")
+ctx.launch_configurations.update(map="MAP", sim_time="false")
+assert any(type(e) is ExecuteProcess and any("local_frame_aligner" in perform_substitutions(ctx, c) for c in e.cmd) for e in launch.generate_launch_description().entities), "no local_frame_aligner: the local costmap has no frame"
+print("ok aligner")
 print("ok scan")

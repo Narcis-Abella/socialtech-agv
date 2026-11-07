@@ -100,7 +100,7 @@ local_costmap:
       rolling_window: true
       width: 3
       height: 3
-      resolution: 0.05
+      resolution: 0.025
       plugins: [obstacle_layer, inflation_layer]
       inflation_layer: {plugin: 'nav2_costmap_2d::InflationLayer', cost_scaling_factor: 4.0, inflation_radius: 0.70}
       static_layer: {plugin: 'nav2_costmap_2d::StaticLayer', map_subscribe_transient_local: true}
