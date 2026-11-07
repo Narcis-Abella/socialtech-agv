@@ -69,7 +69,7 @@ def main():
     fields = [PointField(name=k, offset=4 * i, datatype=PointField.FLOAT32, count=1) for i, k in enumerate("xyz")]
     deadline = time.time() + 40
     try:
-        while (got["C"] is None or got["status"] is None) and time.time() < deadline:   # the status follows the correction by an instant
+        while (got["C"] is None or not (got["status"] or "").startswith("state=ok")) and time.time() < deadline:   # C and the status of the same cycle arrive in either order; the first cycles have no cloud yet
             now = n.get_clock().now().to_msg()
             tf = TransformStamped(); tf.header.stamp = now; tf.header.frame_id = "map"; tf.child_frame_id = "odom"; tf.transform.rotation.w = 1.0; br.sendTransform(tf)
             o = Odometry(); o.header.stamp = now; o.header.frame_id = "camera_init"; o.child_frame_id = "body"
@@ -79,8 +79,18 @@ def main():
             c = PointCloud2(); c.header.stamp = now; c.header.frame_id = "body"; c.height = 1; c.width = len(body); c.fields = fields; c.point_step = 12; c.row_step = 12 * len(body)
             c.is_dense = True; c.data = body.tobytes(); cloud_pub.publish(c)
             rclpy.spin_once(n, timeout_sec=0.1)
-        # FAST-LIO restarts (a pose far from the last one): the old C belonged to the old camera_init, so the node must go back to the identity at once, before any new measurement
         first = {"C": got["C"], "status": got["status"]}   # what the main assertions below judge
+        # no cloud any more (lidar covered, gn lost...): the node cannot measure but it is still the same FAST-LIO, so C must keep arriving as a heartbeat; planar_odom drops a C that goes silent
+        beats = []
+        sub = n.create_subscription(QuaternionStamped, "/level_corrector/correction", lambda m: beats.append(m), 10)
+        t_end = time.time() + 4.5
+        while time.time() < t_end:
+            o = Odometry(); o.header.stamp = n.get_clock().now().to_msg(); o.pose.pose.position.x, o.pose.pose.position.y, o.pose.pose.position.z = t_chain; q = quat(R_chain)
+            o.pose.pose.orientation.x, o.pose.pose.orientation.y, o.pose.pose.orientation.z, o.pose.pose.orientation.w = q
+            odom_pub.publish(o); rclpy.spin_once(n, timeout_sec=0.1)
+        n.destroy_subscription(sub)
+        assert len(beats) >= 6, f"{len(beats)} corrections in 4.5 s without clouds (rate 2 Hz): the corrector went silent and planar_odom would drop its C"
+        # FAST-LIO restarts (a pose far from the last one): the old C belonged to the old camera_init, so the node must go back to the identity at once, before any new measurement
         got["C"] = None
         t_end = time.time() + 5
         while got["C"] is None and time.time() < t_end:

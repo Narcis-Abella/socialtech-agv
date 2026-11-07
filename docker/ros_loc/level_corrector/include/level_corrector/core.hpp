@@ -25,6 +25,25 @@ inline Mat3 lowpass(const Mat3& C, const Mat3& Cm, double dt, double tau, double
   return Eigen::AngleAxisd(step, d.axis()).toRotationMatrix() * C;
 }
 
+// Pose of the body in map to seed the registration: gn_loc's map -> odom was fitted on the frame planar_odom publishes, which carries C, so the chain goes through C * L (without C the
+// seed is off by theta * r: 0.12 m at 10 m, 0.49 m at 40 m from where FAST-LIO started, with theta = 0.7 deg).
+inline Eigen::Isometry3d seed_pose(const Eigen::Isometry3d& T_map_odom, const Mat3& C, const Mat3& L, const Mat3& Rb, const Vec3& p) {
+  Eigen::Isometry3d T_ob = Eigen::Isometry3d::Identity();
+  T_ob.linear() = C * L * Rb;
+  T_ob.translation() = C * L * p;
+  return T_map_odom * T_ob;
+}
+
+// FAST-LIO restarted (its camera_init is new, so the old C belongs to nothing) from two consecutive /Odometry poses: the clock went back, or the pose moved more than a robot can in the
+// gap (a restart puts it back at the origin), or there was a gap with both poses near the origin (then a reset costs centimetres and a stall cannot be told from a restart). A stall away
+// from the origin (lidar covered, DDS hiccup) keeps the same camera_init and a continuous pose: not a restart, C must not drop (it would step the frame by theta * r).
+inline bool restarted(double prev_t, const Vec3& prev_p, double t, const Vec3& p) {
+  const double gap = t - prev_t;
+  if (gap < 0) return true;
+  if ((p - prev_p).norm() > 1.0 + 1.5 * gap) return true;
+  return gap > 1.5 && p.norm() < 2.0 && prev_p.norm() < 2.0;
+}
+
 struct Gates {
   int min_inliers = 300;        // floor: fewer points constrain neither roll nor pitch
   double min_ratio = 0.9;       // inliers / source points: density independent (good fits 0.98, bad ones 0.68-0.78 on 198 scans of 162508)

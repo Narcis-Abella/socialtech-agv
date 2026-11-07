@@ -36,6 +36,25 @@ TEST(Lowpass, MatchesPythonFreeAndSlewLimited) {
   EXPECT_LT((lowpass(C, Cm, 2.0, 10.0, 5.0) - free).cwiseAbs().maxCoeff(), 1e-9);
   EXPECT_LT((lowpass(C, Cm, 2.0, 10.0, 0.05) - slew).cwiseAbs().maxCoeff(), 1e-9);
 }
+TEST(SeedPose, CarriesTheCorrectionBecauseGnFittedItOnTheFrameThatCarriesIt) {
+  const Mat3 L = Eigen::AngleAxisd(M_PI / 2, Vec3::UnitZ()).toRotationMatrix(), C = rv(0.7, 0.0), Rb = Mat3::Identity();
+  Eigen::Isometry3d T_mo = Eigen::Isometry3d::Identity(); T_mo.translation() = Vec3(1, 2, 3);
+  const Vec3 p(40, 0, 0);                                      // 40 m from where FAST-LIO started
+  const auto T = seed_pose(T_mo, C, L, Rb, p);
+  EXPECT_LT((T.translation() - (T_mo.translation() + C * L * p)).norm(), 1e-12);
+  EXPECT_LT((T.linear() - C * L * Rb).norm(), 1e-12);
+  EXPECT_GT((T.translation() - (T_mo.translation() + L * p)).norm(), 0.4);   // the seed without C is off by 0.49 m here
+  EXPECT_LT((seed_pose(T_mo, Mat3::Identity(), L, Rb, p).translation() - (T_mo.translation() + L * p)).norm(), 1e-12);   // C = identity: as before
+}
+TEST(Restarted, AJumpAReversedClockOrASilentRestartAtTheOriginAreRestartsAStallIsNot) {
+  const Vec3 o(0.3, 0, 0), far(30, 5, 0);
+  EXPECT_FALSE(restarted(10.0, far, 10.1, far + Vec3(0.05, 0, 0)));      // normal 10 Hz step
+  EXPECT_TRUE(restarted(10.0, far, 10.1, Vec3(0, 0, 0)));                // new filter: pose back at the origin
+  EXPECT_TRUE(restarted(10.0, far, 9.0, far));                           // the clock went back
+  EXPECT_FALSE(restarted(10.0, far, 12.5, far + Vec3(1.0, 0, 0)));       // lidar covered 2.5 s at 30 m: same camera_init, the pose is continuous (a stall, not a restart)
+  EXPECT_FALSE(restarted(10.0, far, 14.0, far + Vec3(4.0, 0, 0)));       // it kept moving at 1 m/s during a 4 s stall
+  EXPECT_TRUE(restarted(10.0, o, 12.5, o));                              // gap with the pose at the origin: it cannot be told from a restart, and a reset there costs ~cm
+}
 TEST(Gates, EachLimitRejectsWithItsOwnReason) {
   Gates g; Fit ok{1000, 1050, 0.02, 0.1, 1.0};   // inliers, source points, rms, dxy, dyaw
   EXPECT_EQ(gate_reason(ok, g), nullptr);

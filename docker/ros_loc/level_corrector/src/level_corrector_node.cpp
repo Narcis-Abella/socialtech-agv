@@ -58,7 +58,7 @@ class LevelCorrector : public rclcpp::Node {
   void on_odom(const nav_msgs::msg::Odometry& m) {
     const double t = secs(m.header.stamp);
     const Vec3 p(m.pose.pose.position.x, m.pose.pose.position.y, m.pose.pose.position.z);
-    if (!odom_.empty() && (t - odom_.back().t > 1.5 || (p - odom_.back().p).norm() > 1.0 || t < odom_.back().t)) {   // FAST-LIO restarted: new camera_init
+    if (!odom_.empty() && restarted(odom_.back().t, odom_.back().p, t, p)) {   // FAST-LIO restarted: new camera_init
       restart_ = true; odom_.clear();
       filter_.reset(); publish_c(now());   // the old C belonged to the old camera_init: plain level until the first valid measurement of the new one
     }
@@ -74,7 +74,13 @@ class LevelCorrector : public rclcpp::Node {
 
   void say(const std::string& s) { std_msgs::msg::String m; m.data = s; pub_s_->publish(m); }
 
+  // Every cycle, whether it could measure or not, C goes out again: it is the heartbeat planar_odom needs to keep applying it (it drops a C that goes silent: the corrector may be gone).
   void tick() {
+    cycle();
+    if (filter_.primed()) publish_c(now());
+  }
+
+  void cycle() {
     const auto cloud = std::move(cloud_); cloud_.reset();
     if (!cloud) return say("state=no_cloud");
     if (odom_.empty()) return say("state=no_odom");
@@ -84,8 +90,6 @@ class LevelCorrector : public rclcpp::Node {
     if (std::abs(o->t - ts) > 0.15) return say("state=odom_far");
     Eigen::Isometry3d T_mo;
     try { T_mo = tf2::transformToEigen(tf_buf_.lookupTransform("map", "odom", tf2::TimePointZero)); } catch (const tf2::TransformException& e) { return say("state=no_map_odom"); }
-    Eigen::Isometry3d T_ob = Eigen::Isometry3d::Identity();   // odom <- body (the IMU), through the static level
-    T_ob.linear() = L_ * o->R; T_ob.translation() = L_ * o->p;
 
     std::vector<Eigen::Vector3f> pts;
     pts.reserve(cloud->width * cloud->height);
@@ -93,7 +97,7 @@ class LevelCorrector : public rclcpp::Node {
       const Eigen::Vector3f q(*x, *y, *z);
       if (q.allFinite() && q.norm() > 0.8f) pts.push_back(q);
     }
-    const Aligned a = reg_->align(pts, T_mo * T_ob);
+    const Aligned a = reg_->align(pts, seed_pose(T_mo, filter_.C(), L_, o->R, o->p));
     const char* bad = gate_reason(a.fit, gates_);
     const Vec3 up = a.T.linear().transpose() * Vec3::UnitZ();                       // the map's up in the body
     const Mat3 Cm = tilt_rot(L_ * o->R * up, Vec3::UnitZ());
@@ -102,7 +106,6 @@ class LevelCorrector : public rclcpp::Node {
       const auto r = filter_.update(Cm, ts);
       if (r == Filter::Jump) st = "jump"; else restart_ = false;
     }
-    if (filter_.primed()) publish_c(cloud->header.stamp);
     auto xy = [](const Mat3& R) -> Eigen::Vector2d { const Vec3 u = R.transpose() * Vec3::UnitZ(); return Eigen::Vector2d(std::atan2(u.x(), u.z()), std::atan2(u.y(), u.z())) * 180 / M_PI; };
     const Eigen::Vector2d m = xy(Cm.transpose()), c = xy(filter_.C().transpose());
     char b[400];
