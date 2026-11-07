@@ -43,9 +43,18 @@ class Paths(Node):
         self.trail_pub.publish(self.trail)
 
 
+def spin(node):
+    try:
+        rclpy.spin(node)
+    except Exception:
+        if rclpy.ok():
+            raise
+        # the launch stopped: a pose that arrived with the context already gone fails to publish; that is the end of the node, not an error (it used to exit with code 1)
+
+
 def main():
     rclpy.init(args=sys.argv)
-    rclpy.spin(Paths(sys.argv[1], sys.argv[2]))
+    spin(Paths(sys.argv[1], sys.argv[2]))
 
 
 if __name__ == "__main__":
