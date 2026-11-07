@@ -23,6 +23,16 @@ if [ -d /locsrc ]; then
 fi
 chain_map
 fastlio_yaml "$out/fastlio.yaml"
+# LEVEL_CORRECTOR=1: level_corrector (registers the cloud against the world's own 3D points, written here) built over the image's packages (small_gicp prebuilt in /sg); planar_odom
+# consumes its correction (the overlay of /odomsrc, sim_up.sh)
+LC_ARG=
+if [ "${LEVEL_CORRECTOR:-0}" != 0 ]; then
+  python3 /tools/sim_realism/tris_to_ply.py /pat/loyola.tris "$out/map3d" 0.1 0.05 > "$out/map3d.log"
+  export LEVEL_MAP_DIR="$out/map3d"
+  mkdir -p /tmp/lcws && (cd /tmp/lcws && colcon build --base-paths /locsrc --packages-select level_corrector --merge-install --install-base /tmp/lc_install --cmake-args -DCMAKE_PREFIX_PATH=/sg -DBUILD_TESTING=OFF > "$out/build_lc.log" 2>&1) || { echo "level_corrector build failed: see $out/build_lc.log" >&2; exit 1; }
+  source /tmp/lc_install/setup.bash
+  LC_ARG=level_corrector:=true
+fi
 share=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav
 python3 /ops/merge_params.py "$share/config/nav2_params.yaml" /ops/nav2_robot_overrides.yaml > "$out/nav2_params.yaml"
 if [ "${SUPERVISOR:-0}" != 0 ]; then
@@ -33,7 +43,7 @@ if [ "${SCAN_EXTRA:-0}" != 0 ]; then
   ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
 fi
 ros2 launch /ops/nav_robot.launch.py livox_config:=/dev/null fastlio_params:="$out/fastlio.yaml" map:="$CHAIN_MAP" overrides:=/ops/live_overrides.yaml \
-  sensor_height:=$SENSOR_H level_qx:=0.0 level_qy:=0.0 level_qz:=0.0 level_qw:=1.0 nav2_params:="$out/nav2_params.yaml" driver:=false sim_time:=true base:=false > "$out/launch.log" 2>&1 &
+  sensor_height:=$SENSOR_H level_qx:=0.0 level_qy:=0.0 level_qz:=0.0 level_qw:=1.0 nav2_params:="$out/nav2_params.yaml" driver:=false sim_time:=true base:=false $LC_ARG > "$out/launch.log" 2>&1 &
 sleep 12
 # the robot starts at the spawn pose: tell gn_loc (the operator's 2D Pose Estimate), as trials.py does for every trial
 python3 - "$sx" "$sy" "$sw" <<'P' > "$out/init.log" 2>&1

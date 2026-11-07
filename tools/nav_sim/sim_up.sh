@@ -7,6 +7,10 @@ if [ -d /navsrc ]; then   # socialtech_simreal / socialtech_livox_sim newer than
   mkdir -p /tmp/navws && (cd /tmp/navws && colcon build --base-paths /navsrc --packages-select socialtech_simreal socialtech_livox_sim --merge-install --install-base /tmp/nav_install > "$out/build_nav.log" 2>&1)
   source /tmp/nav_install/setup.bash
 fi
+if [ -d /odomsrc ]; then   # planar_odom newer than the image's: overlay
+  mkdir -p /tmp/odomws && (cd /tmp/odomws && colcon build --base-paths /odomsrc --packages-select planar_odom --merge-install --install-base /tmp/odom_install > "$out/build_odom.log" 2>&1)
+  source /tmp/odom_install/setup.bash
+fi
 if ! ros2 pkg prefix hospital-agv-sim > /dev/null 2>&1; then
   mkdir -p /tmp/ws/src && ln -sfn "${SIM_SRC:?hospital-agv-sim is not in the image: set SIM_SRC}" /tmp/ws/src/hospital-agv-sim
   (cd /tmp/ws && colcon build --merge-install --install-base /tmp/sim_install > "$out/build.log" 2>&1)
