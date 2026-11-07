@@ -16,3 +16,7 @@ def footprint(p, q, level, sensor_height, lidar_xy=(0.0, 0.0)):
     c, s = np.cos(yaw), np.sin(yaw)
     return po[0] + c * lidar_xy[0] - s * lidar_xy[1], po[1] + s * lidar_xy[0] + c * lidar_xy[1], po[2] - sensor_height, np.sin(yaw / 2), np.cos(yaw / 2)
 
+
+def corrected_level(level, c):
+    """Quaternion of odom<-camera_init once level_corrector's roll/pitch correction c (a rotation of odom, quaternion x, y, z, w) is applied: C * level."""
+    return pe.mat_to_quat(pe.quat_to_mat(c) @ pe.quat_to_mat(level))

@@ -18,6 +18,8 @@ NAV_BENCH = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file
 
 SCAN = os.path.join(NAV_BENCH, "config/scan.yaml")
 CLOUD = [("cloud_in", "/cloud_registered_body")]
+LEVEL_MAP_DIR = os.environ.get("LEVEL_MAP_DIR", "/map")   # where map.ply + map.yaml are: the live stack mounts the map at /map, the sim writes its own
+LEVEL = ParameterValue(["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])   # odom <- camera_init
 LIDAR_IN_BODY = [-0.011, -0.02329, 0.04412]   # extrinsic_T of FAST-LIO2's config (upstream mid360.yaml, unchanged by nav_live.sh)
 
 
@@ -72,7 +74,7 @@ def supervisor_nodes():
 
 def generate_launch_description():
     args = [DeclareLaunchArgument(n) for n in ("livox_config", "fastlio_params", "map", "overrides", "sensor_height", "level_qx", "level_qy", "level_qz", "level_qw")]
-    args += [DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false"), DeclareLaunchArgument("viz", default_value="true")]
+    args += [DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false"), DeclareLaunchArgument("viz", default_value="true"), DeclareLaunchArgument("level_corrector", default_value="false")]
     return LaunchDescription(args + [
         SetParameter(name="use_sim_time", value=True, condition=IfCondition(LC("sim_time"))),
         Node(package="livox_ros_driver2", executable="livox_ros_driver2_node", name="livox_lidar_publisher", parameters=[{
@@ -81,10 +83,13 @@ def generate_launch_description():
             condition=IfCondition(LC("driver")), **heavy_env()),
         # respawn: gn_supervisor restarts it by killing it (a fresh filter takes gravity from a still IMU and starts at z = 0, which a long blind period does not leave)
         Node(package="fast_lio", executable="fastlio_mapping", parameters=[LC("fastlio_params")], respawn=True, respawn_delay=1.0, **heavy_env()),
+        # level_corrector:=true (nav_live.sh LEVEL_CORRECTOR=1): planar_odom takes the roll/pitch correction of the odom frame that level_corrector registers against the map; off: the static level, as always
         Node(package="planar_odom", executable="planar_odom", parameters=[{
             "sensor_height": ParameterValue(LC("sensor_height"), value_type=float),
             "lidar_in_body": LIDAR_IN_BODY,
-            "level": ParameterValue(["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])}]),
+            "level": LEVEL,
+            "correction_topic": ParameterValue(PythonExpression(["'/level_corrector/correction' if '", LC("level_corrector"), "' == 'true' else ''"]), value_type=str)}]),
+        Node(package="level_corrector", executable="level_corrector_node", parameters=[{"map_dir": LEVEL_MAP_DIR, "level": LEVEL}], condition=IfCondition(LC("level_corrector"))),
         *scan_nodes(),
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}, LC("overrides")]),
         *localizer_nodes(LC("overrides")),

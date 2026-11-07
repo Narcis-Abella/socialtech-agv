@@ -1,0 +1,6 @@
+# Overlay: the global band layer marks and raytraces up to 12 m (the checkout's value is 10).
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      obstacle_layer:
+        cloud: {raytrace_max_range: 12.0, obstacle_max_range: 12.0}
