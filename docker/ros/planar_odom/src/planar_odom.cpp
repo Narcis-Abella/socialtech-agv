@@ -45,6 +45,7 @@ class PlanarOdom : public rclcpp::Node {
     base_ = {lv[0] / n, lv[1] / n, lv[2] / n, lv[3] / n};
     set_level(base_);
     max_corr_rad_ = declare_parameter("max_correction_deg", 5.0) * M_PI / 180;
+    corr_timeout_s_ = declare_parameter("correction_timeout_s", 15.0);
     const auto topic = declare_parameter("correction_topic", std::string());
     geometry_msgs::msg::TransformStamped l;
     l.header.stamp = now();
@@ -81,8 +82,15 @@ class PlanarOdom : public rclcpp::Node {
       return;
     }
     set_level(quat_mul({q.x / n, q.y / n, q.z / n, q.w / n}, base_));
+    last_corr_ = now();
+    have_corr_ = true;
   }
   void cb(const nav_msgs::msg::Odometry &m) {
+    if (dynamic_level_ && have_corr_ && corr_timeout_s_ > 0 && (now() - last_corr_).seconds() > corr_timeout_s_) {
+      set_level(base_);
+      have_corr_ = false;
+      RCLCPP_WARN(get_logger(), "no level correction for %.0f s: back to the plain level", corr_timeout_s_);
+    }
     const auto &p = m.pose.pose.position;
     const auto &q = m.pose.pose.orientation;
     const Mat Rq = quat_to_mat(q.x, q.y, q.z, q.w);
@@ -110,7 +118,9 @@ class PlanarOdom : public rclcpp::Node {
     c.transform.rotation.x = level_[0]; c.transform.rotation.y = level_[1]; c.transform.rotation.z = level_[2]; c.transform.rotation.w = level_[3];
     br_.sendTransform(std::vector<geometry_msgs::msg::TransformStamped>{t, c});
   }
-  double max_corr_rad_;
+  double max_corr_rad_, corr_timeout_s_ = 15.0;
+  bool have_corr_ = false;
+  rclcpp::Time last_corr_{0, 0, RCL_ROS_TIME};
   bool dynamic_level_ = false;
   Quat base_, level_;
   double h_;

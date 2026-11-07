@@ -142,6 +142,54 @@ def test_with_a_correction_topic_camera_init_is_dynamic_and_both_transforms_use_
         rclpy.shutdown()
 
 
+def test_without_corrections_for_correction_timeout_s_the_plain_level_comes_back():
+    import rclpy
+    from geometry_msgs.msg import QuaternionStamped
+    from nav_msgs.msg import Odometry
+    from rclpy.node import Node
+    from tf2_msgs.msg import TFMessage
+
+    tilt = np.radians(0.7)
+    c = np.array([np.sin(tilt / 2), 0.0, 0.0, np.cos(tilt / 2)])
+    corrected, plain = po.corrected_level(LEVEL, c), np.array(LEVEL)
+    node_proc = subprocess.Popen([binary(), "--ros-args", "-p", f"sensor_height:={H}", "-p", f"level:={LEVEL}", "-p", f"lidar_in_body:={LIDAR}",
+                                  "-p", "correction_topic:=/level_corrector/correction", "-p", "correction_timeout_s:=2.0"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        rclpy.init()
+        n = Node("planar_odom_test_w")
+        cam = {}
+        n.create_subscription(TFMessage, "/tf", lambda m: [cam.__setitem__(t.header.stamp.nanosec, t.transform.rotation) for t in m.transforms if t.child_frame_id == "camera_init"], 1000)
+        pub_c, pub = n.create_publisher(QuaternionStamped, "/level_corrector/correction", 10), n.create_publisher(Odometry, "/Odometry", 100)
+
+        def odom(i):
+            m = Odometry(); m.header.stamp.nanosec = i; m.pose.pose.orientation.w = 1.0; pub.publish(m)
+
+        def level_of(i):
+            for _ in range(40):
+                rclpy.spin_once(n, timeout_sec=0.05)
+                if i in cam: break
+            k = cam[i]; return np.array([k.x, k.y, k.z, k.w])
+
+        t_end = time.time() + 5   # start-up, C repeated like the corrector does every cycle
+        while time.time() < t_end:
+            q = QuaternionStamped(); q.quaternion.x, q.quaternion.y, q.quaternion.z, q.quaternion.w = c; pub_c.publish(q); rclpy.spin_once(n, timeout_sec=0.1)
+        odom(1)
+        assert abs(abs(level_of(1) @ corrected) - 1) < 1e-9, "the correction is not applied while it keeps arriving"
+        t_end = time.time() + 3.5   # the corrector is gone (dead, restarting, busy loading its map): nothing arrives for longer than the timeout
+        while time.time() < t_end:
+            rclpy.spin_once(n, timeout_sec=0.1)
+        odom(2)
+        assert abs(abs(level_of(2) @ plain) - 1) < 1e-9, "a stale correction is still applied: the floor would be tilted by the difference between two FAST-LIO starts"
+        q = QuaternionStamped(); q.quaternion.x, q.quaternion.y, q.quaternion.z, q.quaternion.w = c; pub_c.publish(q)   # it is back
+        for _ in range(10):
+            rclpy.spin_once(n, timeout_sec=0.05)
+        odom(3)
+        assert abs(abs(level_of(3) @ corrected) - 1) < 1e-9, "the correction is not applied again when it comes back"
+    finally:
+        node_proc.terminate()
+        rclpy.shutdown()
+
+
 if __name__ == "__main__":
     try:
         import rclpy  # noqa: F401
