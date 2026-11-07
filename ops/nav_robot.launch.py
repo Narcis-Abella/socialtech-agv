@@ -1,4 +1,4 @@
-"""Navigation on the real robot: the live localization (nav_live.launch.py: driver, FAST-LIO2, odom, scan, map_server, AMCL) + Nav2's navigation_launch.py
+"""Navigation on the real robot: the live localization (nav_live.launch.py: driver, FAST-LIO2, odom, scan, map_server, gn_loc, the level corrector, and the supervisor with SUPERVISOR=1) + Nav2's navigation_launch.py
 (planner, controller, smoothers, behaviors, collision monitor) + the Tracer base only with base:=true (without it a goal moves nothing). Same arguments as
 nav_live.launch.py plus nav2_params:=P.yaml. driver:=false sim_time:=true: the full-chain simulation (tools/nav_sim/nav_full_sim.sh).
 The base's /odom topic gives Nav2 the real speed; its wheel odometry TF (50 Hz, frames renamed so they never collide with planar_odom's odom -> base_footprint)
