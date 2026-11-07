@@ -52,7 +52,7 @@ On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=
 | Stage | Contents |
 |---|---|
 | `base` | ROS 2 Jazzy, CycloneDDS, CUDA 13.2 runtime (must match the host L4T driver) |
-| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, Nav2 AMCL + map_server, pointcloud_to_laserscan, entrypoint and ROS environment |
+| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, gn_loc + map_server, pointcloud_to_laserscan, entrypoint and ROS environment |
 | `mapper` | `robot` + GTSAM 4.3.0, Voxel-SLAM and `rosbags`: offline mapping (`tools/slam_bench/make_map.sh`). Build it with `--target mapper`; without `--target` the last stage in the file is built |
 
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
@@ -62,7 +62,7 @@ Shells opened with `docker exec -it <container> bash` get the same ROS environme
 
 ## Tools
 
-The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; used offline to build the maps: it is in the `mapper` image, not in `robot`, which runs FAST-LIO2 and AMCL on the finished map). The tools below are offline research helpers used for that comparison and for the maps; none of them is part of the image. The GLIM ones are kept as reference and comparison tooling.
+The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; used offline to build the maps: it is in the `mapper` image, not in `robot`, which runs FAST-LIO2 and gn_loc on the finished map). The tools below are offline research helpers used for that comparison and for the maps; none of them is part of the image. The GLIM ones are kept as reference and comparison tooling.
 
 - `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
 - `tools/slam_bench/bag_check.py`: gaps in the LiDAR and IMU streams of a bag, from the recording times; run it right after recording (a scan lost while recording is gone for good and nothing warns about it).

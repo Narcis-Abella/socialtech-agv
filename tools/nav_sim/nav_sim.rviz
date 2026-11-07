@@ -114,7 +114,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /local_costmap/published_footprint
     - Class: rviz_default_plugins/PoseWithCovariance
-      Name: AMCL pose
+      Name: gn_loc pose
       Enabled: true
       Color: 255; 25; 0
       Covariance:
@@ -138,7 +138,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /amcl_pose
+        Value: /gn_loc/pose
     - Class: rviz_default_plugins/TF
       Name: TF
       Enabled: false

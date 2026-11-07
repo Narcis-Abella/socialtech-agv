@@ -59,7 +59,7 @@ class Probe(Node):
         self.create_subscription(Twist, "/cmd_vel_nav", lambda m: self.cmd.append((time.time(), m.linear.x, m.angular.z)), 10)
         self.create_subscription(Odometry, "/odom", lambda m: self.odom.append((time.time(), m.twist.twist.angular.z)), 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
-        self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose", lambda m: setattr(self, "pose", m.pose.pose), latched)
+        self.create_subscription(PoseWithCovarianceStamped, "/gn_loc/pose", lambda m: setattr(self, "pose", m.pose.pose), latched)
         self.client = ActionClient(self, NavigateToPose, "navigate_to_pose")
 
     def spin_for(self, seconds):
@@ -79,7 +79,7 @@ def main():
     node = Probe()
     node.spin_for(2)
     if node.pose is None:
-        raise SystemExit("no /amcl_pose: give the initial pose in rviz2 first")
+        raise SystemExit("no /gn_loc/pose: give the initial pose in rviz2 first")
     x, y, yaw = node.pose.position.x, node.pose.position.y, yaw_of(node.pose.orientation)
     index = pick(goals, x, y, yaw) if args.goal == "auto" else int(args.goal)
     if index is None:

@@ -1,6 +1,6 @@
 """ROS 2 node: supervisor of gn_loc with on-demand global relocalization (logic in gn_supervisor_core.py, relocalizer in reloc_live.py).
 
-In:  gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, per scan: confirms a pose), gn_loc/need_reloc (Bool, latched), amcl_pose (GN's pose), wheel_topic (Tracer /odom; 'none' = no parked checks),
+In:  gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, per scan: confirms a pose), gn_loc/need_reloc (Bool, latched), gn_loc/pose (GN's pose), wheel_topic (Tracer /odom; 'none' = no parked checks),
      /livox/imu, /livox/lidar (raw frames, parsed by livox_frames.py: the relocalizer's exposure), /Odometry (only: is the restarted FAST-LIO2 publishing again), /initialpose (operator),
      <nav action>/_action/status of NavigateToPose and NavigateThroughPoses.
 Out: /initialpose (only a relocalized pose), gn_supervisor/state (String JSON, latched), /diagnostics.
@@ -85,7 +85,7 @@ class SupervisorNode(Node):
         self.create_subscription(String, 'gn_loc/status', self.on_status, 10)
         self.create_subscription(String, 'gn_loc/scan_fit', self.on_scan_fit, 10)
         self.create_subscription(Bool, 'gn_loc/need_reloc', lambda m: self.core.on_need_reloc(self.mono(), m.data), LATCHED)
-        self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose', self.on_gn_pose, LATCHED)
+        self.create_subscription(PoseWithCovarianceStamped, 'gn_loc/pose', self.on_gn_pose, LATCHED)
         self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.on_initialpose, 10)
         wheel = P('wheel_topic', '/odom').value
         if wheel and wheel != 'none':

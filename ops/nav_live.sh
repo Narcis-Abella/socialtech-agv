@@ -1,5 +1,5 @@
 #!/bin/bash
-# Live localization on the robot over a map made by ops/make_map.sh: Livox driver + FAST-LIO2 + AMCL. Move the robot by hand; watch it in rviz2 on the laptop (ops/rviz_live.sh).
+# Live localization on the robot over a map made by ops/make_map.sh: Livox driver + FAST-LIO2 + gn_loc. Move the robot by hand; watch it in rviz2 on the laptop (ops/rviz_live.sh).
 #   PEER=<laptop IP> ops/nav_live.sh MAP_NAME      MAP_NAME = folder in ~/maps; needs a tty (ssh -t): Ctrl-C stops
 # Keep the robot still while FAST-LIO2 initialises (~5 s); then click "2D Pose Estimate" in rviz2 at the robot's real pose and drag to its heading.
 # The odometry is levelled from the map's own Voxel-SLAM start pose (same IMU mounting, robot on the same floor); the yaw is whatever you click.
@@ -53,8 +53,8 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
     set -m   # job control: a background job of a non-interactive shell ignores SIGINT, and the recorder needs one to write its metadata.yaml
     python3 "$REPO/ops/nav_start_when_localized.py" &   # lifetime = the container's
     if [[ -z ${PROD:-} ]]; then   # PROD=1: no recording
-      # Everything needed to judge a run offline (and to replay FAST-LIO on it: /Odometry, /livox/lidar, /livox/imu): the three speed stages, what the base reports, AMCL, BT, plans, scan, local costmap, TF, goals. Not the global costmap (static, big).
-      ros2 bag record -s mcap -o /runs/bag /cmd_vel_nav /cmd_vel_smoothed /cmd_vel /odom /tracer_status /amcl_pose /behavior_tree_log /collision_monitor_state /diagnostics \
+      # Everything needed to judge a run offline (and to replay FAST-LIO on it: /Odometry, /livox/lidar, /livox/imu): the three speed stages, what the base reports, gn_loc, BT, plans, scan, local costmap, TF, goals. Not the global costmap (static, big).
+      ros2 bag record -s mcap -o /runs/bag /cmd_vel_nav /cmd_vel_smoothed /cmd_vel /odom /tracer_status /gn_loc/pose /behavior_tree_log /collision_monitor_state /diagnostics \
         /goal_pose /plan /local_plan /received_global_plan /speed_limit /scan /local_costmap/costmap /tf /tf_static /navigate_to_pose/_action/status /navigate_to_pose/_action/feedback \
         /Odometry /livox/lidar /livox/imu "${sup_topics[@]}" \
         </dev/null >/runs/bag.log 2>&1 &
@@ -102,13 +102,13 @@ ping -c1 -W2 "$PEER" >/dev/null 2>&1 || echo "WARN: $PEER does not answer ping (
 SUP=()
 if [[ -n ${SUPERVISOR:-} ]]; then   # validated first: an error must not come after the "a goal MOVES THE ROBOT" banner
   [[ -n ${NAV:-} ]] || die "SUPERVISOR=1 holds Nav2 goals: it needs NAV=1 (alone it would only relocalize beside a manual 2D Pose Estimate)"
-  [[ ${LOCALIZER:-} != amcl ]] || die "SUPERVISOR=1 supervises gn_loc: unset LOCALIZER=amcl"
   G=${GRELOC:-$HOME/greloc}
   for f in tools/global_reloc_3d/gn_supervisor_node.py build/register_v2 build/libsmall_gicp.so build/libcorr_search.so prior/$MAP_NAME/prior/map.xyz; do
     [[ -f $G/$f ]] || die "$G/$f missing: stage the supervisor tools, register_v2 and the 3D prior of the map into GRELOC (stage_supervisor.sh, in the team's SocialTech workspace repo)"
   done
   docker run --rm -v "$G:/greloc:ro" -w /greloc/tools/global_reloc_3d "$IMAGE" python3 -B -c "import numpy, scipy, rclpy, action_msgs.msg, diagnostic_msgs.msg, gn_supervisor_node, corr_cpp; from rclpy.experimental import EventsExecutor; corr_cpp.load('/greloc/build/libcorr_search.so')" >/dev/null 2>&1 || die "$IMAGE cannot import what the supervisor needs (numpy, scipy, rclpy, action_msgs, diagnostic_msgs, the tools staged in $G, build/libcorr_search.so): run the import of this check by hand to see which"
   SUP=(-e SUPERVISOR=1 -e "SUP_PRIOR=/greloc/prior/$MAP_NAME/prior/map.xyz" -v "$G:/greloc:ro")
+  grep -q gn_loc/pose "$G/tools/global_reloc_3d/gn_supervisor_node.py" || die "$G/tools is older than this checkout (it does not listen to gn_loc/pose, so no pose would ever confirm): stage the supervisor again"
   echo "SUPERVISOR=1: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
 fi
 if [[ -n ${NAV:-} ]]; then
@@ -124,6 +124,6 @@ fi
 RUN=${NAV_RUNS:-$HOME/nav_runs}/$(date +%Y%m%d_%H%M%S)   # persists after the container is gone: ROS node logs (log/) and, with NAV and not PROD, the bag (bag/)
 mkdir -p "$RUN/log"
 echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} ]] && echo " and bag") in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
-exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e PROD="${PROD:-}" -e BASE="${BASE:-}" -e LOCALIZER="${LOCALIZER:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" \
+exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e PROD="${PROD:-}" -e BASE="${BASE:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" \
   -e DDS_IFACE="$DDS_IFACE" -e PEER="$PEER" -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e LIVOX_HOST_IP="$HOST_IP" -e LIVOX_LIDAR_IP="$LIDAR_IP" \
   -v "$MAP:/map:ro" -v "$REPO:$REPO:ro" -v "$RUN:/runs" -v "$HOME/nav_overlay:/ov:ro" "${SUP[@]}" -w /tmp "$IMAGE" "$REPO/ops/nav_live.sh" --inside

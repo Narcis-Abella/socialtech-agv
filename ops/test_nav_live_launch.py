@@ -31,7 +31,7 @@ assert respawns(node("fastlio_mapping")), "fastlio_mapping is not respawned"
 assert not respawns(node("livox_ros_driver2_node")), "the Livox driver must not respawn"
 print("ok")
 
-# bond_heartbeat_period lives in the overrides file: gn_loc and map_server must read it, not only AMCL
+# bond_heartbeat_period lives in the overrides file: gn_loc and map_server must read it
 def reads_overrides(executable):
     ctx = LaunchContext()
     ctx.launch_configurations["overrides"] = "OVERRIDES"

@@ -101,7 +101,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       python3-scipy
 # python3-scipy: the global relocalizer that gn_supervisor starts (tools/global_reloc_3d/search_v2.py: FFT, KD-tree); ops/nav_live.sh SUPERVISOR=1 refuses an image without it.
 
-# docker/ros_loc: gn_loc (Gauss-Newton scan-to-map localizer; ops/nav_live.sh selects it with LOCALIZER=gn, AMCL with LOCALIZER=amcl). Its own colcon build: it needs
+# docker/ros_loc: gn_loc (Gauss-Newton scan-to-map localizer, the robot's localizer). Its own colcon build: it needs
 # the Nav2 packages installed just above, which the first build does not have. Tests and the gn_offline study tool are not built in the image (BUILD_TESTING=OFF, GN_LOC_OFFLINE=OFF); see docker/ros_loc/gn_loc/README.md.
 COPY ros_loc/ /ws/src_loc/
 RUN --mount=type=cache,target=/tmp/build_loc \

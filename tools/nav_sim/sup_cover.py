@@ -34,7 +34,7 @@ class Scenario(Node):
         self.create_subscription(String, 'gn_supervisor/state', self.on_state, LATCHED)
         self.create_subscription(String, 'gn_loc/status', lambda m: setattr(self, 'status', m.data), 10)
         self.create_subscription(Odometry, '/odom_gt_raw', lambda m: setattr(self, 'gt', m), QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
-        self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose', lambda m: setattr(self, 'gn', m), LATCHED)
+        self.create_subscription(PoseWithCovarianceStamped, 'gn_loc/pose', lambda m: setattr(self, 'gn', m), LATCHED)
         self.create_subscription(PoseWithCovarianceStamped, '/initialpose', lambda m: self.log('initialpose', x=m.pose.pose.position.x, y=m.pose.pose.position.y), 10)
         self.status = ''
         self.cmd = self.create_publisher(Twist, '/cmd_vel', 10)

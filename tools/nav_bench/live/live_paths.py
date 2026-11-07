@@ -1,13 +1,11 @@
-"""Live view helper (runs on the board next to the bench): publishes the Voxel-SLAM reference as a latched nav_msgs/Path on /ref_path, the AMCL trail as /amcl_path and
-AMCL's particles (nav2_msgs/ParticleCloud on /particle_cloud, which rviz2 cannot draw) as a geometry_msgs/PoseArray on /particle_poses.
+"""Live view helper (runs on the board next to the bench): publishes the Voxel-SLAM reference as a latched nav_msgs/Path on /ref_path and gn_loc's trail as /gn_path.
 usage: live_paths.py <alidarState.txt | -> <map.yaml> --ros-args -p use_sim_time:=true"""
 import math, os, sys
 import rclpy
-from geometry_msgs.msg import PoseArray, PoseStamped, PoseWithCovarianceStamped
-from nav2_msgs.msg import ParticleCloud
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import Path
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from pose_eval import read_map_yaml, reference_map
 
@@ -26,7 +24,7 @@ class Paths(Node):
     def __init__(self, ref, map_yaml):
         super().__init__("live_paths")
         self.ref_pub = self.create_publisher(Path, "/ref_path", LATCHED)
-        self.trail_pub = self.create_publisher(Path, "/amcl_path", 1)
+        self.trail_pub = self.create_publisher(Path, "/gn_path", 1)
         self.trail = Path()
         self.trail.header.frame_id = "map"
         if ref != "-":   # "-": bag over another bag's map (stage B), the reference would sit in the wrong place
@@ -35,14 +33,7 @@ class Paths(Node):
             msg.header.frame_id, msg.header.stamp = "map", self.get_clock().now().to_msg()
             msg.poses = [pose(x, y, yaw, msg.header.stamp) for x, y, yaw in r[::5]]   # 10 Hz reference -> every 0.5 s
             self.ref_pub.publish(msg)
-        self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose", self.on_pose, 10)
-        self.poses_pub = self.create_publisher(PoseArray, "/particle_poses", qos_profile_sensor_data)
-        self.create_subscription(ParticleCloud, "/particle_cloud", self.on_particles, qos_profile_sensor_data)
-
-    def on_particles(self, m):
-        a = PoseArray()
-        a.header, a.poses = m.header, [p.pose for p in m.particles]
-        self.poses_pub.publish(a)
+        self.create_subscription(PoseWithCovarianceStamped, "/gn_loc/pose", self.on_pose, 10)
 
     def on_pose(self, m):
         p = PoseStamped()

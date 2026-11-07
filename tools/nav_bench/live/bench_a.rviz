@@ -36,7 +36,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /ref_path
     - Class: rviz_default_plugins/Path
-      Name: AMCL trail
+      Name: gn_loc trail
       Enabled: true
       Color: 255; 140; 0
       Line Style: Lines
@@ -47,7 +47,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /amcl_path
+        Value: /gn_path
     - Class: rviz_default_plugins/LaserScan
       Name: Scan (deskewed, z cut)
       Enabled: true
@@ -61,20 +61,8 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /scan
-    - Class: rviz_default_plugins/PoseArray
-      Name: AMCL particles
-      Enabled: true
-      Color: 0; 200; 0
-      Arrow Length: 0.25
-      Shape: Arrow (Flat)
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Best Effort
-        Value: /particle_poses
     - Class: rviz_default_plugins/PoseWithCovariance
-      Name: AMCL pose
+      Name: gn_loc pose
       Enabled: true
       Color: 255; 25; 0
       Covariance:
@@ -98,7 +86,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /amcl_pose
+        Value: /gn_loc/pose
     - Class: rviz_default_plugins/TF
       Name: TF
       Enabled: true

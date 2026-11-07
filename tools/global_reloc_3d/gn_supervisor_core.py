@@ -1,7 +1,7 @@
 """Supervisor of the gn_loc localizer, pure logic (no ROS): when GN cannot be trusted, hold navigation, relocalize with the frozen global search of this
 directory and resume only once GN confirms a pose the relocalizer agrees with. It never commands motion: its only lever is cancelling Nav2 goals.
 
-Inputs (t = monotonic s): GN status (gn_loc/status, 1 Hz, with its scan counter), GN pose (/amcl_pose), wheel speeds (Tracer /odom |v|, |w|),
+Inputs (t = monotonic s): GN status (gn_loc/status, 1 Hz, with its scan counter), GN pose (gn_loc/pose), wheel speeds (Tracer /odom |v|, |w|),
 relocalizer results, an operator /initialpose, whether each Nav2 action has an active goal. Actions (drain()): ('cancel',) all Nav2 goals; ('reloc_start', reason); ('reloc_abort',);
 ('initialpose', (x, y, yaw)); ('state', state, reason) on every change.
 

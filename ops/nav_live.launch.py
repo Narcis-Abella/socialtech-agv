@@ -1,5 +1,4 @@
-"""Live localization on the robot: Livox driver + FAST-LIO2 + levelled planar odom + /scan + map_server + AMCL, on wall time. Same nodes as the bench
-(tools/nav_bench/launch/bench_a.launch.py, which runs on a bag's sim time) plus the driver; AMCL gets no initial pose (click 2D Pose Estimate in rviz2).
+"""Live localization on the robot: Livox driver + FAST-LIO2 + levelled planar odom + /scan + map_server + gn_loc, on wall time. gn_loc gets no initial pose here: from the supervisor, or click 2D Pose Estimate in rviz2.
 ros2 launch nav_live.launch.py livox_config:=C.json fastlio_params:=F map:=M.yaml sensor_height:=H level_qx:=.. level_qy:=.. level_qz:=.. level_qw:=.. overrides:=O.yaml
 driver:=false sim_time:=true: the simulation (tools/nav_sim/sup_sim.sh) publishes /livox/lidar and /livox/imu itself and runs on /clock; everything else is this same launch."""
 import os
@@ -26,12 +25,10 @@ def scan_nodes():
 
 
 def localizer_nodes(overrides):
-    """Default: gn_loc (Gauss-Newton scan-to-map, built in the image). LOCALIZER=amcl: nav2_amcl in its place. Same /initialpose in, map->odom and /amcl_pose out."""
-    gn = os.environ.get("LOCALIZER") != "amcl"
-    return [Node(package="gn_loc", executable="gn_loc_node", name="gn_loc", output="screen", parameters=[overrides]) if gn else
-            Node(package="nav2_amcl", executable="amcl", parameters=[os.path.join(NAV_BENCH, "config/amcl.yaml"), overrides]),
+    """gn_loc (Gauss-Newton scan-to-map, built in the image): /initialpose in, map->odom and gn_loc/pose out."""
+    return [Node(package="gn_loc", executable="gn_loc_node", name="gn_loc", output="screen", parameters=[overrides]),
             Node(package="nav2_lifecycle_manager", executable="lifecycle_manager", name="lifecycle_manager_localization",
-                 parameters=[{"autostart": True, "node_names": ["map_server", "gn_loc" if gn else "amcl"]}])]
+                 parameters=[{"autostart": True, "node_names": ["map_server", "gn_loc"]}])]
 
 
 HEAVY_URI = ('<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><MaxMessageSize>65500B</MaxMessageSize><FragmentSize>64000B</FragmentSize></General>'
@@ -78,7 +75,7 @@ def generate_launch_description():
         *scan_nodes(),
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}, LC("overrides")]),
         *localizer_nodes(LC("overrides")),
-        # AMCL trail (/amcl_path) and its particles as a PoseArray (/particle_poses), which rviz2 can draw; "-" = no reference path. A rviz aid: viz:=false (PROD=1) leaves it out
+        # gn_loc's trail (/gn_path); "-" = no reference path. A rviz aid: viz:=false (PROD=1) leaves it out
         ExecuteProcess(cmd=["python3", os.path.join(NAV_BENCH, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen", condition=IfCondition(LC("viz"))),
         *supervisor_nodes(),
     ])

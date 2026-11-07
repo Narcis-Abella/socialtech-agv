@@ -1,5 +1,5 @@
 """Start Nav2 once the robot is localized. Nav2's lifecycle manager gives up for good when the global costmap times out waiting for map -> base_footprint, and that
-transform only exists after AMCL gets its initial pose (the operator's 2D Pose Estimate in rviz2), so Nav2 is launched with autostart:=false and started here."""
+transform only exists after gn_loc gets its initial pose (the supervisor's, or the operator's 2D Pose Estimate in rviz2), so Nav2 is launched with autostart:=false and started here."""
 import sys
 
 import rclpy
