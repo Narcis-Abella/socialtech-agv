@@ -129,3 +129,19 @@ def cond(v):
 
 assert cond("true") and not cond("false")
 print("ok level_corrector")
+
+# a crashed corrector comes back (planar_odom drops a C that goes silent, then the corrector re-primes); same policy as FAST-LIO2
+assert respawns(node("level_corrector_node")), "level_corrector_node is not respawned"
+print("ok respawn corrector")
+
+# the lidar offset in the body is copied in the launch and in sim_up.sh: it must be FAST-LIO2's extrinsic_T of the image (nav_live.sh edits the config but not that key)
+import re
+from ament_index_python.packages import get_package_share_directory
+import yaml as _yaml
+fl = _yaml.safe_load(open(os.path.join(get_package_share_directory("fast_lio"), "config", "mid360.yaml")))
+ext = [v for v in (fl["/**"]["ros__parameters"]["mapping"]["extrinsic_T"] if "/**" in fl else [])]
+assert ext == launch.LIDAR_IN_BODY, f"launch LIDAR_IN_BODY {launch.LIDAR_IN_BODY} != FAST-LIO2 extrinsic_T {ext}"
+sim_up = open(os.path.join(here, "..", "tools", "nav_sim", "sim_up.sh")).read()
+m = re.search(r"lidar_in_body:=\"\[([^\]]*)\]\"", sim_up)
+assert m and [float(x) for x in m.group(1).split(",")] == ext, f"sim_up.sh lidar_in_body {m and m.group(1)} != extrinsic_T {ext}"
+print("ok extrinsic")

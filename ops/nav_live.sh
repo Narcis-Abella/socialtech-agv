@@ -101,6 +101,7 @@ DDS_IFACE=${DDS_IFACE:-$(ip -o route get "$PEER" | sed -n 's/.* dev \([^ ]*\).*/
 for f in map.yaml report.json vs/run/alidarState.txt; do [[ -f $MAP/$f ]] || die "$MAP/$f missing: is $MAP_NAME a ops/make_map.sh output?"; done
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image $IMAGE not found"
 docker run --rm "$IMAGE" ros2 pkg prefix planar_odom >/dev/null 2>&1 || die "$IMAGE has no planar_odom/nav2: rebuild it from this branch (ops/build_image.sh robot)"
+[[ -z ${LEVEL_CORRECTOR:-} ]] || { [[ -f $MAP/map.ply ]] && grep -q '^# \[' "$MAP/map.yaml"; } || die "LEVEL_CORRECTOR needs $MAP/map.ply and the T_map_world rows of $MAP/map.yaml (both written by ops/make_map.sh): regenerate the map, or run with LEVEL_CORRECTOR=0"
 [[ -z ${LEVEL_CORRECTOR:-} ]] || docker run --rm "$IMAGE" ros2 pkg prefix level_corrector >/dev/null 2>&1 || die "$IMAGE has no level_corrector: rebuild it from this branch (ops/build_image.sh robot), or run with LEVEL_CORRECTOR=0"
 [[ -z $(docker ps -q) ]] || die "a container is running (docker ps): one heavy job at a time"
 ip -4 -o addr show | grep -q " $HOST_IP/" || die "no interface has $HOST_IP (the Livox link): check the ethernet cable"

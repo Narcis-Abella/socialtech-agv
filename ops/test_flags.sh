@@ -42,5 +42,10 @@ for v in "" 1 0 off; do
   got=$(bash -c 'source "$0/flags.sh"; if [ "$1" = unset ]; then unset LEVEL_CORRECTOR; else LEVEL_CORRECTOR=$1; fi; LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}; normalize_flags LEVEL_CORRECTOR; [ -z "${LEVEL_CORRECTOR:-}" ] && echo off || echo on' "$here" "${v:-unset}")
   case "$v:$got" in ":on"|"1:on"|"0:off"|"off:off") ;; *) echo "FAIL: LEVEL_CORRECTOR='${v:-<unset>}' gave $got"; fail=1 ;; esac
 done
+# the corrector needs the 3D map: refuse before starting, not by dying silently at the node's construction
+grep -qF '[[ -f $MAP/map.ply ]]' "$nl" && grep -qF '$MAP/map.yaml"; } || die "LEVEL_CORRECTOR needs' "$nl" || { echo "FAIL: nav_live.sh does not check map.ply and T_map_world of the map for LEVEL_CORRECTOR"; fail=1; }
+# the full-chain sim runs the robot's configuration by default and refuses a planar_odom that would ignore the corrector
+grep -qF 'LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default, as ops/nav_live.sh' "$here/../tools/nav_sim/nav_full_sim.sh" || { echo "FAIL: nav_full_sim.sh does not default LEVEL_CORRECTOR on"; fail=1; }
+grep -qF 'grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom"' "$here/../tools/nav_sim/nav_full_sim.sh" || { echo "FAIL: nav_full_sim.sh does not check that planar_odom has correction_topic"; fail=1; }
 ((fail == 0)) && echo "ok"
 exit $fail

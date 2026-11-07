@@ -89,7 +89,7 @@ def generate_launch_description():
             "lidar_in_body": LIDAR_IN_BODY,
             "level": LEVEL,
             "correction_topic": ParameterValue(PythonExpression(["'/level_corrector/correction' if '", LC("level_corrector"), "' == 'true' else ''"]), value_type=str)}]),
-        Node(package="level_corrector", executable="level_corrector_node", parameters=[{"map_dir": LEVEL_MAP_DIR, "level": LEVEL}], condition=IfCondition(LC("level_corrector"))),
+        Node(package="level_corrector", executable="level_corrector_node", parameters=[{"map_dir": LEVEL_MAP_DIR, "level": LEVEL}], condition=IfCondition(LC("level_corrector")), respawn=True, respawn_delay=2.0),
         *scan_nodes(),
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}, LC("overrides")]),
         *localizer_nodes(LC("overrides")),

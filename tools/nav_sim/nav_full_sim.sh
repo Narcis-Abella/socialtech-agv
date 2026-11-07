@@ -27,8 +27,10 @@ chain_map
 fastlio_yaml "$out/fastlio.yaml"
 # LEVEL_CORRECTOR=1: level_corrector (registers the cloud against the world's own 3D points, written here) built over the image's packages (small_gicp prebuilt in /sg); planar_odom
 # consumes its correction (the overlay of /odomsrc, sim_up.sh)
+LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default, as ops/nav_live.sh: the sim runs what the robot runs (LEVEL_CORRECTOR=0 for the stack without it)
 LC_ARG=
-if [ "${LEVEL_CORRECTOR:-0}" != 0 ]; then
+if [ "${LEVEL_CORRECTOR}" != 0 ]; then
+  grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" || { echo "planar_odom that would run ($(ros2 pkg prefix planar_odom)) predates correction_topic: the corrector would run and level nothing (mount docker/ros/planar_odom at /odomsrc, agx_full.sh does)" >&2; exit 1; }
   python3 /tools/sim_realism/tris_to_ply.py /pat/loyola.tris "$out/map3d" 0.1 0.05 > "$out/map3d.log"
   export LEVEL_MAP_DIR="$out/map3d"
   mkdir -p /tmp/lcws && (cd /tmp/lcws && colcon build --base-paths /locsrc --packages-select level_corrector --merge-install --install-base /tmp/lc_install --cmake-args -DCMAKE_PREFIX_PATH=/sg -DBUILD_TESTING=OFF > "$out/build_lc.log" 2>&1) || { echo "level_corrector build failed: see $out/build_lc.log" >&2; exit 1; }
