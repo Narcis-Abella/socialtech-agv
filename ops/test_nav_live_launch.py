@@ -89,3 +89,27 @@ launch_text = [e for e in launch.generate_launch_description().entities if isins
 assert any(e.node_executable == "pointcloud_to_laserscan_node" for e in launch_text), "no pointcloud_to_laserscan_node"
 assert not any(e.node_package == "scan_median" for e in launch_text), "scan_median must be gone"
 print("ok scan")
+
+
+# level_corrector: off by default (planar_odom keeps the static level), on = planar_odom listens to the correction and the node starts with the same level
+def planar_param(name, level_corrector):
+    ctx = LaunchContext()
+    ctx.launch_configurations.update({"level_corrector": level_corrector, "level_qx": "0", "level_qy": "0", "level_qz": "0", "level_qw": "1", "sensor_height": "0.5"})
+    p = node("planar_odom")._Node__parameters[0]
+    v = next(val for key, val in p.items() if "".join(k.text for k in key) == name)   # launch_ros keys the dict by tuples of TextSubstitution
+    from launch_ros.parameter_descriptions import ParameterValue
+    return perform_substitutions(ctx, v.value) if isinstance(v, ParameterValue) else v
+
+
+assert planar_param("correction_topic", "false") == "", "planar_odom must keep the static level unless level_corrector:=true"
+assert planar_param("correction_topic", "true") == "/level_corrector/correction"
+lc_node = node("level_corrector_node")
+assert lc_node.condition is not None, "level_corrector_node must be conditional on level_corrector:=true"
+def cond(v):
+    ctx = LaunchContext()
+    ctx.launch_configurations["level_corrector"] = v
+    return lc_node.condition.evaluate(ctx)
+
+
+assert cond("true") and not cond("false")
+print("ok level_corrector")

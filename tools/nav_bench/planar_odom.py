@@ -14,3 +14,8 @@ def footprint(p, q, level, sensor_height):
     po, Ro = R_l @ np.asarray(p, float), R_l @ pe.quat_to_mat(q)
     yaw = np.arctan2(Ro[1, 0], Ro[0, 0])
     return po[0], po[1], po[2] - sensor_height, np.sin(yaw / 2), np.cos(yaw / 2)
+
+
+def corrected_level(level, c):
+    """Quaternion of odom<-camera_init once level_corrector's roll/pitch correction c (a rotation of odom, quaternion x, y, z, w) is applied: C * level."""
+    return pe.mat_to_quat(pe.quat_to_mat(c) @ pe.quat_to_mat(level))

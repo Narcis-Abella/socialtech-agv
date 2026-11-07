@@ -27,5 +27,11 @@ awk '/(^|;) *extra=\(/ {n = NR} /extra\+=\(viz:=false\)/ {v = NR} END {exit !(v 
 # the recorder and its `rec=$!` sit together under the PROD guard, up to its closing fi
 awk '/^    if \[\[ -z \$\{PROD:-\} \]\]; then   # PROD=1: no recording$/ {g = 1} g && /ros2 bag record/ {r = 1} g && /^      rec=\$!$/ {s = 1} g && /^    fi$/ {exit} END {exit !(r && s)}' "$nl" || { echo "FAIL: the bag recorder and rec=\$! are not both under the PROD guard"; fail=1; }
 grep -qxF '  [[ -n ${NAV:-} && -z ${PROD:-} ]] || exec ros2 launch "${args[@]}"   # no recorder (PROD, or no NAV): nothing to stop after the launch' "$nl" || { echo "FAIL: the exec shortcut does not cover PROD"; fail=1; }
+# LEVEL_CORRECTOR=1: normalised, forwarded into the container, level_corrector:=true added after extra is (re)assigned, and the image checked for the package before anything starts
+grep -q '^normalize_flags NAV BASE SUPERVISOR PROD LEVEL_CORRECTOR' "$nl" || { echo "FAIL: nav_live.sh does not normalise LEVEL_CORRECTOR"; fail=1; }
+grep -qE '^exec docker run .* -e LEVEL_CORRECTOR="\$\{LEVEL_CORRECTOR:-\}"' "$nl" || { echo "FAIL: the docker run does not forward LEVEL_CORRECTOR"; fail=1; }
+grep -qxF '  [[ -z ${LEVEL_CORRECTOR:-} ]] || extra+=(level_corrector:=true)' "$nl" || { echo "FAIL: level_corrector:=true is not exactly 'LEVEL_CORRECTOR set -> level_corrector:=true'"; fail=1; }
+awk '/(^|;) *extra=\(/ {n = NR} /extra\+=\(level_corrector:=true\)/ {v = NR} END {exit !(v > n)}' "$nl" || { echo "FAIL: level_corrector:=true is added before extra is (re)assigned"; fail=1; }
+grep -q 'ros2 pkg prefix level_corrector' "$nl" || { echo "FAIL: nav_live.sh does not check the image for level_corrector"; fail=1; }
 ((fail == 0)) && echo "ok"
 exit $fail
