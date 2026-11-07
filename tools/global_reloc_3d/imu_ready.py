@@ -19,16 +19,20 @@ RESIDUAL_P95 = 0.006119479213085752
 MEDIAN_NORM = 0.0278346772285473
 RAW_MAX = .05
 ACC_VAR_SUM = .04
+# The start test above is calibrated to decide whether a FILTER or an EXPOSURE may start. "Was it moved?" (during the exposure and the search) is another question: the Nano's gyro is
+# noisier with the stack running (p95 0.006-0.009 rad/s, 2026-11-07, IMU of the Nano parked 36 min) and that noise is not motion. A shove shows in max|gyro| and in the accelerometer variance,
+# a creep in the median, none of which this scale touches; real motion measured 0.45 rad/s of noise (median, 26 % of a 21 min drive), 50 times the limit.
+MOTION_RESIDUAL_SCALE = 3.
 
 
-def window_ok(gyro, acc_g, expected):
+def window_ok(gyro, acc_g, expected, residual_scale=1.):
     gyro = np.asarray(gyro, float)
     if len(gyro) < .95 * expected or len(gyro) < 3:
         return False
     b = np.median(gyro, axis=0)
     residual = np.percentile(np.linalg.norm(gyro - b, axis=1), 95)
     acc_var = np.var(np.asarray(acc_g, float) * G, axis=0, ddof=1).sum()
-    return bool(residual <= RESIDUAL_P95 and np.linalg.norm(b) <= MEDIAN_NORM
+    return bool(residual <= RESIDUAL_P95 * residual_scale and np.linalg.norm(b) <= MEDIAN_NORM
                 and np.linalg.norm(gyro, axis=1).max() <= RAW_MAX and acc_var <= ACC_VAR_SUM)
 
 

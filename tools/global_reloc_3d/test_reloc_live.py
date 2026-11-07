@@ -347,8 +347,35 @@ class LazyStillWindowTest(unittest.TestCase):
             e, l = eager.add(t, g, a), lazy.add(t, g, a, need=need)
             if need:
                 self.assertEqual(e, l, k)
+                self.assertEqual(eager.calm, lazy.calm, k)
                 checked[e] += 1
         self.assertGreater(min(checked), 1000)        # both answers exercised
+
+
+class GyroNoiseTest(LiveRelocBase):
+    """The Nano's gyro is noisier with the stack running (fans, load): p95(|gyro - median|) 0.006-0.009 rad/s against the 0.0061 limit that decides whether to START. That is noise, not a push:
+    it used to end 4 of 4 accepted relocalizations in moved_since_exposure (NEXT-63)."""
+    def noisy(self, from_t, sigma=.0033, seed=5):
+        rng = np.random.default_rng(seed)
+        return lambda t: tuple(rng.normal(0, sigma, 3)) if t > from_t else (0., 0., 0.)
+
+    def test_noise_during_the_exposure_and_the_search_does_not_discard_the_pose(self):
+        r = self.make(); r.start()
+        res = self.feed(r, 0., 16., gyro=self.noisy(2.3))
+        self.assertTrue(res['ok'], res)
+
+    def test_a_shove_on_top_of_the_noise_is_still_refused(self):
+        r = self.make(); r.start()
+        rng = np.random.default_rng(6)
+        res = self.feed(r, 0., 16., gyro=lambda t: tuple(rng.normal(0, .0033, 3) + ((0., 0., .3) if 5.4 < t < 5.8 else (0., 0., 0.))) if t > 2.3 else (0., 0., 0.))
+        self.assertFalse(res['ok'])
+        self.assertEqual(res['why'], 'moved_since_exposure')
+
+    def test_the_start_still_waits_for_the_strict_stillness(self):
+        r = self.make(); r.start()
+        res = self.feed(r, 0., 6., gyro=self.noisy(-1.))                       # noisy from the first sample: never quiet enough to start
+        self.assertIsNone(res)
+        self.assertEqual(r.stage, 'imu')
 
 
 class ReviewFixesTest(LiveRelocBase):

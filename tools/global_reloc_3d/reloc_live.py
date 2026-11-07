@@ -79,7 +79,7 @@ class StillWindow:
     """Stillness of the last rc-ImuGate window (2 s), re-evaluated every 0.1 s with the unchanged test. ImuGate latches the first time it passes; this one follows the robot,
     so a start waits for the stillness of *now*, not of some moment in the past."""
     def __init__(self, step=.1):
-        self.t, self.g, self.a, self.step, self.next_eval, self.ok, self.stale = collections.deque(), collections.deque(), collections.deque(), step, None, False, False
+        self.t, self.g, self.a, self.step, self.next_eval, self.ok, self.calm, self.stale = collections.deque(), collections.deque(), collections.deque(), step, None, False, False, False
 
     def add(self, stamp, gyro, acc_g, need=True):
         """need=False keeps the window and its grid but skips the test; the next needed call runs it once, at the newest grid time: the answer the eager window had."""
@@ -97,9 +97,10 @@ class StillWindow:
             t = np.asarray(self.t)
             i, j = np.searchsorted(t, [T - imu_ready.WINDOW_S, T])
             if j - i >= 3:
-                self.ok = imu_ready.window_ok(np.asarray(self.g)[i:j], np.asarray(self.a)[i:j], int(np.ceil(imu_ready.WINDOW_S / float(np.median(np.diff(t[i:j]))))))
+                g, a, n = np.asarray(self.g)[i:j], np.asarray(self.a)[i:j], int(np.ceil(imu_ready.WINDOW_S / float(np.median(np.diff(t[i:j])))))
+                self.ok, self.calm = imu_ready.window_ok(g, a, n), imu_ready.window_ok(g, a, n, imu_ready.MOTION_RESIDUAL_SCALE)   # ok: quiet enough to START; calm: not moved (noise allowed)
             else:
-                self.ok = False
+                self.ok = self.calm = False
         return self.ok
 
 
@@ -155,7 +156,7 @@ class LiveReloc:
                 self.begin(t)
         elif self.stage == 'expose':
             self.imu.append((t, np.asarray(acc_g, float))); self.motion.append((t, gyro, acc_g))
-        elif self.stage == 'search' and not still and self.moved_in is None:
+        elif self.stage == 'search' and not self.still.calm and self.moved_in is None:
             self.moved_in = 'search'                       # latched like the wheels: a shove that ended before the worker returned must still refuse the pose
 
     def begin(self, t):
@@ -229,7 +230,7 @@ class LiveReloc:
         a, b = self.clouds[0][0], self.clouds[-1][0]
         self.info.update(exposure_s=round(b - a, 3), clouds=len(self.clouds))
         t, g, acc = (np.array(x) for x in zip(*[(t, gy, ac) for t, gy, ac in self.motion])) if self.motion else (np.array([]),) * 3
-        if self.moved_in == 'expose' or len(t) < 3 or not imu_ready.window_ok(g, acc, int(np.ceil((t[-1] - t[0]) / float(np.median(np.diff(t))))) if len(t) > 2 else 0):
+        if self.moved_in == 'expose' or len(t) < 3 or not imu_ready.window_ok(g, acc, int(np.ceil((t[-1] - t[0]) / float(np.median(np.diff(t))))) if len(t) > 2 else 0, imu_ready.MOTION_RESIDUAL_SCALE):
             return self.end(False, 'moved_during_exposure')
         odom = [(a - .1 + .1 * k, np.eye(4)) for k in range(int(round(b - a + .2, 1) * 10) + 2)]   # a still body is its own odometry
         t0 = time.monotonic()
@@ -258,7 +259,7 @@ class LiveReloc:
 
     def release(self):
         """The accepted pose goes out once the robot is known not to have moved and, after a restart, the new filter is publishing (gn_loc needs odom -> base_footprint)."""
-        if self.moved_in is not None or not self.still.ok:                    # the wheels may be silent (base off, slow creep under their threshold): the IMU window is the other witness
+        if self.moved_in is not None or not self.still.calm:                    # the wheels may be silent (base off, slow creep under their threshold): the IMU window is the other witness
             return self.end(False, 'moved_since_exposure')
         if self.t_restart is not None and not self.odom_new:
             return None
