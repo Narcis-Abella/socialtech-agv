@@ -65,6 +65,26 @@ TEST(Filter, RejectsAJumpAndKeepsC) {
   EXPECT_EQ(f.update(rv(2.5, 0), 2.0), Filter::Jump);
   EXPECT_LT((f.C() - before).norm(), 1e-12);
 }
+TEST(Filter, AMeasurementThatKeepsDisagreeingIsTakenAfterTheJumpLimit) {
+  Filter f(10.0, 0.05, 2.0, 3);   // 3 jumps in a row, then the measurement wins: C was wrong (a restart nobody saw)
+  f.update(rv(0, 0), 0.0);
+  EXPECT_EQ(f.update(rv(4, 0), 2.0), Filter::Jump);
+  EXPECT_EQ(f.update(rv(4, 0), 4.0), Filter::Jump);
+  EXPECT_EQ(f.update(rv(4, 0), 6.0), Filter::Jump);
+  EXPECT_LT(deg_between(f.C(), rv(0, 0)), 1e-9);
+  EXPECT_EQ(f.update(rv(4, 0), 8.0), Filter::Primed);
+  EXPECT_LT(deg_between(f.C(), rv(4, 0)), 1e-9);
+}
+TEST(Filter, AnAcceptedMeasurementClearsTheJumpCount) {
+  Filter f(10.0, 0.05, 2.0, 3);
+  f.update(rv(0, 0), 0.0);
+  f.update(rv(4, 0), 2.0); f.update(rv(4, 0), 4.0);                     // two jumps
+  EXPECT_EQ(f.update(rv(0.5, 0), 6.0), Filter::Accepted);               // an agreeing one: the count starts over
+  EXPECT_EQ(f.update(rv(4, 0), 8.0), Filter::Jump);
+  EXPECT_EQ(f.update(rv(4, 0), 10.0), Filter::Jump);
+  EXPECT_EQ(f.update(rv(4, 0), 12.0), Filter::Jump);
+  EXPECT_EQ(f.update(rv(4, 0), 14.0), Filter::Primed);
+}
 TEST(Filter, ResetGoesBackToTheIdentityAndTheNextMeasurementIsTakenWholeEvenFarFromTheOldC) {
   Filter f(10.0, 0.05, 2.0); f.update(rv(0.6, 0.5), 0.0);
   f.reset();   // FAST-LIO restarted: the old C belonged to the old camera_init

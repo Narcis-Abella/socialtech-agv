@@ -32,7 +32,7 @@ static Eigen::Isometry3d iso(const geometry_msgs::msg::Pose& p) {
 class LevelCorrector : public rclcpp::Node {
  public:
   LevelCorrector()
-      : Node("level_corrector"), gates_(), filter_(declare_parameter("tau_s", 10.0), declare_parameter("slew_deg_s", 0.05), declare_parameter("max_jump_deg", 2.0)),
+      : Node("level_corrector"), gates_(), filter_(declare_parameter("tau_s", 10.0), declare_parameter("slew_deg_s", 0.05), declare_parameter("max_jump_deg", 2.0), static_cast<int>(declare_parameter("jump_limit", 15))),
         tf_buf_(get_clock()), tf_(tf_buf_) {
     const auto dir = declare_parameter<std::string>("map_dir", "/map");
     const auto lv = declare_parameter("level", std::vector<double>{0.0, 0.0, 0.0, 1.0});

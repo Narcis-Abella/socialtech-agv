@@ -54,20 +54,23 @@ inline const char* gate_reason(const Fit& f, const Gates& g) {
 class Filter {
  public:
   enum Result { Primed, Accepted, Jump };
-  Filter(double tau_s, double slew_deg_s, double max_jump_deg) : tau_(tau_s), slew_(slew_deg_s), jump_(max_jump_deg) {}
+  // jump_limit: that many measurements in a row further than max_jump_deg from C (gates passed) mean C is the wrong one, e.g. a FAST-LIO restart nobody saw: the next one is taken whole.
+  Filter(double tau_s, double slew_deg_s, double max_jump_deg, int jump_limit = 15) : tau_(tau_s), slew_(slew_deg_s), jump_(max_jump_deg), limit_(jump_limit) {}
   Result update(const Mat3& Cm, double t) {
-    if (!primed_) { C_ = Cm; t_ = t; primed_ = true; return Primed; }
-    if (Eigen::AngleAxisd(Cm * C_.transpose()).angle() * 180 / M_PI > jump_) return Jump;
+    if (!primed_ || jumps_ >= limit_) { C_ = Cm; t_ = t; primed_ = true; jumps_ = 0; return Primed; }
+    if (Eigen::AngleAxisd(Cm * C_.transpose()).angle() * 180 / M_PI > jump_) { jumps_++; return Jump; }
+    jumps_ = 0;
     C_ = lowpass(C_, Cm, t - t_, tau_, slew_); t_ = t;
     return Accepted;
   }
   // FAST-LIO restarted: its camera_init is new, so the old C belongs to nothing. Back to the plain level until the next valid measurement, which is taken whole.
-  void reset() { C_ = Mat3::Identity(); primed_ = false; }
+  void reset() { C_ = Mat3::Identity(); primed_ = false; jumps_ = 0; }
   const Mat3& C() const { return C_; }
   bool primed() const { return primed_; }
 
  private:
   double tau_, slew_, jump_, t_ = 0;
+  int limit_, jumps_ = 0;
   Mat3 C_ = Mat3::Identity();
   bool primed_ = false;
 };
