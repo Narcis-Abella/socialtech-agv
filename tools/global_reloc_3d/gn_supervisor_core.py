@@ -3,7 +3,7 @@ directory and resume only once GN confirms a pose the relocalizer agrees with. I
 
 Inputs (t = monotonic s): GN status (gn_loc/status, 1 Hz, with its scan counter), GN pose (gn_loc/pose), wheel speeds (Tracer /odom |v|, |w|),
 relocalizer results, an operator /initialpose, whether each Nav2 action has an active goal. Actions (drain()): ('cancel',) all Nav2 goals; ('reloc_start', reason); ('reloc_abort',);
-('initialpose', (x, y, yaw)); ('state', state, reason) on every change.
+('initialpose', (x, y, yaw)); ('clear_costmaps',) just before a hold is released; ('state', state, reason) on every change.
 
 States: CONFIRMING (start-up, or after a pose: hold until GN fits the map) -> MONITOR -> RELOCALIZING (hold) -> CONFIRMING -> MONITOR; VERIFYING = a
 relocalization while parked that does not hold; FAILED holds until an operator pose is confirmed. Thresholds and their evidence: notes of SocialTech,
@@ -192,6 +192,8 @@ class Supervisor:
                 return self.start_reloc(t, self.reason.split('+')[0])      # the '+not_stopped' note belongs to the attempt that was reported
             return self.fail(t, f'reloc_failed_{why}', retry=not is_deterministic(why))      # a bug or a wrong parameter would loop: each retry restarts FAST-LIO2 and runs a search
         if self.gn_good and self.pose is not None and agree(self.pose, pose, self.p.agree_xy, self.p.agree_yaw_deg):
+            if not verifying:             # a hold: FAST-LIO2 restarted and the marks come from the time GN could not be trusted. A parked check changed nothing
+                self.actions.append(('clear_costmaps',))
             return self.go(t, 'MONITOR', 'verified_gn_agrees')
         if verifying:
             self.cancel(t)                # the independent check contradicts a GN that looked fine: a false lock
@@ -281,6 +283,7 @@ class Supervisor:
                     if self.good >= p.confirm_n and ts - self.t_good0 >= p.confirm_s:
                         self.target = None
                         self.t_lost, self.t_bad, self.stall = None, None, 0      # the good scans are newer than any status: gn_loc skips a status tick when a scan holds its lock, and a real LOST sets these again at the next status
+                        self.actions.append(('clear_costmaps',))                 # after GN took the pose, not at /initialpose: scans of the confirmation are placed right and a pose that fails clears nothing
                         return self.go(t, 'MONITOR', 'confirmed')
                 else:
                     self.good = 0

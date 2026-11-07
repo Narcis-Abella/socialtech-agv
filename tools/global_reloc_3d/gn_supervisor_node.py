@@ -3,7 +3,7 @@
 In:  gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, per scan: confirms a pose), gn_loc/need_reloc (Bool, latched), gn_loc/pose (GN's pose), wheel_topic (Tracer /odom; 'none' = no parked checks),
      /livox/imu, /livox/lidar (raw frames, parsed by livox_frames.py: the relocalizer's exposure), /Odometry (only: is the restarted FAST-LIO2 publishing again), /initialpose (operator),
      <nav action>/_action/status of NavigateToPose and NavigateThroughPoses.
-Out: /initialpose (only a relocalized pose), gn_supervisor/state (String JSON, latched), /diagnostics.
+Out: /initialpose (only a relocalized pose), gn_supervisor/state (String JSON, latched), /diagnostics, ClearEntireCostmap on both costmaps before a hold is released (the BT is not ticking then: the goals are cancelled).
 Stop: CancelGoal with an empty request (= every goal) on both Nav2 actions, again every recancel_s while navigation is held and an action still
 reports an active goal (its status topic is latched: a goal already running when this node starts is seen too).
 Fail-safe: an exception in the relocalizer counts as a failed relocalization; any other exception in the timer cancels and goes FAILED. A node that
@@ -24,6 +24,7 @@ from action_msgs.srv import CancelGoal
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from livox_ros_driver2.msg import CustomMsg
+from nav2_msgs.srv import ClearEntireCostmap
 from nav_msgs.msg import Odometry
 from rclpy.clock import Clock, ClockType
 from rclpy.executors import ExternalShutdownException
@@ -82,6 +83,7 @@ class SupervisorNode(Node):
         self.state_pub = self.create_publisher(String, 'gn_supervisor/state', LATCHED)
         self.diag_pub = self.create_publisher(DiagnosticArray, '/diagnostics', 10)
         self.cancel = {a: self.create_client(CancelGoal, f'/{a}/_action/cancel_goal') for a in ACTIONS}
+        self.clear = [self.create_client(ClearEntireCostmap, f'/{c}_costmap/clear_entirely_{c}_costmap') for c in ('local', 'global')]
         self.create_subscription(String, 'gn_loc/status', self.on_status, 10)
         self.create_subscription(String, 'gn_loc/scan_fit', self.on_scan_fit, 10)
         self.create_subscription(Bool, 'gn_loc/need_reloc', lambda m: self.core.on_need_reloc(self.mono(), m.data), LATCHED)
@@ -228,6 +230,12 @@ class SupervisorNode(Node):
             c = [0.] * 36; c[0] = c[7] = self.init_std ** 2; c[35] = math.radians(self.init_yaw_std) ** 2; m.pose.covariance = c
             self.own = (a[1], self.mono())
             self.init_pub.publish(m)
+        elif a[0] == 'clear_costmaps':
+            for c in self.clear:
+                if c.service_is_ready():
+                    c.call_async(ClearEntireCostmap.Request())
+                else:                                     # Nav2 not up yet (start-up localization): nothing marked to clear
+                    self.get_logger().info(f'{c.srv_name} not available: not cleared')
         elif a[0] == 'state':
             self.publish_state(a[1], a[2], getattr(self, 'last_reloc', None) or {})
 

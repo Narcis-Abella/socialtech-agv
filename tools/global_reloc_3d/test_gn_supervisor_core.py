@@ -50,6 +50,59 @@ class StartupTest(Fixture):
         self.assertFalse(s.hold)
 
 
+class ClearCostmapsTest(Fixture):
+    """What the costmaps marked while GN could not be trusted, or under the old pose, must not outlive the hold: Nav2 sees them cleared before it is released."""
+    P = (1., 2., .3)
+
+    def relocalizing(self):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.state, 'RELOCALIZING')
+        return s, t + 1
+
+    def assert_cleared_once_before_the_release(self, actions):
+        self.assertEqual(kinds(actions).count('clear_costmaps'), 1, actions)
+        self.assertLess(kinds(actions).index('clear_costmaps'), [a[:2] for a in actions].index(('state', 'MONITOR')))
+
+    def confirming(self, s, t):
+        a = []
+        for k in range(3):
+            a += run(s, t + k, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', self.P))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+        return a
+
+    def test_a_confirmed_relocalization_clears_them(self):
+        s, t = self.relocalizing()
+        a = run(s, t, ('on_reloc_result', True, self.P, 'accepted'))
+        self.assertNotIn('clear_costmaps', kinds(a))                       # GN has not taken the pose yet: scans marked now would be wrong again
+        self.assert_cleared_once_before_the_release(self.confirming(s, t + 1))
+
+    def test_a_confirmed_operator_pose_clears_them(self):
+        s, t = self.new()
+        run(s, t, ('on_operator_pose', self.P))
+        self.assert_cleared_once_before_the_release(self.confirming(s, t + 1))
+
+    def test_a_hold_released_because_gn_agrees_clears_them(self):
+        s, t = self.relocalizing()
+        a = run(s, t, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', self.P), ('on_reloc_result', True, self.P, 'accepted'))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'verified_gn_agrees'))
+        self.assert_cleared_once_before_the_release(a)
+
+    def test_a_parked_check_that_agrees_leaves_them(self):
+        s, t = self.new()
+        s.start_reloc(t, 'parked_verify', 'VERIFYING')
+        a = run(s, t, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', self.P), ('on_reloc_result', True, self.P, 'accepted'))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'verified_gn_agrees'))
+        self.assertNotIn('clear_costmaps', kinds(a))
+
+    def test_a_failed_relocalization_leaves_them(self):
+        s, t = self.relocalizing()
+        a = run(s, t, ('on_reloc_result', False, None, 'ambiguous'))
+        a += run(s, t + 1, ('on_reloc_result', False, None, 'ambiguous'))
+        self.assertEqual(s.state, 'FAILED')
+        self.assertNotIn('clear_costmaps', kinds(a))
+
+
 class AutoInitTest(Fixture):
     """At start-up nobody has given gn_loc a pose: after auto_init_s the supervisor localizes by itself and only asks the operator when that fails."""
     def waiting(self, s, t0, t1):
