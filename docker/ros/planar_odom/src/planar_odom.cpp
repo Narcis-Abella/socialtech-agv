@@ -1,6 +1,8 @@
 // FAST-LIO2 /Odometry (camera_init -> body) -> odom -> base_footprint TF, in the floor-levelled odom frame. reference: tools/nav_bench/planar_odom.py, checked by test_planar_odom_node.py
 // (same maths: planar_odom.footprint); also publishes the static odom -> camera_init level transform, so no static_transform_publisher is needed.
-// params: sensor_height (m), level ([qx, qy, qz, qw] of odom <- camera_init)
+// Also the static base_footprint -> lidar_level: levelled, at the height of the lidar, what /scan is published in (a scan on the floor sits on the costmaps' height filter).
+// params: sensor_height (m, of the body), level ([qx, qy, qz, qw] of odom <- camera_init), lidar_in_body ([x, y, z] m: FAST-LIO2's extrinsic_T; the body is the IMU, and base_footprint goes under the lidar,
+// which is at the centre of rotation: under the IMU it would orbit it, ~2.5 cm, on every turn in place. The offset is applied in the levelled plane: at the +-5 deg of tilt the error is below 4 mm)
 #include <array>
 #include <cmath>
 #include <vector>
@@ -27,6 +29,8 @@ class PlanarOdom : public rclcpp::Node {
     h_ = declare_parameter("sensor_height", 0.575);
     auto lv = declare_parameter("level", std::vector<double>{0.0, 0.0, 0.0, 1.0});
     if (lv.size() != 4) throw std::runtime_error("level must be [qx, qy, qz, qw]");
+    lidar_ = declare_parameter("lidar_in_body", std::vector<double>{0.0, 0.0, 0.0});
+    if (lidar_.size() != 3) throw std::runtime_error("lidar_in_body must be [x, y, z]");
     Rl_ = quat_to_mat(lv[0], lv[1], lv[2], lv[3]);
     geometry_msgs::msg::TransformStamped s;
     s.header.stamp = now();
@@ -34,7 +38,13 @@ class PlanarOdom : public rclcpp::Node {
     s.child_frame_id = "camera_init";
     const double n = std::sqrt(lv[0] * lv[0] + lv[1] * lv[1] + lv[2] * lv[2] + lv[3] * lv[3]);
     s.transform.rotation.x = lv[0] / n; s.transform.rotation.y = lv[1] / n; s.transform.rotation.z = lv[2] / n; s.transform.rotation.w = lv[3] / n;
-    static_br_.sendTransform(s);
+    geometry_msgs::msg::TransformStamped l;
+    l.header.stamp = s.header.stamp;
+    l.header.frame_id = "base_footprint";
+    l.child_frame_id = "lidar_level";
+    l.transform.translation.z = h_ + lidar_[2];
+    l.transform.rotation.w = 1.0;
+    static_br_.sendTransform(std::vector<geometry_msgs::msg::TransformStamped>{s, l});
     sub_ = create_subscription<nav_msgs::msg::Odometry>("/Odometry", 100, [this](nav_msgs::msg::Odometry::ConstSharedPtr m) { cb(*m); });
   }
 
@@ -52,14 +62,15 @@ class PlanarOdom : public rclcpp::Node {
     t.header.stamp = m.header.stamp;
     t.header.frame_id = "odom";
     t.child_frame_id = "base_footprint";
-    t.transform.translation.x = ox;
-    t.transform.translation.y = oy;
+    t.transform.translation.x = ox + std::cos(yaw) * lidar_[0] - std::sin(yaw) * lidar_[1];
+    t.transform.translation.y = oy + std::sin(yaw) * lidar_[0] + std::cos(yaw) * lidar_[1];
     t.transform.translation.z = oz - h_;
     t.transform.rotation.z = std::sin(yaw / 2);
     t.transform.rotation.w = std::cos(yaw / 2);
     br_.sendTransform(t);
   }
   double h_;
+  std::vector<double> lidar_;
   Mat Rl_;
   tf2_ros::TransformBroadcaster br_;
   tf2_ros::StaticTransformBroadcaster static_br_;

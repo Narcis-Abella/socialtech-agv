@@ -11,10 +11,9 @@ local_costmap:
     ros__parameters:
       footprint: "[[0.33, 0.27], [0.33, -0.27], [-0.33, -0.27], [-0.33, 0.27]]"   # 2026-10-26 (Narcis): half-width 0.29 -> 0.27 (inscribed radius = 0.27)
       obstacle_layer:
-        # The real odom frame is not at floor level: planar_odom.py sets odom -> base_footprint z = FAST-LIO z - sensor_height, relative to where FAST-LIO started.
-        # Measured -0.51 m and -1.24 m on two boots (the sim: 0). The scan is projected at z = 0 of base_footprint, so in odom (the local costmap frame) every point sits at that z
-        # and the default min_obstacle_height 0.0 drops all of them: the costmap stays empty. The scan is already cut in height (scan.yaml), so the height filters are opened.
-        # Both filters apply (layer level, obstacle_layer.cpp updateBounds; and per source, observation_buffer.cpp). The global costmap works in map (z ~ 0).
+        # odom is not at floor level: planar_odom sets odom -> base_footprint z = FAST-LIO z - sensor_height, relative to where FAST-LIO started (measured -0.51 m and -1.24 m on two boots). /scan, in lidar_level, sits at
+        # FAST-LIO's z + 4.4 cm in this frame, below 0 as soon as it drifts down, and the default min_obstacle_height 0.0 would drop all of it. The scan is already cut in height (scan.yaml), so the height filters are opened.
+        # Both filters apply (layer level, obstacle_layer.cpp updateBounds; and per source, observation_buffer.cpp). The global costmap works in map, where gn_loc puts the base on the floor: defaults.
         min_obstacle_height: -100.0
         max_obstacle_height: 100.0
         scan:

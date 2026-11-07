@@ -4,10 +4,12 @@ driver:=false sim_time:=true: the simulation (tools/nav_sim/sup_sim.sh) publishe
 import os
 from typing import List
 
+import yaml
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration as LC
+from launch.substitutions import LaunchConfiguration as LC, PythonExpression
 from launch_ros.actions import Node, SetParameter
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -16,12 +18,22 @@ NAV_BENCH = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file
 
 SCAN = os.path.join(NAV_BENCH, "config/scan.yaml")
 CLOUD = [("cloud_in", "/cloud_registered_body")]
+LIDAR_IN_BODY = [-0.011, -0.02329, 0.04412]   # extrinsic_T of FAST-LIO2's config (upstream mid360.yaml, unchanged by nav_live.sh)
+
+
+def above_lidar(height):
+    """A height above the floor (scan.yaml) as seen from lidar_level, whose height is that of the map's sensor_height."""
+    return ParameterValue(PythonExpression([str(height), " - (", LC("sensor_height"), f" + {LIDAR_IN_BODY[2]})"]), value_type=float)
 
 
 def scan_nodes():
-    """/scan from FAST-LIO2's cloud: the stock pointcloud_to_laserscan (the closest point per bin). SCAN_TOPIC (default /scan): where it publishes (the simulation puts a noise model between it and /scan)."""
+    """/scan from FAST-LIO2's cloud: the stock pointcloud_to_laserscan (the closest point per bin). SCAN_TOPIC (default /scan): where it publishes (the simulation puts a noise model between it and /scan).
+    In lidar_level, the height of the sensor: on the floor it would sit on the costmaps' min_obstacle_height 0, and the ~3 cm of error of map -> odom's z would drop half of the scans (48 % with AMCL in bag 162508)."""
     topic = os.environ.get("SCAN_TOPIC", "/scan")
-    return [Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", parameters=[SCAN], remappings=CLOUD + [("scan", topic)])]
+    with open(SCAN) as f:
+        band = yaml.safe_load(f)["/**"]["ros__parameters"]
+    return [Node(package="pointcloud_to_laserscan", executable="pointcloud_to_laserscan_node", remappings=CLOUD + [("scan", topic)],
+                 parameters=[SCAN, {"target_frame": "lidar_level", "min_height": above_lidar(band["min_height"]), "max_height": above_lidar(band["max_height"])}])]
 
 
 def localizer_nodes(overrides):
@@ -53,7 +65,7 @@ def supervisor_nodes():
     return [ExecuteProcess(name="gn_supervisor", output="screen", respawn=True, respawn_delay=2.0, cmd=[
         "python3", "-B", "/greloc/tools/global_reloc_3d/gn_supervisor_node.py", "--ros-args",
         "-p", f"map_xyz:={prior}", "-p", "register_binary:=/greloc/build/register_v2", "-p", "lib_dir:=/greloc/build",
-        "-p", "wheel_topic:=/odom", "-p", "work_dir:=/runs/gn_supervisor",
+        "-p", "wheel_topic:=/odom", "-p", "work_dir:=/runs/gn_supervisor", "-p", f"base_from_body_xyyaw:=[{LIDAR_IN_BODY[0]}, {LIDAR_IN_BODY[1]}, 0.0]",
         "-p", ["sensor_z:=", LC("sensor_height")],
         "-p", f"lidar_decimate:={int(os.environ.get('POINT_FILTER_NUM') or 2)}"])]      # the density FAST-LIO2 runs with (nav_live.sh point_filter_num); the search was validated with 2, so another value is a change to re-validate     # the mounting height over the floor of the map: the relocalizer searches only +- 0.5 m around it
 
@@ -71,6 +83,7 @@ def generate_launch_description():
         Node(package="fast_lio", executable="fastlio_mapping", parameters=[LC("fastlio_params")], respawn=True, respawn_delay=1.0, **heavy_env()),
         Node(package="planar_odom", executable="planar_odom", parameters=[{
             "sensor_height": ParameterValue(LC("sensor_height"), value_type=float),
+            "lidar_in_body": LIDAR_IN_BODY,
             "level": ParameterValue(["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])}]),
         *scan_nodes(),
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}, LC("overrides")]),

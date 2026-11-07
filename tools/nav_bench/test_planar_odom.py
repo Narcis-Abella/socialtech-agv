@@ -17,6 +17,15 @@ def test_footprint_keeps_yaw_drops_tilt_and_puts_the_floor_at_zero():
     assert abs(2 * np.arctan2(sz, cw) - yaw) < 1e-9 and abs(sz * sz + cw * cw - 1) < 1e-12  # pure yaw, the pitch is gone
 
 
+def test_base_footprint_goes_under_the_lidar_when_given_its_offset_in_the_body():
+    yaw = np.radians(90)  # the IMU (body) is 1.1 / 2.3 cm from the lidar: turning in place, the point under the lidar must not move
+    x, y, _, _, _ = po.footprint((1.0, 2.0, 0.0), rz(yaw), [0, 0, 0, 1], 0.575, (-0.011, -0.02329))
+    assert np.allclose([x, y], [1.0 + 0.02329, 2.0 - 0.011])
+    for a in np.radians([0, 90, 180, 270]):  # the lidar fixed at the origin, the IMU orbiting it: the footprint stays put
+        imu = (0.011 * np.cos(a) - 0.02329 * np.sin(a), 0.011 * np.sin(a) + 0.02329 * np.cos(a), 0.0)
+        assert np.allclose(po.footprint(imu, rz(a), [0, 0, 0, 1], 0.5, (-0.011, -0.02329))[:2], 0.0)
+
+
 def test_level_rotation_is_applied_to_position_and_heading():
     x, y, z, sz, cw = po.footprint((1.0, 0.0, 0.0), [0, 0, 0, 1], rz(np.pi / 2), 0.5)  # odom is camera_init turned 90 deg about z
     assert np.allclose([x, y, z], [0.0, 1.0, -0.5]) and abs(2 * np.arctan2(sz, cw) - np.pi / 2) < 1e-9

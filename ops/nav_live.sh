@@ -25,6 +25,8 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
     source /ov/install/setup.bash
     echo "WARN: ~/nav_overlay is sourced after the image: its packages ($(find /ov/install -mindepth 1 -maxdepth 1 -type d -printf '%f ')) shadow the ones built in the image"
   fi
+  # this checkout's launch needs /scan's frame and gn_loc's pose topic: older binaries (image or overlay, whichever wins) run without /scan and without an error
+  grep -q lidar_level "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" && grep -q gn_loc/pose "$(ros2 pkg prefix gn_loc)/lib/gn_loc/gn_loc_node" || { echo "ERROR: planar_odom or gn_loc is older than this checkout (no lidar_level or gn_loc/pose): rebuild the image (ops/build_image.sh robot) or ~/nav_overlay" >&2; exit 1; }
   export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-53}
   # lo first: the stack's own traffic (driver -> FAST-LIO, recorder) must not ride on the link to the laptop. Pinned to DDS_IFACE alone,
   # it went as multicast on that interface, and when the USB/Wi-Fi link dropped every local send failed (IMU lost 7-8 s, 29 Oct).

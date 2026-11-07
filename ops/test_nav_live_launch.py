@@ -88,4 +88,17 @@ print("ok viz")
 launch_text = [e for e in launch.generate_launch_description().entities if isinstance(e, Node)]
 assert any(e.node_executable == "pointcloud_to_laserscan_node" for e in launch_text), "no pointcloud_to_laserscan_node"
 assert not any(e.node_package == "scan_median" for e in launch_text), "scan_median must be gone"
+# /scan at the height of the lidar, the same band above the floor (scan.yaml): a scan on the floor sits on the costmaps' min_obstacle_height 0 and any error in z drops it
+import yaml
+
+ctx = LaunchContext()
+ctx.launch_configurations["sensor_height"] = "0.5"
+p2l = node("pointcloud_to_laserscan_node")
+extra = [p for p in p2l._Node__parameters if isinstance(p, dict)][0]
+values = {perform_substitutions(ctx, k): v for k, v in extra.items()}
+values = {k: (v.evaluate(ctx) if hasattr(v, "evaluate") else v) for k, v in values.items()}
+assert yaml.safe_load(perform_substitutions(ctx, values["target_frame"])) == "lidar_level", values   # launch_ros keeps a plain string as YAML
+h = 0.5 + 0.04412
+assert abs(values["min_height"] - (0.10 - h)) < 1e-9 and abs(values["max_height"] - (1.80 - h)) < 1e-9, values
+print("ok scan height")
 print("ok scan")

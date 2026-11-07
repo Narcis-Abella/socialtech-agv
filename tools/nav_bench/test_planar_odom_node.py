@@ -10,6 +10,7 @@ import planar_odom as po
 
 H = 0.773
 LEVEL = list(np.array([0.2, -0.3, 0.1, 0.92]) / np.linalg.norm([0.2, -0.3, 0.1, 0.92]))
+LIDAR = [-0.011, -0.02329, 0.04412]
 
 
 def test_node_matches_the_python_reference_and_publishes_the_level_transform():
@@ -19,7 +20,7 @@ def test_node_matches_the_python_reference_and_publishes_the_level_transform():
     from rclpy.qos import DurabilityPolicy, QoSProfile
     from tf2_msgs.msg import TFMessage
 
-    node_proc = subprocess.Popen(["ros2", "run", "planar_odom", "planar_odom", "--ros-args", "-p", f"sensor_height:={H}", "-p", f"level:={LEVEL}"],
+    node_proc = subprocess.Popen(["ros2", "run", "planar_odom", "planar_odom", "--ros-args", "-p", f"sensor_height:={H}", "-p", f"level:={LEVEL}", "-p", f"lidar_in_body:={LIDAR}"],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         rclpy.init()
@@ -46,7 +47,7 @@ def test_node_matches_the_python_reference_and_publishes_the_level_transform():
             rclpy.spin_once(n, timeout_sec=0.05)
         assert all(i in got for i, _, _ in sent), f"{sum(i not in got for i, _, _ in sent)} of 300 TF missing"
         for i, p, q in sent:
-            x, y, z, sz, cw = po.footprint(p, q, LEVEL, H)
+            x, y, z, sz, cw = po.footprint(p, q, LEVEL, H, LIDAR[:2])
             r = got[i].transform
             assert max(abs(r.translation.x - x), abs(r.translation.y - y), abs(r.translation.z - z), abs(r.rotation.z - sz), abs(r.rotation.w - cw)) < 1e-9
             assert r.rotation.x == 0 and r.rotation.y == 0  # planar: yaw only
@@ -54,6 +55,10 @@ def test_node_matches_the_python_reference_and_publishes_the_level_transform():
         assert s, "no static odom -> camera_init"
         r = s[0].transform.rotation
         assert max(abs(r.x - LEVEL[0]), abs(r.y - LEVEL[1]), abs(r.z - LEVEL[2]), abs(r.w - LEVEL[3])) < 1e-12
+        s = [t for t in static if (t.header.frame_id, t.child_frame_id) == ("base_footprint", "lidar_level")]
+        assert s, "no static base_footprint -> lidar_level"
+        v, r = s[0].transform.translation, s[0].transform.rotation
+        assert (v.x, v.y) == (0, 0) and abs(v.z - (H + LIDAR[2])) < 1e-12 and (r.x, r.y, r.z, r.w) == (0, 0, 0, 1)  # levelled, straight above the base
     finally:
         node_proc.terminate()
         rclpy.shutdown()
