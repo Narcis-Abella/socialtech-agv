@@ -108,9 +108,9 @@ if [[ -n ${SUPERVISOR:-} ]]; then   # validated first: an error must not come af
   for f in tools/global_reloc_3d/gn_supervisor_node.py build/register_v2 build/libsmall_gicp.so build/libcorr_search.so prior/$MAP_NAME/prior/map.xyz; do
     [[ -f $G/$f ]] || die "$G/$f missing: stage the supervisor tools, register_v2 and the 3D prior of the map into GRELOC (stage_supervisor.sh, in the team's SocialTech workspace repo)"
   done
+  grep -q gn_loc/pose "$G/tools/global_reloc_3d/gn_supervisor_node.py" || die "$G/tools is older than this checkout (it does not listen to gn_loc/pose, so no pose would ever confirm): stage the supervisor again"
   docker run --rm -v "$G:/greloc:ro" -w /greloc/tools/global_reloc_3d "$IMAGE" python3 -B -c "import numpy, scipy, rclpy, action_msgs.msg, diagnostic_msgs.msg, gn_supervisor_node, corr_cpp; from rclpy.experimental import EventsExecutor; corr_cpp.load('/greloc/build/libcorr_search.so')" >/dev/null 2>&1 || die "$IMAGE cannot import what the supervisor needs (numpy, scipy, rclpy, action_msgs, diagnostic_msgs, the tools staged in $G, build/libcorr_search.so): run the import of this check by hand to see which"
   SUP=(-e SUPERVISOR=1 -e "SUP_PRIOR=/greloc/prior/$MAP_NAME/prior/map.xyz" -v "$G:/greloc:ro")
-  grep -q gn_loc/pose "$G/tools/global_reloc_3d/gn_supervisor_node.py" || die "$G/tools is older than this checkout (it does not listen to gn_loc/pose, so no pose would ever confirm): stage the supervisor again"
   echo "SUPERVISOR=1: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
 fi
 if [[ -n ${NAV:-} ]]; then
