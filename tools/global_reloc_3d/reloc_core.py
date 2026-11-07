@@ -215,8 +215,7 @@ class ImuGate:
             i, j = np.searchsorted(t, [T - imu_ready.WINDOW_S, T])
             if j - i < 3:
                 continue
-            cadence = float(np.median(np.diff(t[i:j])))
-            expected = int(np.ceil(imu_ready.WINDOW_S / cadence))
+            expected = imu_ready.expected_samples(t[i:j], imu_ready.WINDOW_S)
             self.evaluations += 1
             if imu_ready.window_ok(np.asarray(self.g)[i:j], np.asarray(self.a)[i:j], expected):
                 self.ready_stamp = T

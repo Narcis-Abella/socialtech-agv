@@ -378,6 +378,27 @@ class GyroNoiseTest(LiveRelocBase):
         self.assertEqual(r.stage, 'imu')
 
 
+class ClockStepTest(unittest.TestCase):
+    def feed(self, sw, t0, t1):
+        for k in range(int(round((t1 - t0) * 200))):
+            sw.add(t0 + k / 200., (0., 0., 0.), (0., 0., 1.))
+
+    def test_a_clock_that_steps_back_must_not_freeze_the_last_answer(self):
+        sw = rl.StillWindow()
+        self.feed(sw, 100., 103.)
+        self.assertTrue(sw.ok and sw.calm)                                     # still, for 3 s
+        sw.add(60., (0., 0., 0.), (0., 0., 1.))                                # the driver re-synced its clock 43 s back: the old window is another timeline
+        self.assertFalse(sw.ok or sw.calm)                                     # unknown, not "still as before" (it would start a restart and an exposure on a robot that may be moving)
+        self.feed(sw, 60.005, 63.)
+        self.assertTrue(sw.ok and sw.calm)                                     # and it recovers after a full window on the new timeline
+
+    def test_a_duplicate_or_slightly_late_stamp_is_still_just_ignored(self):
+        sw = rl.StillWindow()
+        self.feed(sw, 100., 103.)
+        sw.add(102.998, (0., 0., 0.), (0., 0., 1.))
+        self.assertTrue(sw.ok and sw.calm)
+
+
 class SkewedStampsTest(LiveRelocBase):
     """The IMU stamps of the Nano are jittery with a long tail (mean 5.15 ms, median 4.5): 2 s / median(dt) asked for 444 samples of a window that holds 388, so a perfectly clean stream was
     'missing more than 5 %' and the robot never counted as still (13-18 s waiting to start in the failing runs, and the 'moved' checks fired)."""

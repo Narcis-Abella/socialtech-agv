@@ -84,7 +84,10 @@ class StillWindow:
     def add(self, stamp, gyro, acc_g, need=True):
         """need=False keeps the window and its grid but skips the test; the next needed call runs it once, at the newest grid time: the answer the eager window had."""
         if self.t and stamp <= self.t[-1]:
-            return self.ok                     # non-monotonic sample: ignored
+            if stamp >= self.t[-1] - .5:
+                return self.ok                 # a duplicate or a slightly late sample: ignored
+            self.t.clear(); self.g.clear(); self.a.clear()         # the clock stepped back (driver re-sync, replayed or sim clock): what is kept belongs to another timeline and its answer
+            self.next_eval, self.ok, self.calm, self.stale = None, False, False, False   # must not freeze as "still"
         self.t.append(stamp); self.g.append(gyro); self.a.append(acc_g)
         while self.t[0] < stamp - imu_ready.WINDOW_S - 1.:
             self.t.popleft(); self.g.popleft(); self.a.popleft()

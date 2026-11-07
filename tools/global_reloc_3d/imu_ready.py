@@ -30,14 +30,15 @@ def expected_samples(t, span_s=None):
     and the jitter of the Livox IMU on the Nano (long tail: median 4.5 ms, mean 5.15 ms) did not inflate the expectation to 444 for a window that holds 388, as span / median(dt) did."""
     t = np.asarray(t, float)
     d = np.diff(t)
-    if len(d) < 2 or np.median(d) <= 0:
+    d = d[d > 0]                                    # a stamp that repeats or steps back is not a period
+    if len(d) < 2:
         return 0
-    return int(np.ceil((t[-1] - t[0] if span_s is None else span_s) / d[d < 3 * np.median(d)].mean()))
+    return int(np.ceil((t[-1] - t[0] if span_s is None else span_s) / d[d < 3 * np.median(d)].mean())) if t[-1] > t[0] or span_s is not None else 0
 
 
 def window_ok(gyro, acc_g, expected, residual_scale=1.):
     gyro = np.asarray(gyro, float)
-    if len(gyro) < .95 * expected or len(gyro) < 3:
+    if expected < 3 or len(gyro) < .95 * expected or len(gyro) < 3:      # expected <= 0 is a stream whose stamps tell nothing: not still, never 'no requirement'
         return False
     b = np.median(gyro, axis=0)
     residual = np.percentile(np.linalg.norm(gyro - b, axis=1), 95)
@@ -49,12 +50,10 @@ def window_ok(gyro, acc_g, expected, residual_scale=1.):
 def ready_times(t, gyro, acc_g, step=.1):
     """Times T (on a `step` grid) whose preceding half-open window [T-2, T) passes."""
     t = np.asarray(t, float)
-    cadence = np.median(np.diff(t))
-    expected = int(np.ceil(WINDOW_S / cadence))
     out = []
     for T in np.arange(t[0] + WINDOW_S, t[-1], step):
         i, j = np.searchsorted(t, [T - WINDOW_S, T])
-        if window_ok(gyro[i:j], acc_g[i:j], expected):
+        if window_ok(gyro[i:j], acc_g[i:j], expected_samples(t[i:j], WINDOW_S)):
             out.append(float(T))
     return out
 
