@@ -1,0 +1,31 @@
+Add the parameter publish_odom_tf (default true = upstream) to tracer_base: false skips the odom -> base TF broadcast (50 Hz /tf) and keeps the Odometry topic.
+Base: agilexrobotics/tracer_ros2 2c4938d (jazzy).
+
+diff --git a/tracer_base/include/tracer_base/tracer_messenger.hpp b/tracer_base/include/tracer_base/tracer_messenger.hpp
+--- a/tracer_base/include/tracer_base/tracer_messenger.hpp
++++ b/tracer_base/include/tracer_base/tracer_messenger.hpp
+@@ -60,6 +60,7 @@
+                   std::placeholders::_1));
+ 
+     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(node_);
++    publish_odom_tf_ = node_->declare_parameter<bool>("publish_odom_tf", true);
+   }
+ 
+   void PublishStateToROS() {
+@@ -152,6 +153,7 @@
+       light_cmd_sub_;
+ 
+   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
++  bool publish_odom_tf_ = true;
+ 
+   // speed variables
+   double position_x_ = 0.0;
+@@ -276,7 +278,7 @@
+     tf_msg.transform.translation.z = 0.0;
+     tf_msg.transform.rotation = odom_quat;
+ 
+-    tf_broadcaster_->sendTransform(tf_msg);
++    if (publish_odom_tf_) tf_broadcaster_->sendTransform(tf_msg);
+ 
+     // publish odometry and tf messages
+     nav_msgs::msg::Odometry odom_msg;
