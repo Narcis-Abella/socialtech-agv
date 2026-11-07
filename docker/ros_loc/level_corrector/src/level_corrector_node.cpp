@@ -47,12 +47,17 @@ class LevelCorrector : public rclcpp::Node {
     const double t0 = cpu_s();
     reg_ = std::make_unique<MapRegistrar>(read_ply_xyz(dir + "/map.ply", read_t_map_world(dir + "/map.yaml")), declare_parameter("map_voxel", 0.1), declare_parameter("scan_voxel", 0.25));
     RCLCPP_INFO(get_logger(), "map %zu voxels, prepared in %.2f s CPU; rate %.2f Hz", reg_->map_size(), cpu_s() - t0, rate);
+    check_only_ = declare_parameter("check_only", false);   // nav_live.sh: load the map with the real loader and leave (a bad map throws above, before this line)
+    if (check_only_) return;
     pub_c_ = create_publisher<geometry_msgs::msg::QuaternionStamped>("~/correction", 1);
     pub_s_ = create_publisher<std_msgs::msg::String>("~/status", 10);
     sub_o_ = create_subscription<nav_msgs::msg::Odometry>("/Odometry", 100, [this](nav_msgs::msg::Odometry::ConstSharedPtr m) { on_odom(*m); });
     sub_c_ = create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_body", rclcpp::SensorDataQoS().keep_last(1), [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr m) { cloud_ = m; });
     timer_ = create_wall_timer(std::chrono::duration<double>(1.0 / rate), [this] { tick(); });
   }
+
+ public:
+  bool check_only() const { return check_only_; }
 
  private:
   void on_odom(const nav_msgs::msg::Odometry& m) {
@@ -123,7 +128,7 @@ class LevelCorrector : public rclcpp::Node {
   tf2_ros::TransformListener tf_;
   std::deque<Odo> odom_;
   sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud_;
-  bool restart_ = false;
+  bool restart_ = false, check_only_ = false;
   rclcpp::Publisher<geometry_msgs::msg::QuaternionStamped>::SharedPtr pub_c_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_s_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_o_;
@@ -133,6 +138,7 @@ class LevelCorrector : public rclcpp::Node {
 
 int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<LevelCorrector>());
+  const auto node = std::make_shared<LevelCorrector>();
+  if (!node->check_only()) rclcpp::spin(node);
   rclcpp::shutdown();
 }

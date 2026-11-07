@@ -17,7 +17,8 @@ if [[ $scenario == auto* ]]; then
   scenario=$out/scenario.json
 fi
 # FAST-LIO2 does not survive a teleport: the robot is spawned at the first start of the scenario and the trials chain from where the previous one ended (trials.py CHAIN=1)
-export SPAWN=$(python3 -c "import json,sys; print(*json.load(open(sys.argv[1]))['trials'][0]['start'])" "$scenario") CHAIN=${CHAIN:-1}
+SPAWN=$(python3 -c "import json,sys; print(*json.load(open(sys.argv[1]))['trials'][0]['start'])" "$scenario")   # assigned first: export would hide a failing python
+export SPAWN CHAIN=${CHAIN:-1}
 source /tools/nav_sim/sim_up.sh
 if [ -d /locsrc ]; then
   mkdir -p /tmp/locws && (cd /tmp/locws && colcon build --base-paths /locsrc --packages-select gn_loc --merge-install --install-base /tmp/loc_install > "$out/build_loc.log" 2>&1)
@@ -27,9 +28,11 @@ chain_map
 fastlio_yaml "$out/fastlio.yaml"
 # LEVEL_CORRECTOR=1: level_corrector (registers the cloud against the world's own 3D points, written here) built over the image's packages (small_gicp prebuilt in /sg); planar_odom
 # consumes its correction (the overlay of /odomsrc, sim_up.sh)
+source /ops/flags.sh
 LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default, as ops/nav_live.sh: the sim runs what the robot runs (LEVEL_CORRECTOR=0 for the stack without it)
+normalize_flags LEVEL_CORRECTOR SUPERVISOR   # 0/off/false/no mean off, as in ops/nav_live.sh
 LC_ARG=
-if [ "${LEVEL_CORRECTOR}" != 0 ]; then
+if [ -n "${LEVEL_CORRECTOR:-}" ]; then
   grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" || { echo "planar_odom that would run ($(ros2 pkg prefix planar_odom)) predates correction_topic: the corrector would run and level nothing (mount docker/ros/planar_odom at /odomsrc, agx_full.sh does)" >&2; exit 1; }
   python3 /tools/sim_realism/tris_to_ply.py /pat/loyola.tris "$out/map3d" 0.1 0.05 > "$out/map3d.log"
   export LEVEL_MAP_DIR="$out/map3d"

@@ -29,6 +29,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   fi
   if [[ -n ${LEVEL_CORRECTOR:-} ]]; then   # an overlay (above) or an old image shadows planar_odom with a build that ignores the correction: the corrector would run and level nothing
     grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" || { echo "FAIL: the planar_odom that would run ($(ros2 pkg prefix planar_odom)) predates correction_topic: the level corrector would change nothing (a ~/nav_overlay shadowing the image's? rebuild the image, or LEVEL_CORRECTOR=0 to run without it)" >&2; exit 1; }
+    ros2 run level_corrector level_corrector_node --ros-args -p map_dir:=/map -p check_only:=true >/tmp/lc_check.log 2>&1 || { echo "FAIL: level_corrector cannot load /map (map.ply: binary little-endian, float x y z only; map.yaml: the four T_map_world rows): $(tail -2 /tmp/lc_check.log | tr '\n' ' ') -- or LEVEL_CORRECTOR=0" >&2; exit 1; }
   fi
   # this checkout's launch needs /scan's frame and gn_loc's pose topic: older binaries (image or overlay, whichever wins) run without /scan and without an error
   grep -q lidar_level "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" && grep -q gn_loc/pose "$(ros2 pkg prefix gn_loc)/lib/gn_loc/gn_loc_node" || { echo "ERROR: planar_odom or gn_loc is older than this checkout (no lidar_level or gn_loc/pose): rebuild the image (ops/build_image.sh robot) or ~/nav_overlay" >&2; exit 1; }
@@ -56,6 +57,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   launch=nav_live; extra=()
   if [[ -n ${NAV:-} ]]; then   # navigation: Nav2 params of the sim + the real robot's differences
     python3 "$REPO/ops/merge_params.py" "$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml" "$REPO/ops/nav2_robot_overrides.yaml" >/tmp/nav2_params.yaml
+    lc_topics=(); [[ -z ${LEVEL_CORRECTOR:-} ]] || lc_topics=(/level_corrector/status /level_corrector/correction)   # its state per cycle (gate reasons, measured tilt, C) and the correction planar_odom applies
     sup_topics=(); [[ -z ${SUPERVISOR:-} ]] || sup_topics=(/gn_loc/status /gn_loc/scan_fit /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status)   # only where they exist
     set -m   # job control: a background job of a non-interactive shell ignores SIGINT, and the recorder needs one to write its metadata.yaml
     python3 "$REPO/ops/nav_start_when_localized.py" &   # lifetime = the container's
@@ -63,7 +65,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
       # Everything needed to judge a run offline (and to replay FAST-LIO on it: /Odometry, /livox/lidar, /livox/imu): the three speed stages, what the base reports, gn_loc, BT, plans, scan, local costmap, TF, goals. Not the global costmap (static, big).
       ros2 bag record -s mcap -o /runs/bag /cmd_vel_nav /cmd_vel_smoothed /cmd_vel /odom /tracer_status /gn_loc/pose /behavior_tree_log /collision_monitor_state /diagnostics \
         /goal_pose /plan /local_plan /received_global_plan /speed_limit /scan /local_costmap/costmap /tf /tf_static /navigate_to_pose/_action/status /navigate_to_pose/_action/feedback \
-        /Odometry /livox/lidar /livox/imu "${sup_topics[@]}" \
+        /Odometry /livox/lidar /livox/imu "${sup_topics[@]}" "${lc_topics[@]}" \
         </dev/null >/runs/bag.log 2>&1 &
       rec=$!
     fi

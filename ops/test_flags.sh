@@ -47,5 +47,14 @@ grep -qF '[[ -f $MAP/map.ply ]]' "$nl" && grep -qF '$MAP/map.yaml"; } || die "LE
 # the full-chain sim runs the robot's configuration by default and refuses a planar_odom that would ignore the corrector
 grep -qF 'LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default, as ops/nav_live.sh' "$here/../tools/nav_sim/nav_full_sim.sh" || { echo "FAIL: nav_full_sim.sh does not default LEVEL_CORRECTOR on"; fail=1; }
 grep -qF 'grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom"' "$here/../tools/nav_sim/nav_full_sim.sh" || { echo "FAIL: nav_full_sim.sh does not check that planar_odom has correction_topic"; fail=1; }
+# the DEV bag keeps what is needed to diagnose the corrector offline
+grep -qF 'lc_topics=(); [[ -z ${LEVEL_CORRECTOR:-} ]] || lc_topics=(/level_corrector/status /level_corrector/correction)' "$nl" && grep -qF '"${lc_topics[@]}"' "$nl" || { echo "FAIL: nav_live.sh does not record the level_corrector topics"; fail=1; }
+# the sim reads LEVEL_CORRECTOR / SUPERVISOR like the robot (off/false/no/0 are off) and does not hide a python failure behind export
+sim="$here/../tools/nav_sim/nav_full_sim.sh"
+grep -qF 'normalize_flags LEVEL_CORRECTOR SUPERVISOR' "$sim" || { echo "FAIL: nav_full_sim.sh does not normalise LEVEL_CORRECTOR and SUPERVISOR"; fail=1; }
+grep -qF 'if [ -n "${LEVEL_CORRECTOR:-}" ]; then' "$sim" || { echo "FAIL: nav_full_sim.sh tests the corrector flag as a string against 0"; fail=1; }
+grep -q '^export SPAWN=\$(' "$sim" && { echo "FAIL: nav_full_sim.sh exports SPAWN=\$(python3 ...): a failing python is hidden by export"; fail=1; }
+# the corrector's map is validated with the node's own loader before anything starts
+grep -qF 'level_corrector_node --ros-args -p map_dir:=/map -p check_only:=true' "$nl" || { echo "FAIL: nav_live.sh does not dry-run the corrector's map loader"; fail=1; }
 ((fail == 0)) && echo "ok"
 exit $fail

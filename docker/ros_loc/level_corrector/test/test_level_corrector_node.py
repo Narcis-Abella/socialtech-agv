@@ -117,9 +117,32 @@ def main():
     print("OK")
 
 
+def check_only_test():
+    """nav_live.sh dry-runs the node's own map loader (check_only:=true) before it starts anything: a good map exits 0 at once, a bad one exits non-zero with a message (a node that dies in its
+    constructor under respawn=True would loop silently while planar_odom waits for a correction that never comes)."""
+    from ament_index_python.packages import get_package_prefix
+    binary = os.path.join(get_package_prefix("level_corrector"), "lib", "level_corrector", "level_corrector_node")
+
+    def run(d):
+        return subprocess.run([binary, "--ros-args", "-p", f"map_dir:={d}", "-p", "check_only:=true"], capture_output=True, text=True, timeout=25)
+    good = tempfile.mkdtemp(); write_map(good, room(400))
+    r = run(good)
+    assert r.returncode == 0, f"a good map was refused: {r.stdout[-300:]} {r.stderr[-300:]}"
+    ascii_ply = tempfile.mkdtemp(); write_map(ascii_ply, room(50))
+    raw = open(ascii_ply + "/map.ply", "rb").read().replace(b"binary_little_endian", b"ascii")
+    open(ascii_ply + "/map.ply", "wb").write(raw)
+    no_t = tempfile.mkdtemp(); write_map(no_t, room(50)); open(no_t + "/map.yaml", "w").write("image: map.pgm\n")
+    empty = tempfile.mkdtemp()
+    for name, d in (("an ascii PLY", ascii_ply), ("a map.yaml without T_map_world", no_t), ("no map at all", empty)):
+        r = run(d)
+        assert r.returncode != 0, f"{name} was accepted"
+    print("OK check_only")
+
+
 if __name__ == "__main__":
     try:
         import rclpy  # noqa: F401
     except ImportError:
         print("skip: no rclpy"); sys.exit(0)
+    check_only_test()
     main()
