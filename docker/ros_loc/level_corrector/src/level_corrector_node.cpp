@@ -60,9 +60,16 @@ class LevelCorrector : public rclcpp::Node {
     const Vec3 p(m.pose.pose.position.x, m.pose.pose.position.y, m.pose.pose.position.z);
     if (!odom_.empty() && (t - odom_.back().t > 1.5 || (p - odom_.back().p).norm() > 1.0 || t < odom_.back().t)) {   // FAST-LIO restarted: new camera_init
       restart_ = true; odom_.clear();
+      filter_.reset(); publish_c(now());   // the old C belonged to the old camera_init: plain level until the first valid measurement of the new one
     }
     odom_.push_back({t, p, iso(m.pose.pose).linear()});
     if (odom_.size() > 50) odom_.pop_front();
+  }
+
+  void publish_c(const builtin_interfaces::msg::Time& stamp) {
+    geometry_msgs::msg::QuaternionStamped q; q.header.stamp = stamp; q.header.frame_id = "odom";
+    const Eigen::Quaterniond Q(filter_.C()); q.quaternion.x = Q.x(); q.quaternion.y = Q.y(); q.quaternion.z = Q.z(); q.quaternion.w = Q.w();
+    pub_c_->publish(q);
   }
 
   void say(const std::string& s) { std_msgs::msg::String m; m.data = s; pub_s_->publish(m); }
@@ -92,14 +99,10 @@ class LevelCorrector : public rclcpp::Node {
     const Mat3 Cm = tilt_rot(L_ * o->R * up, Vec3::UnitZ());
     const char* st = bad ? bad : "ok";
     if (!bad) {
-      const auto r = filter_.update(Cm, ts, restart_);
+      const auto r = filter_.update(Cm, ts);
       if (r == Filter::Jump) st = "jump"; else restart_ = false;
     }
-    if (filter_.primed()) {
-      geometry_msgs::msg::QuaternionStamped q; q.header.stamp = cloud->header.stamp; q.header.frame_id = "odom";
-      const Eigen::Quaterniond Q(filter_.C()); q.quaternion.x = Q.x(); q.quaternion.y = Q.y(); q.quaternion.z = Q.z(); q.quaternion.w = Q.w();
-      pub_c_->publish(q);
-    }
+    if (filter_.primed()) publish_c(cloud->header.stamp);
     auto xy = [](const Mat3& R) -> Eigen::Vector2d { const Vec3 u = R.transpose() * Vec3::UnitZ(); return Eigen::Vector2d(std::atan2(u.x(), u.z()), std::atan2(u.y(), u.z())) * 180 / M_PI; };
     const Eigen::Vector2d m = xy(Cm.transpose()), c = xy(filter_.C().transpose());
     char b[400];

@@ -51,26 +51,29 @@ TEST(Filter, StartsAtIdentityAndTakesTheFirstMeasurementWhole) {
   Filter f(10.0, 0.05, 2.0);
   EXPECT_FALSE(f.primed());
   EXPECT_LT((f.C() - Mat3::Identity()).norm(), 1e-12);
-  EXPECT_EQ(f.update(rv(0.8, -0.4), 0.0, false), Filter::Primed);
+  EXPECT_EQ(f.update(rv(0.8, -0.4), 0.0), Filter::Primed);
   EXPECT_LT(deg_between(f.C(), rv(0.8, -0.4)), 1e-9);
 }
 TEST(Filter, FollowsSlowlyAndNeverFasterThanTheSlew) {
-  Filter f(10.0, 0.05, 2.0); f.update(rv(0, 0), 0.0, false);
-  EXPECT_EQ(f.update(rv(1.0, 0), 2.0, false), Filter::Accepted);
+  Filter f(10.0, 0.05, 2.0); f.update(rv(0, 0), 0.0);
+  EXPECT_EQ(f.update(rv(1.0, 0), 2.0), Filter::Accepted);
   EXPECT_NEAR(deg_between(f.C(), rv(0, 0)), 0.05 * 2.0, 1e-6);   // slew-limited: 0.1 deg in 2 s, the low-pass alone would give 0.18
 }
 TEST(Filter, RejectsAJumpAndKeepsC) {
-  Filter f(10.0, 0.05, 2.0); f.update(rv(0, 0), 0.0, false);
+  Filter f(10.0, 0.05, 2.0); f.update(rv(0, 0), 0.0);
   const Mat3 before = f.C();
-  EXPECT_EQ(f.update(rv(2.5, 0), 2.0, false), Filter::Jump);
+  EXPECT_EQ(f.update(rv(2.5, 0), 2.0), Filter::Jump);
   EXPECT_LT((f.C() - before).norm(), 1e-12);
 }
-TEST(Filter, ARestartTakesTheNextMeasurementWholeEvenFarFromC) {
-  Filter f(10.0, 0.05, 2.0); f.update(rv(0, 0), 0.0, false);
-  EXPECT_EQ(f.update(rv(4.0, 1.0), 2.0, true), Filter::Primed);
+TEST(Filter, ResetGoesBackToTheIdentityAndTheNextMeasurementIsTakenWholeEvenFarFromTheOldC) {
+  Filter f(10.0, 0.05, 2.0); f.update(rv(0.6, 0.5), 0.0);
+  f.reset();   // FAST-LIO restarted: the old C belonged to the old camera_init
+  EXPECT_FALSE(f.primed());
+  EXPECT_LT((f.C() - Mat3::Identity()).norm(), 1e-12);
+  EXPECT_EQ(f.update(rv(4.0, 1.0), 2.0), Filter::Primed);
   EXPECT_LT(deg_between(f.C(), rv(4.0, 1.0)), 1e-9);
 }
-TEST(Filter, RestartBeforeTheFirstMeasurementIsHarmless) {
-  Filter f(10.0, 0.05, 2.0);
-  EXPECT_EQ(f.update(rv(0.5, 0.5), 1.0, true), Filter::Primed);
+TEST(Filter, ResetBeforeTheFirstMeasurementIsHarmless) {
+  Filter f(10.0, 0.05, 2.0); f.reset();
+  EXPECT_EQ(f.update(rv(0.5, 0.5), 1.0), Filter::Primed);
 }

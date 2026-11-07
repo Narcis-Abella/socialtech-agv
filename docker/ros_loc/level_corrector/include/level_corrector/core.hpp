@@ -49,18 +49,20 @@ inline const char* gate_reason(const Fit& f, const Gates& g) {
   return nullptr;
 }
 
-// C follows the gated measurements slowly. The first one (or the first after a FAST-LIO restart, whose camera_init is new) is taken whole; later ones that disagree
+// C follows the gated measurements slowly. The first one (or the first after reset()) is taken whole; later ones that disagree
 // with C by more than max_jump_deg are dropped, so a wrong registration that passed the gates cannot tilt the costmaps; C then stays where it was (= today's static level).
 class Filter {
  public:
   enum Result { Primed, Accepted, Jump };
   Filter(double tau_s, double slew_deg_s, double max_jump_deg) : tau_(tau_s), slew_(slew_deg_s), jump_(max_jump_deg) {}
-  Result update(const Mat3& Cm, double t, bool restart) {
-    if (!primed_ || restart) { C_ = Cm; t_ = t; primed_ = true; return Primed; }
+  Result update(const Mat3& Cm, double t) {
+    if (!primed_) { C_ = Cm; t_ = t; primed_ = true; return Primed; }
     if (Eigen::AngleAxisd(Cm * C_.transpose()).angle() * 180 / M_PI > jump_) return Jump;
     C_ = lowpass(C_, Cm, t - t_, tau_, slew_); t_ = t;
     return Accepted;
   }
+  // FAST-LIO restarted: its camera_init is new, so the old C belongs to nothing. Back to the plain level until the next valid measurement, which is taken whole.
+  void reset() { C_ = Mat3::Identity(); primed_ = false; }
   const Mat3& C() const { return C_; }
   bool primed() const { return primed_; }
 

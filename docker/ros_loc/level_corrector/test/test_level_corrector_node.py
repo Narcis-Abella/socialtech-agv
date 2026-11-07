@@ -79,20 +79,30 @@ def main():
             c = PointCloud2(); c.header.stamp = now; c.header.frame_id = "body"; c.height = 1; c.width = len(body); c.fields = fields; c.point_step = 12; c.row_step = 12 * len(body)
             c.is_dense = True; c.data = body.tobytes(); cloud_pub.publish(c)
             rclpy.spin_once(n, timeout_sec=0.1)
+        # FAST-LIO restarts (a pose far from the last one): the old C belonged to the old camera_init, so the node must go back to the identity at once, before any new measurement
+        first = {"C": got["C"], "status": got["status"]}   # what the main assertions below judge
+        got["C"] = None
+        t_end = time.time() + 5
+        while got["C"] is None and time.time() < t_end:
+            o = Odometry(); o.header.stamp = n.get_clock().now().to_msg(); o.header.frame_id = "camera_init"; o.pose.pose.position.x = 50.0; o.pose.pose.orientation.w = 1.0
+            odom_pub.publish(o); rclpy.spin_once(n, timeout_sec=0.1)
+        assert got["C"] is not None, "no correction published after a FAST-LIO restart"
+        q2 = got["C"].quaternion
+        assert abs(q2.x) < 1e-9 and abs(q2.y) < 1e-9 and abs(q2.z) < 1e-9 and abs(abs(q2.w) - 1) < 1e-9, f"C after a restart is not the identity: {q2}"
     finally:
         proc.terminate()
         out = proc.communicate(timeout=10)[0]
-    assert got["C"] is not None, f"no correction published; status={got['status']}\nnode log:\n{out}"
-    assert got["status"] and got["status"].startswith("state=ok"), got["status"]
-    q = got["C"].quaternion; from scipy.spatial.transform import Rotation
+    assert first["C"] is not None, f"no correction published; status={first['status']}\nnode log:\n{out}"
+    assert first["status"] and first["status"].startswith("state=ok"), first["status"]
+    q = first["C"].quaternion; from scipy.spatial.transform import Rotation
     C = Rotation.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
     ez = np.array([0, 0, 1.0]); up_true_in_body = R_true.T @ ez                      # the map's up in the body, what the registration has to find
     after = C @ R_chain @ up_true_in_body                                             # corrected chain: the floor normal must come back to z
     err = math.degrees(math.acos(min(1.0, float(after @ ez)))); before = math.degrees(math.acos(min(1.0, float(R_chain @ up_true_in_body @ ez))))
-    print(f"floor tilt in odom: {before:.3f} deg before, {err:.3f} deg after the correction; {got['status']}")
+    print(f"floor tilt in odom: {before:.3f} deg before, {err:.3f} deg after the correction; {first['status']}")
     assert before > 1.0 and err < 0.2, (before, err)
-    st = dict(kv.split("=") for kv in got["status"].split()); u = C @ ez   # the status reports C as pitch/roll of its z axis; a garbled number there once came from a dangling Eigen expression
-    assert abs(float(st["C_pitch"]) - math.degrees(math.atan2(u[0], u[2]))) < 0.01 and abs(float(st["C_roll"]) - math.degrees(math.atan2(u[1], u[2]))) < 0.01, (got["status"], u)
+    st = dict(kv.split("=") for kv in first["status"].split()); u = C @ ez   # the status reports C as pitch/roll of its z axis; a garbled number there once came from a dangling Eigen expression
+    assert abs(float(st["C_pitch"]) - math.degrees(math.atan2(u[0], u[2]))) < 0.01 and abs(float(st["C_roll"]) - math.degrees(math.atan2(u[1], u[2]))) < 0.01, (first["status"], u)
     assert proc.returncode in (0, -15), f"node exit code {proc.returncode} (a crash at shutdown, like FAST-LIO's -11)"
     print("OK")
 
