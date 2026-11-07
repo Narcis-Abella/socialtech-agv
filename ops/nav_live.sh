@@ -26,6 +26,9 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
     source /ov/install/setup.bash
     echo "WARN: ~/nav_overlay is sourced after the image: its packages ($(find /ov/install -mindepth 1 -maxdepth 1 -type d -printf '%f ')) shadow the ones built in the image"
   fi
+  if [[ -n ${LEVEL_CORRECTOR:-} ]]; then   # an overlay (above) or an old image shadows planar_odom with a build that ignores the correction: the corrector would run and level nothing
+    grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" || { echo "FAIL: the planar_odom that would run ($(ros2 pkg prefix planar_odom)) predates correction_topic: LEVEL_CORRECTOR=1 would change nothing (a ~/nav_overlay shadowing the image's?)" >&2; exit 1; }
+  fi
   export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-53}
   # lo first: the stack's own traffic (driver -> FAST-LIO, recorder) must not ride on the link to the laptop. Pinned to DDS_IFACE alone,
   # it went as multicast on that interface, and when the USB/Wi-Fi link dropped every local send failed (IMU lost 7-8 s, 29 Oct).
