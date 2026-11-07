@@ -1,6 +1,6 @@
 # level_corrector
 
-Slow roll/pitch correction of FAST-LIO2's odom frame against the levelled 3D map. It computes and publishes the correction; `planar_odom` consumes it only when started with `correction_topic:=/level_corrector/correction` (`ops/nav_live.sh LEVEL_CORRECTOR=1`, default off): then `odom -> camera_init` is dynamic (C * level, stamped with `/Odometry`) and `base_footprint` uses it too. Off, `planar_odom` keeps the static level. A C that is not a small unit quaternion (> 5 deg) is ignored by `planar_odom`.
+Slow roll/pitch correction of FAST-LIO2's odom frame against the levelled 3D map. It computes and publishes the correction; `planar_odom` consumes it only when started with `correction_topic:=/level_corrector/correction` (`ops/nav_live.sh`: on by default since 2026-11-07, `LEVEL_CORRECTOR=0` turns it off): then `odom -> camera_init` is dynamic (C * level, stamped with `/Odometry`) and `base_footprint` uses it too. Off, `planar_odom` keeps the static level. A C that is not a small unit quaternion (> 5 deg) is ignored by `planar_odom`.
 
 Why: FAST-LIO2 starts with `camera_init` = the IMU frame at start and finds gravity from ~10 accelerometer samples, so the floor is tilted in `odom` by a constant start error plus slow drift (0.3-1.5 deg on real bags). A floor tilted by θ enters the costmap height band at R = 0.10 m / tan θ (0.57 deg: 10 m). The map is levelled by `make_map.sh`, so registering the cloud against it gives the true vertical.
 

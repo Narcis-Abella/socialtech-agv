@@ -35,5 +35,12 @@ awk '/(^|;) *extra=\(/ {n = NR} /extra\+=\(level_corrector:=true\)/ {v = NR} END
 grep -q 'ros2 pkg prefix level_corrector' "$nl" || { echo "FAIL: nav_live.sh does not check the image for level_corrector"; fail=1; }
 # inside the container the planar_odom that would run (an overlay or an old image can shadow the image's) must know correction_topic, or the corrector would run and change nothing
 grep -qF 'grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom"' "$nl" || { echo "FAIL: nav_live.sh does not check that the effective planar_odom has correction_topic"; fail=1; }
+# LEVEL_CORRECTOR is ON unless set to something off (the corrector is the robot's default since 2026-11-07); LEVEL_CORRECTOR=0 turns it off
+grep -qxF 'LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default: only an explicit LEVEL_CORRECTOR=0 (or off/false/no) turns it off' "$nl" || { echo "FAIL: LEVEL_CORRECTOR is not on by default"; fail=1; }
+awk '/^LEVEL_CORRECTOR=\$\{LEVEL_CORRECTOR-1\}/ {d = NR} /^normalize_flags NAV BASE SUPERVISOR PROD LEVEL_CORRECTOR/ {n = NR} END {exit !(d && n && d < n)}' "$nl" || { echo "FAIL: the LEVEL_CORRECTOR default must be set before normalize_flags"; fail=1; }
+for v in "" 1 0 off; do
+  got=$(bash -c 'source "$0/flags.sh"; if [ "$1" = unset ]; then unset LEVEL_CORRECTOR; else LEVEL_CORRECTOR=$1; fi; LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}; normalize_flags LEVEL_CORRECTOR; [ -z "${LEVEL_CORRECTOR:-}" ] && echo off || echo on' "$here" "${v:-unset}")
+  case "$v:$got" in ":on"|"1:on"|"0:off"|"off:off") ;; *) echo "FAIL: LEVEL_CORRECTOR='${v:-<unset>}' gave $got"; fail=1 ;; esac
+done
 ((fail == 0)) && echo "ok"
 exit $fail
