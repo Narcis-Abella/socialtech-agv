@@ -3,9 +3,13 @@
 #   env: SPAWN ("-13.0 0.0 0.0" x y yaw), SEED (1), SIM_WAIT (30 s: the model falls 0.3 m at spawn and FAST-LIO2 must not take its gravity from that)
 mkdir -p "$out"
 trap 'kill $(jobs -p) 2> /dev/null || true' EXIT
-if [ -d /navsrc ]; then   # socialtech_simreal / socialtech_livox_sim newer than the image's: built into an overlay
-  mkdir -p /tmp/navws && (cd /tmp/navws && colcon build --base-paths /navsrc --packages-select socialtech_simreal socialtech_livox_sim --merge-install --install-base /tmp/nav_install > "$out/build_nav.log" 2>&1)
+if [ -d /navsrc ]; then   # socialtech_simreal / socialtech_livox_sim / socialtech_costmap newer than the image's: built into an overlay
+  mkdir -p /tmp/navws && (cd /tmp/navws && colcon build --base-paths /navsrc --packages-select socialtech_simreal socialtech_livox_sim socialtech_costmap --merge-install --install-base /tmp/nav_install > "$out/build_nav.log" 2>&1)
   source /tmp/nav_install/setup.bash
+fi
+if [ -d /odomsrc ]; then   # planar_odom newer than the image's: overlay
+  mkdir -p /tmp/odomws && (cd /tmp/odomws && colcon build --base-paths /odomsrc --packages-select planar_odom --merge-install --install-base /tmp/odom_install > "$out/build_odom.log" 2>&1)
+  source /tmp/odom_install/setup.bash
 fi
 if ! ros2 pkg prefix hospital-agv-sim > /dev/null 2>&1; then
   mkdir -p /tmp/ws/src && ln -sfn "${SIM_SRC:?hospital-agv-sim is not in the image: set SIM_SRC}" /tmp/ws/src/hospital-agv-sim
@@ -36,7 +40,7 @@ fastlio_yaml() {
 lio_nodes() {
   fastlio_yaml "$out/fastlio.yaml"
   ros2 run fast_lio fastlio_mapping --ros-args --params-file "$out/fastlio.yaml" -p use_sim_time:=true > "$out/fastlio.log" 2>&1 &
-  ros2 run planar_odom planar_odom $SIM -p sensor_height:=$SENSOR_H -p level:="[0.0, 0.0, 0.0, 1.0]" > "$out/planar.log" 2>&1 &
+  ros2 run planar_odom planar_odom $SIM -p sensor_height:=$SENSOR_H -p level:="[0.0, 0.0, 0.0, 1.0]" -p lidar_in_body:="[-0.011, -0.02329, 0.04412]" > "$out/planar.log" 2>&1 &
   # The real /scan has surface jumps (the 3D band collapsed to 2D, furniture) and dropout (21-27 % outlier beams, 2-8 % dropout by range) that this clean world and its static scene do not produce:
   # SCAN_EXTRA=1 adds exactly those from the calibrated model (noise_scale 0: the Gaussian core already comes from the real chain). Off by default: calibrated on a furnished room, in this empty
   # world its "nearer" jumps are phantom obstacles around the robot (Nav2 completed 0 of 4 trials with it, 4 of 4 without). fid_sim.sh turns it on to compare with the calibration.
@@ -45,7 +49,7 @@ lio_nodes() {
     scan_out=/scan_chain
     ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
   fi
-  ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node --ros-args --params-file /tools/nav_bench/config/scan.yaml -p use_sim_time:=true -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
+  ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node --ros-args --params-file /tools/nav_bench/config/scan.yaml -p use_sim_time:=true -p target_frame:=lidar_level -p min_height:=$(python3 -c "print(0.10 - $LIDAR_Z)") -p max_height:=$(python3 -c "print(1.80 - $LIDAR_Z)") -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
   sleep 8
 }
 

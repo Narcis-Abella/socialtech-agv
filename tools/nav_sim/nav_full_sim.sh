@@ -1,12 +1,14 @@
 #!/bin/bash
 # Nav2 on the full-chain simulation, inside the `sim` image: the robot's own ops/nav_robot.launch.py (FAST-LIO2 on the simulated Mid-360, planar_odom, pointcloud_to_laserscan, gn_loc,
 # Nav2 with the real robot's overrides, base off: the simulator's base model drives) and trials.py on a scenario. usage: nav_full_sim.sh <out dir> <scenario.json> [reps]
-# mounts and env as sup_sim.sh; SUPERVISOR=1 also runs gn_supervisor (needs /greloc/build and the prior); SCAN_EXTRA=1 adds the calibrated dropout and surface jumps (a stress test: it blocks Nav2 in this empty world); LOCALIZER=amcl for AMCL.
+# mounts and env as sup_sim.sh; SUPERVISOR=1 also runs gn_supervisor (needs /greloc/build and the prior); SCAN_EXTRA=1 adds the calibrated dropout and surface jumps (a stress test: it blocks Nav2 in this empty world); NAV2_OVERLAY=file.yaml (under tools/nav_sim/params) merged last: the A side of an A/B.
 set -eo pipefail
 out=${1:?out dir}; scenario=${2:?scenario.json}; reps=${3:-1}
 source "${ROS_ENV:-/ros_env.sh}"
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-57}
-export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces></General><Discovery><Peers><Peer address="localhost"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces></General><Discovery><Peers><Peer address="localhost"/></Peers><MaxAutoParticipantIndex>40</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+# LIVE_PEER=<laptop IP>: DDS on the board's wifi towards the laptop, so rviz2 there (PEER=<board IP>, ROS_DOMAIN_ID as here) sees the run
+[ -z "$LIVE_PEER" ] || export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"${LIVE_IFACE:-wlP1p1s0}\"/></Interfaces></General><Discovery><Peers><Peer address=\"$LIVE_PEER\"/></Peers><MaxAutoParticipantIndex>40</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>"
 # scenario `auto[:N]`: N start/goal pairs sampled on the chain's own map (the legacy scenarios were made on loyola.pgm: on this map some goals are in closed rooms)
 if [[ $scenario == auto* ]]; then
   mkdir -p "$out"; n=${scenario#auto}; n=${n#:}
@@ -23,8 +25,8 @@ if [ -d /locsrc ]; then
 fi
 chain_map
 fastlio_yaml "$out/fastlio.yaml"
-share=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav
-python3 /ops/merge_params.py "$share/config/nav2_params.yaml" /ops/nav2_robot_overrides.yaml > "$out/nav2_params.yaml"
+params=/navsrc/socialtech_nav/config/nav2_params.yaml; [ -f "$params" ] || params=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml
+python3 /ops/merge_params.py "$params" /ops/nav2_robot_overrides.yaml ${NAV2_OVERLAY:+/tools/nav_sim/params/$NAV2_OVERLAY} > "$out/nav2_params.yaml"   # the checkout's parameters when mounted
 if [ "${SUPERVISOR:-0}" != 0 ]; then
   python3 /tools/sim_realism/tris_to_prior.py /pat/loyola.tris "$out/prior.xyz" 0.2 0.1 > "$out/prior.log"; mkdir -p "$out/runs"; export SUP_PRIOR="$out/prior.xyz"
 fi
@@ -51,4 +53,8 @@ python3 /ops/nav_start_when_localized.py > "$out/start.log" 2>&1
 timeout "${NAV_TIMEOUT:-180}" bash -c 'until [ "$(ros2 lifecycle get /bt_navigator 2>/dev/null | tail -1)" = "active [3]" ]; do sleep 2; done' || { echo "bt_navigator not active: see $out/launch.log" >&2; exit 1; }
 sleep 5
 if [ "${DIAG:-0}" != 0 ]; then sleep 20; python3 /tools/nav_sim/nav_diag.py | tee "$out/diag.txt"; exit 0; fi
+python3 /tools/nav_bench/procmon.py sample "$out/cost.csv" 1 &
+sampler=$!
 python3 /tools/nav_sim/trials.py "$scenario" "$out" "$reps" --ros-args -p use_sim_time:=true 2>&1 | tee "$out/trials.log"
+kill $sampler 2>/dev/null || true
+python3 /tools/nav_bench/procmon.py report "$out/cost.csv" > "$out/cost_summary.txt" 2>&1 || true
