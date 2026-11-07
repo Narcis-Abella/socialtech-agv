@@ -53,6 +53,10 @@ TEST(Restarted, AJumpAReversedClockOrASilentRestartAtTheOriginAreRestartsAStallI
   EXPECT_TRUE(restarted(10.0, far, 9.0, far));                           // the clock went back
   EXPECT_FALSE(restarted(10.0, far, 12.5, far + Vec3(1.0, 0, 0)));       // lidar covered 2.5 s at 30 m: same camera_init, the pose is continuous (a stall, not a restart)
   EXPECT_FALSE(restarted(10.0, far, 14.0, far + Vec3(4.0, 0, 0)));       // it kept moving at 1 m/s during a 4 s stall
+  EXPECT_TRUE(restarted(10.0, Vec3(4, 0, 0), 13.0, Vec3(0.02, 0, 0)));  // the supervisor restarts FAST-LIO with the robot 4 m from where the old one started: the new pose is back at the origin
+  EXPECT_TRUE(restarted(10.0, Vec3(20, 3, 0), 15.0, Vec3(0.0, 0.01, 0)));
+  EXPECT_FALSE(restarted(10.0, Vec3(4, 0, 0), 13.0, Vec3(3.5, 0, 0)));   // 4 m from the origin, moving, continuous: nothing happened
+  EXPECT_FALSE(restarted(10.0, Vec3(0.6, 0, 0), 10.1, Vec3(0.5, 0, 0)));  // driving back to the origin smoothly is not a restart
   EXPECT_TRUE(restarted(10.0, o, 12.5, o));                              // gap with the pose at the origin: it cannot be told from a restart, and a reset there costs ~cm
 }
 TEST(Gates, EachLimitRejectsWithItsOwnReason) {

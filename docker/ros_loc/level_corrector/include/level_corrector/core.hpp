@@ -35,12 +35,14 @@ inline Eigen::Isometry3d seed_pose(const Eigen::Isometry3d& T_map_odom, const Ma
 }
 
 // FAST-LIO restarted (its camera_init is new, so the old C belongs to nothing) from two consecutive /Odometry poses: the clock went back, or the pose moved more than a robot can in the
-// gap (a restart puts it back at the origin), or there was a gap with both poses near the origin (then a reset costs centimetres and a stall cannot be told from a restart). A stall away
+// gap, or it landed at the origin (where a new filter starts) from away, or there was a gap with both poses near the origin (then a reset costs centimetres and a stall cannot be told from a restart). A stall away
 // from the origin (lidar covered, DDS hiccup) keeps the same camera_init and a continuous pose: not a restart, C must not drop (it would step the frame by theta * r).
 inline bool restarted(double prev_t, const Vec3& prev_p, double t, const Vec3& p) {
   const double gap = t - prev_t;
   if (gap < 0) return true;
-  if ((p - prev_p).norm() > 1.0 + 1.5 * gap) return true;
+  const double jump = (p - prev_p).norm();
+  if (jump > 1.0 + 1.5 * gap) return true;                                 // a pose no robot reaches in the gap
+  if (p.norm() < 0.5 && jump > 0.5 + 0.5 * gap) return true;              // a new filter starts at the origin: landing there from away is a restart, driving there smoothly is not
   return gap > 1.5 && p.norm() < 2.0 && prev_p.norm() < 2.0;
 }
 
