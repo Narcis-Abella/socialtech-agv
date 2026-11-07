@@ -124,11 +124,15 @@ global_costmap:
       plugins: [static_layer, obstacle_layer, inflation_layer]
       static_layer: {plugin: 'nav2_costmap_2d::StaticLayer', map_subscribe_transient_local: true}
       obstacle_layer:
-        plugin: nav2_costmap_2d::ObstacleLayer
+        plugin: socialtech_costmap/DecayObstacleLayer   # global only (it refuses a rolling window). A ray frees a cell only if it went through the heights the cell was marked at: a 2D scan frees a low object that left the lidar's view (socialtech_costmap/test/band_test.py)
+        height_band_clearing: true
+        observation_expiry: 60.0   # what the lidar cannot see any more is remembered for 60 s, then freed (Narcis, 2026-11-04)
         enabled: true
-        observation_sources: scan
-        scan: {topic: /scan, max_obstacle_height: 2.0, clearing: true, marking: true, data_type: LaserScan, inf_is_valid: true, raytrace_max_range: 10.0, raytrace_min_range: 0.0,
-          obstacle_max_range: 10.0, obstacle_min_range: 0.0}
+        observation_sources: cloud
+        min_obstacle_height: 0.10   # marking cut: the floor cut of tools/nav_bench/config/scan.yaml
+        max_obstacle_height: 1.8
+        cloud: {topic: /cloud_registered_body, data_type: PointCloud2, sensor_frame: lidar_level, min_obstacle_height: -0.5, max_obstacle_height: 1.8, clearing: true, marking: true,   # -0.5: the floor stays in the source, the rays that end on it free low objects
+          raytrace_max_range: 10.0, raytrace_min_range: 0.0, obstacle_max_range: 10.0, obstacle_min_range: 0.0}
       inflation_layer: {plugin: 'nav2_costmap_2d::InflationLayer', cost_scaling_factor: 4.0, inflation_radius: 1.2}
       always_send_full_costmap: true
       footprint: '[[0.35, 0.29], [0.35, -0.29], [-0.35, -0.29], [-0.35, 0.29]]'
