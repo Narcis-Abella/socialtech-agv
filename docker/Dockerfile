@@ -48,6 +48,16 @@ RUN --mount=type=tmpfs,target=/tmp/src \
  && cmake --install /tmp/src/livox-sdk2/build \
  && ldconfig
 
+# small_gicp (Koide): point-to-plane ICP of level_corrector (docker/ros_loc). Same commit register_v2 is built with. Single-threaded (no TBB/OpenMP): the corrector must stay a small share of one core.
+ARG SMALL_GICP_COMMIT=fa0cfc983417c044b6036f71dfa448038bb9c820
+RUN --mount=type=tmpfs,target=/tmp/src \
+    git clone https://github.com/koide3/small_gicp.git /tmp/src/small_gicp \
+ && git -C /tmp/src/small_gicp checkout "${SMALL_GICP_COMMIT}" \
+ && cmake -S /tmp/src/small_gicp -B /tmp/src/small_gicp/build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_WITH_TBB=OFF -DBUILD_WITH_OPENMP=OFF \
+ && cmake --build /tmp/src/small_gicp/build -j"$(nproc)" \
+ && cmake --install /tmp/src/small_gicp/build \
+ && ldconfig
+
 WORKDIR /ws
 COPY robot.repos fetch_repos.py ./
 COPY patches/ patches/
