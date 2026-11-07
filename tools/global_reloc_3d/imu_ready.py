@@ -25,6 +25,16 @@ ACC_VAR_SUM = .04
 MOTION_RESIDUAL_SCALE = 3.
 
 
+def expected_samples(t, span_s=None):
+    """How many samples a gap-free stream would have in the window: span / typical period. The typical period is the mean of the steps under 3x the median step: a dropout is not the rate,
+    and the jitter of the Livox IMU on the Nano (long tail: median 4.5 ms, mean 5.15 ms) did not inflate the expectation to 444 for a window that holds 388, as span / median(dt) did."""
+    t = np.asarray(t, float)
+    d = np.diff(t)
+    if len(d) < 2 or np.median(d) <= 0:
+        return 0
+    return int(np.ceil((t[-1] - t[0] if span_s is None else span_s) / d[d < 3 * np.median(d)].mean()))
+
+
 def window_ok(gyro, acc_g, expected, residual_scale=1.):
     gyro = np.asarray(gyro, float)
     if len(gyro) < .95 * expected or len(gyro) < 3:

@@ -378,6 +378,41 @@ class GyroNoiseTest(LiveRelocBase):
         self.assertEqual(r.stage, 'imu')
 
 
+class SkewedStampsTest(LiveRelocBase):
+    """The IMU stamps of the Nano are jittery with a long tail (mean 5.15 ms, median 4.5): 2 s / median(dt) asked for 444 samples of a window that holds 388, so a perfectly clean stream was
+    'missing more than 5 %' and the robot never counted as still (13-18 s waiting to start in the failing runs, and the 'moved' checks fired)."""
+    def stamps(self, n, seed=4):
+        return 1. + np.cumsum(np.random.default_rng(seed).choice([.0045, .0055, .008], size=n, p=[.6, .3, .1]))
+
+    def feed_skewed(self, r, seconds, gyro=lambda t: (0., 0., 0.)):
+        ts = self.stamps(int(seconds * 220))
+        ts = ts[ts < 1. + seconds]
+        for k, t in enumerate(ts):
+            r.add_imu(t, gyro(t), (0., 0., 1.))
+            if k % 20 == 0:
+                r.add_lidar(t + .001, self.cloud if r.stage == 'expose' else None, 13000)
+                r.add_odom(t)
+            res = r.poll()
+            if res is not None:
+                return res
+        return None
+
+    def test_a_clean_stream_with_skewed_jitter_starts_and_gets_its_pose(self):
+        r = self.make(); r.start()
+        res = self.feed_skewed(r, 16.)
+        self.assertTrue(res and res['ok'], res)
+        self.assertLess(res['info']['imu_wait_s'], 3.5)                       # it waited for the 2 s window, not for luck
+
+    def test_a_real_dropout_in_the_imu_is_still_not_still(self):
+        r = self.make(); r.start()
+        ts = self.stamps(2000); ts = ts[(ts < 3.0) | (ts > 3.4)]               # 0.4 s without IMU while it waits to start
+        for k, t in enumerate(ts[ts < 3.45]):
+            r.add_imu(t, (0., 0., 0.), (0., 0., 1.))
+            if k % 20 == 0:
+                r.add_lidar(t + .001, None, 13000)
+        self.assertEqual(r.stage, 'imu')                                       # the 2 s window that contains the hole does not pass
+
+
 class ReviewFixesTest(LiveRelocBase):
     def test_a_push_during_the_search_that_the_wheels_do_not_report_is_still_refused(self):
         # no wheel data at all (base off): the IMU is the witness

@@ -97,7 +97,7 @@ class StillWindow:
             t = np.asarray(self.t)
             i, j = np.searchsorted(t, [T - imu_ready.WINDOW_S, T])
             if j - i >= 3:
-                g, a, n = np.asarray(self.g)[i:j], np.asarray(self.a)[i:j], int(np.ceil(imu_ready.WINDOW_S / float(np.median(np.diff(t[i:j])))))
+                g, a, n = np.asarray(self.g)[i:j], np.asarray(self.a)[i:j], imu_ready.expected_samples(t[i:j], imu_ready.WINDOW_S)
                 self.ok, self.calm = imu_ready.window_ok(g, a, n), imu_ready.window_ok(g, a, n, imu_ready.MOTION_RESIDUAL_SCALE)   # ok: quiet enough to START; calm: not moved (noise allowed)
             else:
                 self.ok = self.calm = False
@@ -230,7 +230,7 @@ class LiveReloc:
         a, b = self.clouds[0][0], self.clouds[-1][0]
         self.info.update(exposure_s=round(b - a, 3), clouds=len(self.clouds))
         t, g, acc = (np.array(x) for x in zip(*[(t, gy, ac) for t, gy, ac in self.motion])) if self.motion else (np.array([]),) * 3
-        if self.moved_in == 'expose' or len(t) < 3 or not imu_ready.window_ok(g, acc, int(np.ceil((t[-1] - t[0]) / float(np.median(np.diff(t))))) if len(t) > 2 else 0, imu_ready.MOTION_RESIDUAL_SCALE):
+        if self.moved_in == 'expose' or len(t) < 3 or not imu_ready.window_ok(g, acc, imu_ready.expected_samples(t), imu_ready.MOTION_RESIDUAL_SCALE):
             return self.end(False, 'moved_during_exposure')
         odom = [(a - .1 + .1 * k, np.eye(4)) for k in range(int(round(b - a + .2, 1) * 10) + 2)]   # a still body is its own odometry
         t0 = time.monotonic()
