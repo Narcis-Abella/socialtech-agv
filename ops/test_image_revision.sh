@@ -82,7 +82,7 @@ echo 2 > "$t/repo/ops/other.sh"; g commit -qam other; fresh $base >/dev/null; ch
 echo 2 > "$t/repo/src/a"; g commit -qam src; msg=$(fresh $base); rc=$?; check "a src/ commit makes it stale, with the reason" '[[ $rc == 1 && $msg == *differ* ]]'
 g checkout -q "$base" -- src; fresh $base >/dev/null; check "back to the image's src: current again" '[[ $? == 0 ]]'
 echo 3 > "$t/repo/ops/nav_live.sh"; fresh $base >/dev/null; check "an uncommitted edit of the launcher counts" '[[ $? == 1 ]]'
-g checkout -q -- ops/nav_live.sh; fresh ${base}-dirty >/dev/null; check "a -dirty label is read as its commit" '[[ $? == 0 ]]'
+g checkout -q -- ops/nav_live.sh; fresh ${base}-dirty >/dev/null; check "a -dirty label cannot be judged: nothing says what the image holds" '[[ $? == 2 ]]'
 fresh "" >/dev/null; check "no label: cannot tell" '[[ $? == 2 ]]'
 mkdir "$t/copy"; echo "$(g rev-parse HEAD)" > "$t/copy/REVISION"; fresh2() { FAKE_LOG=$t/log FAKE_REV=$1 PATH=$t/bin:$PATH bash -c 'source "$1"; image_freshness img "$2"' _ "$here/ops/image_revision.sh" "$t/copy"; }
 fresh2 "$(g rev-parse HEAD)" >/dev/null; check "a plain copy at the image's commit: current" '[[ $? == 0 ]]'

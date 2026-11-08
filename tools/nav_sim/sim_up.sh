@@ -14,6 +14,7 @@ if [ -d /src ]; then   # socialtech_simreal / socialtech_livox_sim / socialtech_
   src_overlay ours socialtech_simreal socialtech_livox_sim socialtech_costmap planar_odom socialtech_bringup
 fi
 # The robot's own run scripts and defaults (the image's, or the overlay of /src): flags (normalize_flags), the FAST-LIO2 parameter edits (fastlio_yaml), the launch files and config.
+ros2 pkg prefix socialtech_bringup >/dev/null 2>&1 || { echo "sim_up: the image has no socialtech_bringup (built before it existed): rebuild the sim image, or mount the checkout's src/ at /src" >&2; exit 1; }
 BRINGUP=$(ros2 pkg prefix socialtech_bringup)/lib/socialtech_bringup; BRINGUP_SHARE=$(ros2 pkg prefix socialtech_bringup)/share/socialtech_bringup
 source "$BRINGUP/flags.sh"; source "$BRINGUP/fastlio_config.sh"
 if ! ros2 pkg prefix hospital-agv-sim > /dev/null 2>&1; then

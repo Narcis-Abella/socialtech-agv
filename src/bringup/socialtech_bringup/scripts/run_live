@@ -11,6 +11,9 @@ source "$HERE/fastlio_config.sh"
 source /cyclone_uri.sh
 normalize_flags NAV BASE SUPERVISOR PROD LEVEL_CORRECTOR HEAVY_DDS
 
+# the C++ of the image must be new enough for these launch files (OVERLAY=1 swaps only the Python, launch and config): the failures these catch run without an error
+grep -q lidar_level "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" && grep -q gn_loc/pose "$(ros2 pkg prefix gn_loc)/lib/gn_loc/gn_loc_node" || { echo "FAIL: planar_odom or gn_loc of the image predates these launch files (no lidar_level / gn_loc/pose): rebuild the image (ops/build_image.sh robot)" >&2; exit 1; }
+[[ -z ${LEVEL_CORRECTOR:-} ]] || grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" || { echo "FAIL: the planar_odom of the image ignores the correction: the level corrector would change nothing (rebuild the image, or LEVEL_CORRECTOR=0)" >&2; exit 1; }
 if [[ -n ${LEVEL_CORRECTOR:-} ]]; then
   ros2 run level_corrector level_corrector_node --ros-args -p map_dir:=/map -p check_only:=true >/tmp/lc_check.log 2>&1 || { echo "FAIL: level_corrector cannot load /map (map.ply: binary little-endian, float x y z only; map.yaml: the four T_map_world rows): $(tail -2 /tmp/lc_check.log | tr '\n' ' ') -- or LEVEL_CORRECTOR=0" >&2; exit 1; }
 fi

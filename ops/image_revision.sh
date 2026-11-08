@@ -28,6 +28,7 @@ image_freshness() {
   local image=$1 repo=$2 label sha cur top
   label=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image" 2>/dev/null || true)
   sha=${label%-dirty}
+  [[ $label == *-dirty ]] && { echo "$image was built from a tree with uncommitted edits ($label): nothing says what it holds; rebuild from a clean tree, or STALE_IMAGE_OK=1"; return 2; }
   [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "$image carries no revision label (built by hand, or before ops/build_image.sh labelled images)"; return 2; }
   cur=$(checkout_revision "$repo")
   [[ -n $cur ]] || { echo "this checkout does not know its commit (no .git and no filled REVISION)"; return 2; }
