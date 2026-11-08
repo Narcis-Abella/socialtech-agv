@@ -8,8 +8,8 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | Path | What |
 |---|---|
 | `host/` | One-time Jetson host setup: everything that cannot live in a container (kernel modules, udev, networking, power) |
-| `docker/` | Layered images built from one `Dockerfile` (`base` → `robot`) |
-| `docker/robot.repos` | Third-party ROS sources, pinned by commit |
+| `docker/` | Layered images built from one `Dockerfile` (`base` → `robot` → `sim` or `mapper`) |
+| `docker/robot.repos`, `docker/mapper.repos` | Third-party ROS sources, pinned by commit (`robot`, and `mapper` on top) |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
 | `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
 | `docker/ros_mapper/` | Our packages built only into the `mapper` image (`socialtech_mapping`: the beam counting of `tools/slam_bench/ghosts.py` in C++) |
@@ -57,7 +57,8 @@ On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=
 | Stage | Contents |
 |---|---|
 | `base` | ROS 2 Jazzy, CycloneDDS, CUDA 13.2 runtime (must match the host L4T driver) |
-| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, gn_loc + map_server, pointcloud_to_laserscan, entrypoint and ROS environment |
+| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, `gn_loc` + `level_corrector` (with small_gicp) + `planar_odom`, Nav2 with our `socialtech_nav`/`socialtech_costmap` and the patched controller, map_server, pointcloud_to_laserscan, scipy, entrypoint and ROS environment |
+| `sim` | `robot` + Gazebo and the simulation-only packages (`socialtech_livox_sim`, `socialtech_simreal`): the full-chain simulation of `tools/nav_sim` |
 | `mapper` | `robot` + GTSAM 4.3.0, Voxel-SLAM and `rosbags`: offline mapping (`tools/slam_bench/make_map.sh`). Build it with `--target mapper`; without `--target` the last stage in the file is built |
 
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
@@ -78,8 +79,8 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 | Change | Where |
 |---|---|
 | Fix so upstream code builds/runs | `docker/patches/<repo>/*.patch` |
-| Our configuration (params, IPs, launch args) | our own bringup package (planned), never upstream configs |
-| Our own nodes | `docker/ros/<pkg>` (ament package; a Python reference + test next to the bench if it replaces one) |
+| Our configuration (params, launch args) | `ops/` (launch files and overrides, merged over `docker/ros_nav/socialtech_nav/config/nav2_params.yaml`), never upstream configs |
+| Our own nodes | an ament package under `docker/ros`, `docker/ros_loc`, `docker/ros_nav` or `docker/ros_mapper` (by role, see Layout); a Python reference + test in `tools/nav_bench` if it replaces one |
 | New logic in upstream code | a fork, pinned in `docker/robot.repos` |
 
 ## License

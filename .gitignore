@@ -14,7 +14,7 @@ host/robot.conf
 /log/
 
 # Robot data: rosbags and point cloud maps (per robot, go in mounted volumes).
-# Maps inside packages (e.g. sim fixtures) stay committable.
+# Maps inside the ROS packages under docker/ (test fixtures) stay committable.
 /bags/
 *.mcap
 *.db3
@@ -22,8 +22,8 @@ host/robot.conf
 /maps/
 *.pcd
 *.ply
-!src/**/*.pcd
-!src/**/*.ply
+!docker/**/*.pcd
+!docker/**/*.ply
 
 # Python
 .venv/

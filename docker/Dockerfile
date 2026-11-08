@@ -2,7 +2,9 @@
 # SocialTech robot images for Jetson Orin (JetPack 7.2.1 / L4T r39.2, arm64).
 # One file, layered stages; build one with: docker build --target <stage> .
 #   base   ROS 2 Jazzy + CycloneDDS + CUDA runtime matching the host driver
-#   robot  sensor/base drivers + FAST-LIO2 + rosbag2 (what runs on every robot)
+#   robot  sensor/base drivers + FAST-LIO2 + rosbag2 + localization + Nav2 (what runs on every robot)
+#   sim    robot + Gazebo and the simulation-only packages (tools/nav_sim)
+#   mapper robot + GTSAM + Voxel-SLAM: offline mapping (tools/slam_bench)
 # Run with network_mode: host (DDS discovery, Livox raw sockets) and the GPU requested
 # via NVIDIA_VISIBLE_DEVICES (set below) or --device nvidia.com/gpu=all.
 
