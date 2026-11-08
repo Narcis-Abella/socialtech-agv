@@ -8,7 +8,7 @@ import beams_oracle
 import floor_level
 import grid2d
 from synth_corridor import LEN, ORIGIN, RES as CRES, T as CT, cell_at, corridor_grid, drive, planes
-from synth_room import RES, RNG, TILT, room, tilt_rot
+from synth_room import RES, RNG, room
 
 
 def cell(grid, origin, x, y, res=RES):

@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 import floor_level
-from synth_room import FLOOR_Z, RES, RNG, ROOM_H, TILT, extent, furnished_room, path, room, round_room, tilt_rot
+from synth_room import RNG, ROOM_H, TILT, extent, furnished_room, path, room, round_room, tilt_rot
 
 def test_level_to_floor_measures_tilt_and_puts_the_floor_at_zero():
     Q, info = floor_level.level_to_floor(room())

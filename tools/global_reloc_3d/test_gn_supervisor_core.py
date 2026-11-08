@@ -199,7 +199,7 @@ class AutoInitTest(Fixture):
         run(s, 40., ('on_reloc_result', False, None, 'ambiguous'))
         self.assertEqual(s.state, 'FAILED')
         self.assertTrue(s.reason.startswith('needs_operator:'), s.reason)
-        a = run(s, 41., ('on_operator_pose', (1., 2., 0.)))                # the operator always wins
+        run(s, 41., ('on_operator_pose', (1., 2., 0.)))                # the operator always wins
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
 
     def test_a_pose_gn_does_not_confirm_asks_the_operator(self):

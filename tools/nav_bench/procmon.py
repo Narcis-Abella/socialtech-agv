@@ -127,7 +127,7 @@ def name_of(cmd):
 def by_name(ser):
     """{(group, name): {'cpu': [% per pass], 'rss': [MB per pass], 'hwm': MB, 'procs': most processes at once}}: the processes that share a name (the localization and the navigation
     lifecycle_manager) are SUMMED at each sampling pass, as in STACK TOTAL; the worker's CPU includes its reaped children (register_v2)."""
-    acc, hwm, procs = {}, {}, {}
+    acc, hwm = {}, {}
     for (pid, cmd, run), pts in ser.items():
         g = group(cmd)
         k = (g, name_of(cmd))

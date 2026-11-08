@@ -49,7 +49,7 @@ def summarize(label, rows):
 
 
 def selftest():
-    t = np.arange(0, 20, 0.02); n = len(t); gx = gy = 0.0
+    t = np.arange(0, 20, 0.02); n = len(t)
     def rec(wfun, d0=0.5):
         d = np.where(t < 2, d0 - (d0 - 0.1) * t / 2, 0.1); rows = []; yaw = 0.0
         for i in range(n):

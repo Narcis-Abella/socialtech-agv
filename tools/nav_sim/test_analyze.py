@@ -1,5 +1,4 @@
 """Run: python3 -B test_analyze.py   (offline: numpy and scipy)"""
-import math
 
 import numpy as np
 

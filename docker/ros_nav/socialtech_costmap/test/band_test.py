@@ -4,7 +4,6 @@ usage: band_test.py EXPECT_BAND(0|1)   EXPECT_BAND=0 is the stock behaviour (a 2
 The cloud comes from a virtual Mid-360 at 0.57 m (elevation -7 to +30 deg, azimuth +-25 deg) in a world with a wall at x = 6 m, a floor, and a box or a person at x = 3 m, so
 what the layer sees is what the lidar can see: a 25 cm box 1.9 m away is below the lowest ray (0.57 - 1.9 tan 7 deg = 0.34 m) and the rays that hit the wall behind it pass over it.
 A cell is lethal when the published value is 100."""
-import math
 import subprocess
 import sys
 import time

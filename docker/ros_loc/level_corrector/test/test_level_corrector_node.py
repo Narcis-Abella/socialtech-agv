@@ -2,7 +2,6 @@
 roll/pitch correction that puts the floor normal back on z, with a status that says ok. Run where the package is built: python3 test_level_corrector_node.py (own domain, localhost only)."""
 import math
 import os
-import struct
 import subprocess
 import sys
 import tempfile
