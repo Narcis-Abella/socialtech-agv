@@ -35,6 +35,7 @@ class BagScans:
     """The scans of a bag as the C++ engine reads them itself: count_beams hands it the bag instead of decoded scans."""
     def __init__(self, bag, poses, topic):
         self.bag, self.poses, self.topic = str(bag), np.ascontiguousarray(poses[:, :8], float), topic
+        self.counted = None      # scans the engine counted in its last call (None: not called yet)
 
 
 def count_beams(C, scans, margin):
@@ -51,7 +52,14 @@ def count_beams(C, scans, margin):
           hit.ctypes.data_as(ip), passed.ctypes.data_as(ip), err, len(err))
     if n < 0:
         raise RuntimeError(f"socialtech_mapping_beams: {err.value.decode()}")
+    scans.counted = int(n)
     return hit, passed
+
+
+def require_scans(scans):
+    """ValueError when the engine ran and no scan of the bag had a pose in the window: every voxel would count 0 beams, so there would be no ghost and no freed cell, and the map would look fine."""
+    if scans.counted == 0:
+        raise ValueError(f"no scan of {scans.topic} in {scans.bag} had a pose: wrong topic, or the poses and the bag do not share a time base (bag_check.py shows the bag's own stamps)")
 
 
 def ghost_voxels(hit, passed):

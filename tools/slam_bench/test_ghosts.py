@@ -91,3 +91,17 @@ def test_a_missing_library_is_reported_with_the_way_out(monkeypatch, capsys):
     assert "BEAMS_LIB" in ghosts.engine_error() and "mapper image" in ghosts.engine_error()
     assert ghosts.main(["--check-engine"]) == 1
     assert "BEAMS_LIB" in capsys.readouterr().err
+
+
+def test_a_run_that_counted_no_scan_is_an_error_not_an_empty_result():
+    scans = ghosts.BagScans("bag", np.zeros((1, 8)), "/livox/lidar")
+    ghosts.require_scans(scans)                  # the engine has not run yet: nothing to judge
+    scans.counted = 120
+    ghosts.require_scans(scans)
+    scans.counted = 0
+    try:
+        ghosts.require_scans(scans)
+    except ValueError as e:
+        assert "/livox/lidar" in str(e) and "pose" in str(e)
+    else:
+        raise AssertionError("a run that counted 0 scans passed")

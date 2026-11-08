@@ -2,7 +2,7 @@
 <package format="3">
   <name>socialtech_mapping</name>
   <version>0.1.0</version>
-  <description>Offline mapping hot paths in C++: the beam counting of tools/slam_bench/beams_oracle.py (the numpy oracle it is checked against) (bag read, range images, hit/pass counts), loaded from Python with ctypes</description>
+  <description>Offline mapping hot paths in C++: the beam counting (bag read, range images, hit/pass counts), checked against the numpy reference tools/slam_bench/beams_oracle.py, loaded from Python with ctypes</description>
   <maintainer email="narcis.abellallos@gmail.com">Narcis</maintainer>
   <license>GPL-2.0-only</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
