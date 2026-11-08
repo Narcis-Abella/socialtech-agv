@@ -119,10 +119,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # src/localization: planar_odom, gn_loc (Gauss-Newton scan-to-map localizer, the robot's localizer) and level_corrector (small_gicp is built above). Its own colcon build: gn_loc needs
 # the Nav2 packages installed just above, which the first build does not have. Tests and the gn_offline study tool are not built in the image (BUILD_TESTING=OFF, GN_LOC_OFFLINE=OFF); see src/localization/gn_loc/README.md.
 COPY src/localization/ /ws/src_loc/
-RUN --mount=type=cache,target=/tmp/build_loc \
-    --mount=type=cache,target=/tmp/log_loc \
+# The cache ids are new on purpose (src-loc-*): the build directory of the previous layout was configured with CMAKE_INSTALL_PREFIX=/opt/socialtech_loc, colcon does not reconfigure when only
+# the install base changes, and a board that had built before installed gn_loc and level_corrector into /opt/socialtech_loc. --cmake-force-configure keeps a stale prefix from coming back.
+RUN --mount=type=cache,id=src-loc-build,target=/tmp/build_loc \
+    --mount=type=cache,id=src-loc-log,target=/tmp/log_loc \
     . /opt/ros/jazzy/setup.sh \
- && cd /ws && colcon --log-base /tmp/log_loc build --base-paths src_loc --merge-install --install-base /opt/socialtech --build-base /tmp/build_loc \
+ && cd /ws && colcon --log-base /tmp/log_loc build --base-paths src_loc --merge-install --install-base /opt/socialtech --build-base /tmp/build_loc --cmake-force-configure \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DGN_LOC_OFFLINE=OFF
 
 # Nav2 on the real robot (ops/nav_live.sh NAV=1) and in the simulator, whose stage adds Gazebo on top.
