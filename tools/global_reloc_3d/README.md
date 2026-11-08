@@ -10,7 +10,7 @@ Global relocalization of the robot in the 3D prior of its map, and the superviso
 | `reloc_live.py` | one relocalization attempt: waits for stillness, restarts FAST-LIO2, exposes, runs the search, checks nobody moved, hands the pose over |
 | `imu_ready.py` | the IMU stillness tests (`window_ok`, `expected_samples`) |
 | `lio_submap.py`, `livox_frames.py` | the raw Livox frames and IMU of the exposure into the submap the search fits |
-| `search_v2.py` (also the multi-hypothesis policy), `correlative_search.py`, `corr_cpp.py`, `offline_s2.py`, `verify.py`, `cpp_search/` | the worker: FFT correlative search + `register_v2` (GICP) + the decision (`verify`) |
+| `search_v2.py` (also the multi-hypothesis policy), `correlative_search.py`, `corr_cpp.py`, `pointcloud.py`, `verify.py`, `cpp_search/` | the worker: FFT correlative search + `register_v2` (GICP) + the decision (`verify`) |
 | `reloc_core.py` | the handoff maths (`handoff_pose`, `compose_planar`) and `dump` |
 | `register_v2.cpp` | built into `register_v2` (+ `libsmall_gicp.so`, `libcorr_search.so`), staged separately |
 

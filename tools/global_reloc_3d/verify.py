@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial import cKDTree
 
-from offline_s2 import transform
+from pointcloud import transform
 
 
 def score(map_points, check_points, T, tree=None):

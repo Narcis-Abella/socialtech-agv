@@ -6,7 +6,7 @@ import numpy as np
 from scipy import fft
 
 from correlative_search import MapField, pose, search, spread_order, top_of_separated, unique_cells, yaw_distance_deg, yaw_peaks, z_cell_range, rot_z
-from offline_s2 import transform
+from pointcloud import transform
 
 
 def synthetic_map(rng):

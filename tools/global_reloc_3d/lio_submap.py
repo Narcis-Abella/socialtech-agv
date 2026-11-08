@@ -11,7 +11,7 @@ import shutil
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
 
-from offline_s2 import transform, voxel, write_xyz
+from pointcloud import transform, voxel, write_xyz
 
 FIT_FRACTION = 2 / 3   # the first part of an exposure is the fit batch, the rest the check batch (search_v2.temporal_evidence relies on the same split)
 

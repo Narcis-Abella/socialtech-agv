@@ -4,7 +4,7 @@ import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOTS = ('gn_supervisor_node', 'search_v2')            # the node the launch starts and the worker it spawns
-RUNTIME = {'corr_cpp', 'correlative_search', 'gn_supervisor_core', 'gn_supervisor_node', 'imu_ready', 'lio_submap', 'livox_frames', 'offline_s2', 'reloc_core', 'reloc_live',
+RUNTIME = {'corr_cpp', 'correlative_search', 'gn_supervisor_core', 'gn_supervisor_node', 'imu_ready', 'lio_submap', 'livox_frames', 'pointcloud', 'reloc_core', 'reloc_live',
            'search_v2', 'verify'}
 SETUP = {'prepare_map'}                                # not imported by the runtime, documented in the README
 
