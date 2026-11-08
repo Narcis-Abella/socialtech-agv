@@ -3,11 +3,8 @@ Same rules as the engine: a point is HIT when a beam of the range image (1 degre
 import numpy as np
 from scipy.spatial import cKDTree
 
-EXTR = (-0.011, -0.02329, 0.04412)      # m, lidar -> IMU translation (mid360.yaml)
-RMAX = 15.0                             # m: beams farther than this from a point are not used
-MIN_RANGE = 0.1                         # m, the nearest returns are not used (the Mid-360 blind zone; Voxel-SLAM blind: 0.1 as well)
-EL_LO, EL_HI = -7.0, 52.0               # deg, the Mid-360's vertical field of view: the range image covers it in 1 deg bins
-NEL = int(EL_HI - EL_LO)
+from ghosts import EL_HI, EL_LO, EXTR, MIN_RANGE, RMAX   # one definition: the C++ engine receives the same numbers from ghosts.py
+
 NEL = int(EL_HI - EL_LO)
 
 

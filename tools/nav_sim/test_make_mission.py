@@ -1,5 +1,4 @@
 """Run: python3 -B test_make_mission.py"""
-import math
 
 import make_mission as mm
 

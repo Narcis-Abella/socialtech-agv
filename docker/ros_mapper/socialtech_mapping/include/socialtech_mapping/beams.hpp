@@ -1,4 +1,5 @@
-// Beam tests (count_beams, range_image, pose_at, custom_points), ported line by line from the numpy reference tools/slam_bench/beams_oracle.py (test-only) and checked against it.
+// Beam tests (count_beams, range_image, pose_at, custom_points). count_beams/range_image are checked against the numpy reference tools/slam_bench/beams_oracle.py (test-only); pose_at and the
+// cloud decoders were ported from the former tools/slam_bench/map_visibility.py (git history before 7928d4e) and are covered by the gtests here.
 // Same float64 formulas and the same order of operations as the numpy code; build with -ffp-contract=off so no multiply-add is fused.
 #pragma once
 #include <algorithm>

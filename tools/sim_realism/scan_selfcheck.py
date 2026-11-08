@@ -1,5 +1,5 @@
-"""The /scan of the running simulation (robot still), measured the way lidar_noise_from_scan.py measured the real one, against calibration.json. usage: scan_selfcheck.py [SECONDS=60] [calibration.json]
-Needs the realism nodes (or the legacy noise nodes, to see what they gave): per beam with a return in >= 50 % of the frames, over the whole stretch: core sigma (frames within 10 cm of the beam's median), outlier rate, dropout;
+"""The /scan of the running simulation (robot still), measured the way the real one was (lidar_noise_from_scan.py in SocialTech notes/sim_realism), against calibration.json. usage: scan_selfcheck.py [SECONDS=60] [calibration.json]
+Needs the realism nodes (sim_scan_model): per beam with a return in >= 50 % of the frames, over the whole stretch: core sigma (frames within 10 cm of the beam's median), outlier rate, dropout;
 binned by the beam's median range. The sim world is not the real room: the BINS present depend on the geometry; the numbers per bin must match."""
 import json
 import sys

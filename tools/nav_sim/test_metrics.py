@@ -89,16 +89,15 @@ def test_footprint_clearance_is_nonpositive_inside_a_wall():
     dist = m.distance_to_occupied(occ, 0.05)
     c = m.footprint_clearance(dist, (0.0, 0.0), 0.05, 40 * 0.05, 1.0, 0.0, 0.70, 0.58)
     assert c <= 0.0
-    assert m.collides(dist, (0.0, 0.0), 0.05, 40 * 0.05, 1.0, 0.0, 0.70, 0.58)
-    assert not m.collides(dist, (0.0, 0.0), 0.05, 1.0, 1.0, 0.0, 0.70, 0.58)
+    assert m.footprint_clearance(dist, (0.0, 0.0), 0.05, 1.0, 1.0, 0.0, 0.70, 0.58) > 0.0
 
 
 def test_footprint_clearance_uses_the_right_image_row():
     occ = np.zeros((40, 60), bool)
     occ[0:5, 20:25] = True          # block at the TOP of the image: y between 1.75 and 2.0 m
     dist = m.distance_to_occupied(occ, 0.05)
-    assert m.collides(dist, (0.0, 0.0), 0.05, 1.12, 1.9, 0.0, 0.70, 0.58)
-    assert not m.collides(dist, (0.0, 0.0), 0.05, 1.12, 0.3, 0.0, 0.70, 0.58)   # same x, far from the block
+    assert m.footprint_clearance(dist, (0.0, 0.0), 0.05, 1.12, 1.9, 0.0, 0.70, 0.58) <= 0.0
+    assert m.footprint_clearance(dist, (0.0, 0.0), 0.05, 1.12, 0.3, 0.0, 0.70, 0.58) > 0.0   # same x, far from the block
 
 
 def test_an_empty_map_has_infinite_clearance():

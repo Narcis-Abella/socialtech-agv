@@ -1,4 +1,4 @@
-"""Run on NX with REGISTER_BINARY pointing to the built aarch64 caller."""
+"""Run where the register_v2 binary is built, with REGISTER_BINARY pointing at it."""
 import json
 import os
 from pathlib import Path

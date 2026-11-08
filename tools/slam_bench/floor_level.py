@@ -4,14 +4,17 @@ import numpy as np
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
-import floor_tilt
-from static_offset import rot_to_z
+MIN_INLIERS = 300  # a floor plane needs at least this many inliers (below it the floor was not seen)
+TOL = 0.03         # m, RANSAC inlier distance
+MAX_TILT = 10.0    # deg, candidate planes steeper than this are not floors
+ITERS = 300        # RANSAC hypotheses
+SEARCH_MAX = 20000  # points used to score the hypotheses
 
 VOXEL = 0.10        # m, downsampling before the normals
 K = 16              # neighbours for a voxel's normal
 PLANAR = 0.01       # smallest / total covariance eigenvalue of the neighbourhood: below this the voxel is on a plane
 MAX_PLANES = 6
-MIN_SEED = 50       # voxels: smallest plane considered while choosing the lowest; --min-floor is checked AFTER the choice
+MIN_SEED = 50       # voxels: smallest plane considered while choosing the lowest; `min_floor` of level_to_floor is checked AFTER the choice
 WALL_NZ, WALL_LO, WALL_HI, MIN_WALL = 0.1, 0.2, 1.6, 50  # a wall voxel: |nz| below, metres above the floor between, at least this many voxels to estimate
 REFINE_SPAN, REFINE_STEP, REFINE_BIN, REFINE_PTS = 5.0, 0.1, 0.05, 300000  # yaw refinement: deg searched either side of the normals' estimate, deg step, m histogram bin, points used
 LANDSCAPE_RATIO = 1.1  # the map is turned to landscape only if it is this much taller than wide (a square one stays as it is)
@@ -20,6 +23,43 @@ BELOW = 0.3         # m: voxels this far under the chosen plane mean it is not t
 TRAJ_MIN_LEN, TRAJ_MIN_SHAPE, TRAJ_MAX_ANGLE = 20.0, 0.2, 1.0  # position vote: m, minor/major singular value, deg
 YAW_POSES, YAW_MIN_RANGE, YAW_MAX_RATIO, YAW_MAX_ANGLE = 150, 90.0, 0.01, 1.0  # orientation vote: poses used, deg turned, eigenvalue ratio, deg
 
+
+def fit_plane(p, rng, min_inliers=MIN_INLIERS):
+    """RANSAC then least squares on the inliers. Returns (unit normal with z > 0, offset d with n.p = d, inlier count) or None."""
+    if len(p) < 3:
+        return None
+    search = p if len(p) <= SEARCH_MAX else p[rng.choice(len(p), SEARCH_MAX, replace=False)]  # hypotheses are scored on a subsample
+    idx = rng.integers(0, len(search), (ITERS, 3))
+    a, b, c = search[idx[:, 0]], search[idx[:, 1]], search[idx[:, 2]]
+    V = np.cross(b - a, c - a)
+    norm = np.linalg.norm(V, axis=1)
+    V = V / np.where(norm > 1e-9, norm, 1.0)[:, None] * np.where(V[:, 2] < 0, -1.0, 1.0)[:, None]
+    ok = (norm > 1e-9) & (V[:, 2] >= np.cos(np.radians(MAX_TILT)))
+    if not ok.any():
+        return None
+    V, off = V[ok], np.einsum("ij,ij->i", V[ok], a[ok])
+    k = int(np.argmax((np.abs(search @ V.T - off) < TOL).sum(0)))
+    best = np.abs(p @ V[k] - off[k]) < TOL
+    if best.sum() < min_inliers:
+        return None
+    for _ in range(2):  # refit on the inliers, then re-select them with the refined plane
+        q = p[best]
+        centre = q.mean(0)
+        v = np.linalg.svd(q - centre, full_matrices=False)[2][-1]
+        v = v * np.sign(v[2])
+        best = np.abs(p @ v - v @ centre) < TOL
+    return v, float(v @ centre), int(best.sum())
+
+
+def rot_to_z(u):
+    """Rotation matrix R with R @ u = z (Rodrigues)."""
+    z = np.array([0.0, 0.0, 1.0])
+    v = np.cross(u, z)
+    s, c = np.linalg.norm(v), float(u @ z)
+    if s < 1e-12:
+        return np.eye(3)
+    K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + K + K @ K * (1 - c) / s**2
 
 def voxel_centroids(P, size):
     idx = np.floor(P / size).astype(np.int64)
@@ -110,20 +150,20 @@ def level_to_floor(P, traj=None, min_floor=250, max_below=0.10, min_manhattan=0.
     rng = np.random.default_rng(0)
     planes = []
     for _ in range(MAX_PLANES):
-        plane = floor_tilt.fit_plane(cand, rng, MIN_SEED)
+        plane = fit_plane(cand, rng, MIN_SEED)
         if plane is None:
             break
         planes.append(plane)
-        cand = cand[np.abs(cand @ plane[0] - plane[1]) >= floor_tilt.TOL]
+        cand = cand[np.abs(cand @ plane[0] - plane[1]) >= TOL]
     if not planes:
         raise ValueError("no floor plane found (nothing flat and near-horizontal within 10 deg)")
     c = V.mean(0)
     v, d, n = min(planes, key=lambda p: (p[1] - p[0][0] * c[0] - p[0][1] * c[1]) / p[0][2])  # lowest at the map centre
     if n < min_floor:
-        raise ValueError(f"floor support is {n} voxels, below --min-floor {min_floor}: the floor was probably not seen (a smaller plane would be the ceiling)")
+        raise ValueError(f"floor support is {n} voxels, below min_floor {min_floor}: the floor was probably not seen (a smaller plane would be the ceiling)")
     tilt = float(np.degrees(np.arccos(np.clip(v[2], -1, 1))))
-    if tilt > floor_tilt.MAX_TILT:  # fit_plane only limits its RANSAC hypotheses: the least-squares refit can end steeper
-        raise ValueError(f"floor tilt {tilt:.1f} deg exceeds {floor_tilt.MAX_TILT}: the SLAM start or the plane is wrong, not the floor")
+    if tilt > MAX_TILT:  # fit_plane only limits its RANSAC hypotheses: the least-squares refit can end steeper
+        raise ValueError(f"floor tilt {tilt:.1f} deg exceeds {MAX_TILT}: the SLAM start or the plane is wrong, not the floor")
     dist = V @ v - d
     below = float(np.mean(dist < -BELOW))
     if below > max_below:
@@ -148,5 +188,5 @@ def level_to_floor(P, traj=None, min_floor=250, max_below=0.10, min_manhattan=0.
         if ey > LANDSCAPE_RATIO * ex:  # Manhattan fixes the yaw only modulo 90 deg: one more quarter turn keeps the walls on the axes
             turn += 90.0
             T[:3, :3] = Rotation.from_euler("z", turn, degrees=True).as_matrix() @ Rl
-    return P @ T[:3, :3].T + T[:3, 3], {"tilt_deg": tilt, "resid_std": float(dist[np.abs(dist) < floor_tilt.TOL].std()), "n_floor": n, "below": below,
+    return P @ T[:3, :3].T + T[:3, 3], {"tilt_deg": tilt, "resid_std": float(dist[np.abs(dist) < TOL].std()), "n_floor": n, "below": below,
                                         "traj": checked, "yaw_deg": turn, "manhattan": strength, "T": T}

@@ -9,6 +9,8 @@ IMAGE=${IMAGE:-socialtech:robot}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 die() { echo "FAIL: $*" >&2; exit 1; }
 
+[[ ${SPEED:-0.1} =~ ^[0-9]+(\.[0-9]+)?$ ]] && awk -v v="${SPEED:-0.1}" 'BEGIN {exit !(v <= 0.3)}' || die "SPEED=${SPEED:-} must be a number of m/s, at most 0.3 (it goes straight into the command)"
+[[ ${RUN_SECS:-3} =~ ^[0-9]+$ ]] && ((${RUN_SECS:-3} >= 1 && ${RUN_SECS:-3} <= 10)) || die "RUN_SECS=${RUN_SECS:-} must be a whole number of seconds from 1 to 10"
 [[ $(cat /sys/class/net/can_tracer/operstate 2>/dev/null) == up ]] || die "can_tracer is not UP (ip -br link; host/setup_host.sh --check)"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image $IMAGE not found"
 [[ -z $(docker ps -q) ]] || die "a container is running (docker ps): stop the navigation stack first, nothing else may publish /cmd_vel"
@@ -24,7 +26,7 @@ docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp
   -v "$REPO:$REPO:ro" -e REPO="$REPO" -e LIFT_SECS="${LIFT_SECS:-5}" -e SPEED="${SPEED:-0.1}" -e RUN_SECS="${RUN_SECS:-3}" -e WATCH_SECS="${WATCH_SECS:-10}" "$IMAGE" bash -c '
     set -m
     zero() { timeout 1.5 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{}" >/dev/null 2>&1 || true; }
-    trap exit INT TERM   # Ctrl-C leaves through the EXIT trap, so the final zero is sent once and always
+    trap '"'"'kill ${pub:-} 2>/dev/null; wait ${pub:-} 2>/dev/null; exit'"'"' INT TERM   # Ctrl-C stops the command publisher, then leaves through the EXIT trap: the final zero is sent once and always
     trap zero EXIT
     ros2 launch tracer_base tracer_base.launch.py port_name:=can_tracer odom_frame:=wheel_odom base_frame:=wheel_base_link >/tmp/base.log 2>&1 &
     sleep 3
@@ -32,7 +34,9 @@ docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp
     ros2 topic echo /odom --field twist.twist.linear.x </dev/null | while read -r v; do [ "$v" = "---" ] || echo "$(date +%T.%3N) base reports vx=$v"; done &
     for i in $(seq "$LIFT_SECS" -1 1); do echo "$(date +%T.%3N) LIFT NOW: $i"; sleep 1; done
     echo "$(date +%T.%3N) COMMAND vx=$SPEED for ${RUN_SECS}s"
-    timeout "$RUN_SECS" ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: $SPEED}}" >/dev/null 2>&1 || true
+    # in the background and waited for: bash runs a trap only after a FOREGROUND command ends, so a Ctrl-C used to wait out RUN_SECS with the wheels still ordered to turn
+    timeout "$RUN_SECS" ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: $SPEED}}" >/dev/null 2>&1 & pub=$!
+    wait $pub || true
     echo "$(date +%T.%3N) commands STOPPED (no zero sent): watching ${WATCH_SECS}s"
     sleep "$WATCH_SECS"
     echo "$(date +%T.%3N) sending the final zero"

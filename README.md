@@ -8,13 +8,19 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | Path | What |
 |---|---|
 | `host/` | One-time Jetson host setup: everything that cannot live in a container (kernel modules, udev, networking, power) |
-| `docker/` | Layered images built from one `Dockerfile` (`base` → `robot`) |
-| `docker/robot.repos` | Third-party ROS sources, pinned by commit |
+| `docker/` | Layered images built from one `Dockerfile` (`base` → `robot` → `sim` or `mapper`) |
+| `docker/robot.repos`, `docker/mapper.repos` | Third-party ROS sources, pinned by commit (`robot`, and `mapper` on top) |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
 | `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
+| `docker/run_cpp_tests.sh` | Runs the C++ gtests that need only Eigen and GoogleTest (gn_core, level_corrector core and map_io); the image builds without tests |
 | `docker/ros_mapper/` | Our packages built only into the `mapper` image (`socialtech_mapping`: the beam counting of `tools/slam_bench/ghosts.py` in C++) |
-| `tools/` | Offline research helpers: SLAM benchmark, 2D map from a PLY, GLIM dump to PLY and config evaluation (see Tools) |
-| `tools/nav_bench/` | Localization bench (stage A): FAST-LIO2 + AMCL over a bag's own map, scored against Voxel-SLAM (see its README) |
+| `docker/ros_loc/` | The localizer and what levels it: `gn_loc` (scan-to-map Gauss-Newton, `map -> odom`) and `level_corrector` (slow roll/pitch correction of FAST-LIO2's odom frame against the map's 3D points; on by default in `ops/nav_live.sh`, `LEVEL_CORRECTOR=0` turns it off; small_gicp is built in the `robot` stage); each has its README |
+| `docker/ros_nav/`, `docker/nav2/` | Nav2 on top of the localizer: `socialtech_nav` (parameters, behavior trees), `socialtech_costmap` (`DecayObstacleLayer`, height-band clearing), the patched controller; the sim-only packages |
+| `ops/` | Running the robot: `nav_live.sh` (localization + Nav2; flags `NAV`, `BASE`, `SUPERVISOR`, `PROD`, `LEVEL_CORRECTOR`), `record_bag.sh` (the operator's recorder), `rviz_live.sh` (rviz on the laptop against the board), the launch files, the map helpers (`make_map.sh`), `send_goal.py` (one recorded goal to Nav2, measures how the robot sets off), base-layer checks run by hand (`tracer_test.sh` + `can_latency.py`: wheels in the air; `nav_exec.sh`: a command in the nav container), and the tests of all that (`test_*.py`, `test_flags.sh`) |
+| `tools/global_reloc_3d/` | The global relocalizer and the supervisor that calls it (everything in it runs on the robot; the AMCL-era pipeline was removed on 2026-11-08) |
+| `tools/nav_sim/`, `tools/sim_realism/` | Full-chain simulation (simulated Mid-360 + real FAST-LIO2 + Nav2) on the AGX and its runners |
+| `tools/nav_common/` | Shared pieces: the floor-levelling rotation (`map_frame.py`, called by `ops/nav_live.sh`), the Python reference of `planar_odom`, `procmon.py`, the `/scan` cut |
+| `tools/slam_bench/` | Offline: bag to map with Voxel-SLAM (`make_map.sh`), bag checks, Voxel-SLAM cost on the Jetsons (see Tools) |
 
 ## Jetson setup (once per board)
 
@@ -52,7 +58,8 @@ On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=
 | Stage | Contents |
 |---|---|
 | `base` | ROS 2 Jazzy, CycloneDDS, CUDA 13.2 runtime (must match the host L4T driver) |
-| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, Nav2 AMCL + map_server, pointcloud_to_laserscan, entrypoint and ROS environment |
+| `robot` | Livox Mid-360 driver, FAST-LIO2, AgileX Tracer driver, Orbbec camera driver, rosbag2 + MCAP, `gn_loc` + `level_corrector` (with small_gicp) + `planar_odom`, Nav2 with our `socialtech_nav`/`socialtech_costmap` and the patched controller, map_server, pointcloud_to_laserscan, scipy, entrypoint and ROS environment |
+| `sim` | `robot` + Gazebo and the simulation-only packages (`socialtech_livox_sim`, `socialtech_simreal`): the full-chain simulation of `tools/nav_sim` |
 | `mapper` | `robot` + GTSAM 4.3.0, Voxel-SLAM and `rosbags`: offline mapping (`tools/slam_bench/make_map.sh`). Build it with `--target mapper`; without `--target` the last stage in the file is built |
 
 Host networking is required (DDS discovery, Livox sockets). The GPU is requested via `NVIDIA_VISIBLE_DEVICES=all`, set in the image.
@@ -62,63 +69,19 @@ Shells opened with `docker exec -it <container> bash` get the same ROS environme
 
 ## Tools
 
-The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; used offline to build the maps: it is in the `mapper` image, not in `robot`, which runs FAST-LIO2 and AMCL on the finished map). The tools below are offline research helpers used for that comparison and for the maps; none of them is part of the image. The GLIM ones are kept as reference and comparison tooling.
+The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; the comparison scripts were removed on 2026-11-08, see git history). It runs offline to build the maps: it is in the `mapper` image, not in `robot`, which runs FAST-LIO2 and gn_loc on the finished map. The tools below are offline helpers; none of them is part of the `robot` image.
 
-- `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
+- `tools/slam_bench/`: map building from a bag (`make_map.sh`), Voxel-SLAM cost measurements on the Jetsons; see its `README.md`.
 - `tools/slam_bench/bag_check.py`: gaps in the LiDAR and IMU streams of a bag, from the recording times; run it right after recording (a scan lost while recording is gone for good and nothing warns about it).
 - `tools/slam_bench/make_map.sh`: bag to map in one command inside the `mapper` image: Voxel-SLAM replay (2x) and then `make_map.py`, one process that levels the floor, removes the ghosts the beams go through, writes `map.ply` (raw SLAM cloud), `map_clean.ply` (ghost-free, whole height), `map.pgm` + `map.yaml` (2D, from the band 0.10-1.80 m of the clean cloud, unknown cells the beams crossed freed) and `report.json`. The modules are `cloud_io.py`, `floor_level.py`, `ghosts.py` (beam counting in C++, `docker/ros_mapper/socialtech_mapping`), `grid2d.py`; the relocalizer prior is built from `map_clean.ply` by `tools/global_reloc_3d/prepare_map.py`. See `tools/slam_bench/README.md`.
-
-```bash
-# GLIM map dump (glim_rosbag -p dump_path:=...) -> PLY, same points as offline_viewer's Export Points.
-python3 tools/glim_dump_to_ply.py <dump_dir> map.ply
-python3 tools/test_glim_dump_to_ply.py   # self-check
-```
-
-Needs numpy (apt: `python3-numpy`). Differences from the GUI export are listed in the script's docstring.
-
-### GLIM config evaluation
-
-Compare GLIM configs on recorded bags. GLIM is not deterministic, so each config runs several times.
-
-```bash
-# In the robot image (needs GLIM): N runs of one config = installed defaults + overlays, in order.
-docker run --rm --network host -v ~/rosbags:/bags -v ~/glim_eval:/eval -v "$PWD/tools:/tools" socialtech:robot \
-  /tools/glim_eval.sh /bags/mapping_eco_-1_01 /eval/eco01_legacy 3 /tools/glim_eval/base.json /tools/glim_eval/legacy.json
-# Anywhere with numpy + scipy: metrics per run + divergence between runs.
-python3 tools/glim_metrics.py ~/glim_eval/eco01_legacy/run*/
-python3 tools/test_glim_config.py && python3 tools/test_glim_metrics.py   # self-checks
-```
-
-`glim_config.py` rejects overlay parameters that the installed GLIM does not have (GLIM itself ignores them silently).
-Metrics need no ground truth; definitions in `glim_metrics.py`. The main signals: `revisit_p90_m`
-(doubled walls where a place is passed again), `mme` (Mean Map Entropy: blur anywhere, also within
-one pass), `z_range_m` / `roll_range_deg` / `pitch_range_deg` (drift on a flat floor), run divergence (stability).
-
-| Overlay (`tools/glim_eval/`) | On top of | What |
-|---|---|---|
-| `base.json` | defaults | Livox topics, Mid-360 `T_lidar_imu` (IMU pose in the LiDAR frame, Mid-360 manual), headless modules |
-| `legacy.json` | `base.json` | Previous (Humble, GLIM 1.0.x) config ported to 1.2.x, including its `T_lidar_imu`, to reproduce its results |
-| `mid360_T.json` | `legacy.json` | Restores the Mid-360 `T_lidar_imu` over the legacy one |
-| `keyframes.json` | `base.json` | Legacy `odometry_estimation` + `sub_mapping` only (keyframe and submap density) |
-| `loop_overlap.json` | `base.json` | `min_implicit_loop_overlap` 0.05: more loop constraints (needs dense keyframes to matter) |
-| `far_8m.json` | `base.json` | `distance_far_thresh` 8 m, as in the legacy config: more frequent keyframes/submaps? |
-| `density.json` | `base.json` | Denser submaps: more keyframes, 5 cm voxels, no point cap |
-
-`base.json` alone is not a usable map: GLIM's default keyframing gives ~3 submaps per 170 m (about 20x fewer
-points than the legacy config) and almost no backend optimization. `mme` is only comparable between maps of
-similar density (a sparse map scores "crisper").
-
-Not portable from the legacy config: its crop box kept only z in [-0.43, 1.23] m through a `crop_bbox_invert`
-parameter that upstream GLIM does not have (1.2.x only removes points inside the box). Left out: frame IDs,
-QoS, image topic, `ring_field` (Livox has no ring field; ignored when absent), viewers.
 
 ## Where changes go
 
 | Change | Where |
 |---|---|
 | Fix so upstream code builds/runs | `docker/patches/<repo>/*.patch` |
-| Our configuration (params, IPs, launch args) | our own bringup package (planned), never upstream configs |
-| Our own nodes | `docker/ros/<pkg>` (ament package; a Python reference + test next to the bench if it replaces one) |
+| Our configuration (params, launch args) | `ops/` (launch files and overrides, merged over `docker/ros_nav/socialtech_nav/config/nav2_params.yaml`), never upstream configs |
+| Our own nodes | an ament package under `docker/ros`, `docker/ros_loc`, `docker/ros_nav` or `docker/ros_mapper` (by role, see Layout); a Python reference + test in `tools/nav_common` if it replaces one |
 | New logic in upstream code | a fork, pinned in `docker/robot.repos` |
 
 ## License

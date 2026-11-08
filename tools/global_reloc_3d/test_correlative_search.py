@@ -6,7 +6,7 @@ import numpy as np
 from scipy import fft
 
 from correlative_search import MapField, pose, search, spread_order, top_of_separated, unique_cells, yaw_distance_deg, yaw_peaks, z_cell_range, rot_z
-from offline_s2 import transform
+from pointcloud import transform
 
 
 def synthetic_map(rng):
@@ -293,11 +293,12 @@ class LeanBuildTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             lean.correlate(high, 0.)
 
-    def test_the_slab_field_is_the_scipy_field_bit_for_bit(self):
-        # the spectrum of the layers is a function of the field alone: equal spectra, equal field. Fails with a scipy whose distance transform differs by one ulp.
+    def test_the_slab_field_is_the_scipy_field_to_float_rounding(self):
+        # the spectrum of the layers is a function of the field alone: equal spectra, equal field. Bit for bit on x86; on aarch64 (the AGX and the Nano) numpy/scipy round differently:
+        # 3 % of the cells differ by up to 7.6e-6 on values up to 2660 (float32 rounding, measured 2026-11-07). A logic error would differ by O(1).
         new = MapField(self.world, .5, .5, 9.5, self.reach)
         old = ReferenceMapField(self.world, .5, .5, 9.5, self.reach)
-        np.testing.assert_array_equal(new.layers, old.layers)
+        np.testing.assert_allclose(new.layers, old.layers, rtol=1e-6, atol=1e-4)
 
     def test_the_build_allocates_far_less_than_scipys_edt_does(self):
         import tracemalloc

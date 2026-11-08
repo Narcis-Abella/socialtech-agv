@@ -1,12 +1,9 @@
 """Truth-free geometric diagnostic; absent alternative/temporal evidence abstains."""
-import argparse
-import json
-from pathlib import Path
 
 import numpy as np
 from scipy.spatial import cKDTree
 
-from offline_s2 import transform
+from pointcloud import transform
 
 
 def score(map_points, check_points, T, tree=None):
@@ -32,25 +29,3 @@ def decide(result, geom, alternative=None, temporal=None):
     if temporal is None or not temporal:
         return 'ambiguous_no_temporal_confirmation'
     return 'accepted'
-
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument('--run', required=True)
-    p.add_argument('--out', required=True)
-    a = p.parse_args()
-    run = Path(a.run)
-    result = json.loads((run/'result.json').read_text())
-    map_points = np.loadtxt(run/'map.xyz')
-    check_points = np.loadtxt(run/'check.xyz')
-    g = score(map_points, check_points, result['T_map_lidar_refined'])
-    status = decide(result, g)
-    output = {'geometry': g, 'decision': status, 'accepted': status == 'accepted',
-              'alternative_margin': None, 'temporal_confirmation': None,
-              'policy': 'point4_initial_3d_gate'}
-    Path(a.out).write_text(json.dumps(output, indent=2)+'\n')
-    print(json.dumps(output, indent=2))
-
-
-if __name__ == '__main__':
-    main()

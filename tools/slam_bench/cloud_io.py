@@ -22,12 +22,6 @@ def read_ply(path):
     return np.column_stack([a["x"], a["y"], a["z"]]).astype(np.float64)
 
 
-def read_traj(path):
-    """(positions (N, 3), quaternions xyzw (N, 4)) of a TUM trajectory (t x y z qx qy qz qw)."""
-    a = np.loadtxt(path)
-    return a[:, 1:4], a[:, 4:8]
-
-
 def write_ply(path, P):
     """Binary little-endian PLY with x, y, z (float32)."""
     Path(path).write_bytes(b"ply\nformat binary_little_endian 1.0\nelement vertex %d\nproperty float x\nproperty float y\nproperty float z\nend_header\n" % len(P) + P.astype("<f4").tobytes())
@@ -53,7 +47,7 @@ def first_per_voxel(p, vox):
 
 def assemble_world_cloud(run_dir, vox):
     """(poses (n, 8), cloud (m, 3)) of a Voxel-SLAM run dir: every <i>.pcd body-frame frame moved to the world with pose i of alidarState.txt, then thinned to one
-    point per voxel. The cloud holds float32 values (what world.ply stores), so the stages after it see the same numbers whether or not the file is written."""
+    point per voxel. The cloud holds float32 values (what map.ply stores), so the stages after it see the same numbers whether or not the file is written."""
     run = Path(run_dir)
     poses = np.loadtxt(run / "alidarState.txt", usecols=range(8), ndmin=2)
     rot = Rotation.from_quat(poses[:, 4:8])

@@ -42,18 +42,6 @@ def mcnemar_exact(b, c):
     return min(1.0, 2 * sum(math.comb(n, i) for i in range(k + 1)) / 2 ** n)
 
 
-def holm(pvals):
-    """Holm-Bonferroni adjusted p-values, in the input order."""
-    p = np.asarray(pvals, float)
-    order = np.argsort(p)
-    adj = np.empty_like(p)
-    running = 0.0
-    for rank, i in enumerate(order):
-        running = max(running, (len(p) - rank) * p[i])
-        adj[i] = min(1.0, running)
-    return adj
-
-
 def summary(x):
     x = np.asarray(x, float)
     if not x.size:

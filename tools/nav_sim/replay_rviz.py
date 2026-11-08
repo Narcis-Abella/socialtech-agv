@@ -16,8 +16,6 @@ from scipy import ndimage
 from scipy.spatial import cKDTree
 
 import analyze as a
-import dyn
-import dyn_metrics as dm
 import gcm_codec
 import ghost
 import metrics as m
@@ -51,21 +49,6 @@ def face_clearance(occ, origin, res, x, y, yaw, length, width):
     return float(d[i, j]), (int(rows[idx[i, j]]), int(cols[idx[i, j]])), (float(px[i]), float(py[i]))
 
 
-def walker_series(rec, t0):
-    """(T, X, Y, YAW, size) of the first moving obstacle of a trial with "dyn_log", times relative to t0; None without one."""
-    log = [e for e in rec.get("dyn_log", []) if e[1] == (rec["dyn"][0]["model"] if rec.get("dyn") else None)]
-    if not log:
-        return None
-    arr = np.asarray([[e[0] - t0, e[2], e[3], e[4]] for e in log], float)
-    return arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3], tuple(rec["dyn"][0]["size"][:2])
-
-
-def walker_at(w, t):
-    """Walker pose (x, y, yaw) at time t from the last command sent at or before t; None before it starts moving."""
-    i = int(np.searchsorted(w[0], t, side="right")) - 1
-    return None if i < 0 else (w[1][i], w[2][i], w[3][i])
-
-
 def load_case(spec, ctx, occ):
     label, run, tid = spec.split(":")
     tid, _, tag = tid.partition("@")      # "p12@r1" picks repetition r1 of p12
@@ -73,19 +56,8 @@ def load_case(spec, ctx, occ):
     col = {c: i for i, c in enumerate(rec["cols"])}
     rows = np.asarray(rec["rows"], float)
     t, pose = rows[:, col["t"]] - rows[0, col["t"]], rows[:, [col["gt_x"], col["gt_y"], col["gt_yaw"]]]
-    w = walker_series(rec, rows[0, col["t"]])
     extra = {"gcm": [[tf - rows[0, col["t"]], pl] for tf, pl in rec.get("gcm_frames", [])], "gcm_meta": rec.get("gcm_meta"), "cm": [[tc - rows[0, col["t"]], ac, pc] for tc, ac, pc in rec.get("cm_log", [])],
              "plans": [(tp - rows[0, col["t"]], np.asarray(xy, float)) for tp, xy in rec.get("plan_all", [])]}      # recorded global costmap (REC_GCM=1), times relative to the trial start
-    if w is not None:                       # encounter with a moving obstacle: report the closest approach to it instead of the wall clearance
-        gaps = []
-        for tt, p in zip(t, pose):
-            o = walker_at(w, tt)
-            gaps.append((dyn.rect_distance((*p, *dm.BODY), (*o, *w[4])), dyn.rect_distance((*p, *dm.FOOTPRINT), (*o, *w[4]))) if o and math.hypot(o[0] - p[0], o[1] - p[1]) < dm.NEAR else (dm.NEAR, dm.NEAR))
-        gaps = np.asarray(gaps)
-        k = int(np.argmin(gaps[:, 0]))
-        d = dm.trial_metrics(rec)
-        return {"label": label, "id": tid, "t": t, "pose": pose, "plan": np.asarray(rec["plan_first"], float), "min_pose": pose[k], "metric": float(gaps[k, 0]), "face": float(gaps[k, 1]), "cell": None,
-                "near": None, "duration": float(rec["duration"]), "status": rec["status"], "walker": w, "dyn": d, "start": rec["start"], "goal": rec["goal"], **extra}
     sub = pose[::5]                         # same sampling as analyze.trial_metrics
     cl = np.array([m.footprint_clearance(ctx["dist"], ctx["origin"], ctx["res"], *p, *ctx["footprint"]) for p in sub])
     away = (np.hypot(*(sub[:, :2] - rec["start"][:2]).T) > 1.0) & (np.hypot(*(sub[:, :2] - rec["goal"][:2]).T) > 1.0)
@@ -157,7 +129,7 @@ def main(argv):
     ap.add_argument("--case", action="append", required=True, help="label:run out dir:trial id")
     ap.add_argument("--speed", type=float, default=4.0)
     ap.add_argument("--sequence", action="store_true", help="play the cases one after another (each with its own recorded costmap) instead of overlaying them")
-    ap.add_argument("--zone", action="append", help="front,back,half_width[,polygon name] of a Collision Monitor zone to draw on the robot (metres); repeat for several. Red when that polygon is in command (cm_log), yellow when the approach is, grey otherwise")
+    ap.add_argument("--zone", action="append", help="(only for cases whose label starts with 'zona') front,back,half_width[,polygon name] of a Collision Monitor zone to draw on the robot (metres); repeat for several. Red when that polygon is in command (cm_log), yellow when the approach is, grey otherwise")
     ap.add_argument("--plans", action="store_true", help="draw the plan the planner has published at each instant (bold) and the 4 before it (faint), from plan_all, with its index and length")
     ap.add_argument("--no-rviz", action="store_true", help="publish only (rviz2 started elsewhere, or a test)")
     args = ap.parse_args(argv)
@@ -165,10 +137,6 @@ def main(argv):
     ctx = a.context(args.map)
     cases = [load_case(c, ctx, mp["occ"]) for c in args.case]
     for c in cases:
-        if c.get("walker"):
-            d = c["dyn"]
-            print(f"{c['label']:10s} {c['id']} {c['status']} {c['duration']:.1f} s  closest approach to the walker: body {c['metric'] * 100:.0f} cm, Nav2 footprint {c['face'] * 100:.0f} cm{'  CONTACT' + (' (robot moving)' if d['active_contact'] else ' (robot stopped)') if d['contact'] else ''}  reached={d['reached']}")
-            continue
         print(f"{c['label']:10s} {c['id']} {c['status']} {c['duration']:.1f} s  min mid-route clearance: metric {c['metric'] * 100:.1f} cm (to cell centre) | independent {c['face'] * 100:.1f} cm (to wall face)")
     import rclpy
     from builtin_interfaces.msg import Duration
@@ -225,12 +193,7 @@ def main(argv):
             static.append(text(gid, f"sgt{n}", gx, gy + 0.5, gtxt, gcol, 0.3))
         mx, my, myaw = c["min_pose"]
         static.append(line(10 * n + 2, "minfp", rect(mx, my, myaw, *fp), rgb, 0.04))
-        if c.get("walker"):
-            d = c["dyn"]
-            static.append(text(10 * n + 3, "label", mx, my + 0.6 + 0.35 * n, f"{c['label']} {c['id']}: gap {c['metric'] * 100:.0f} cm" + (" CONTACT" if d["contact"] else "") + ("" if d["reached"] else " NOT REACHED"), rgb))
-            static.append(line(10 * n + 7, "walkerpath", list(zip(c["walker"][1], c["walker"][2])), rgb, 0.015, 0.5))
-        else:
-            static.append(text(10 * n + 3, "label", mx, my + 0.6 + 0.35 * n, f"{c['label']} {c['id']}: {c['metric'] * 100:.1f} cm (centre) / {c['face'] * 100:.1f} cm (face)", rgb))
+        static.append(text(10 * n + 3, "label", mx, my + 0.6 + 0.35 * n, f"{c['label']} {c['id']}: {c['metric'] * 100:.1f} cm (centre) / {c['face'] * 100:.1f} cm (face)", rgb))
         if c["cell"] is not None:
             r, cc = c["cell"]
             wx, wy = mp["origin"][0] + (cc + 0.5) * mp["res"], mp["origin"][1] + (h - 1 - r + 0.5) * mp["res"]
@@ -249,7 +212,7 @@ def main(argv):
     dwall = (ndimage.distance_transform_edt(~mp["occ"]) * mp["res"])[::-1].ravel()      # metres to the nearest wall cell, in OccupancyGrid layout: marks scattered by lidar noise right next to a wall are not a wake
     try:
         while rclpy.ok() and (proc is None or proc.poll() is None):
-            if args.sequence:      # one case at a time: its own robot, walker, plan and recorded costmap
+            if args.sequence:      # one case at a time: its own robot, plan and recorded costmap
                 pos = ((time.time() - t_wall) * args.speed) % sum(spans)
                 cur = next(i for i in range(len(cases)) if pos < sum(spans[:i + 1]))
                 ph = pos - sum(spans[:cur])
@@ -288,10 +251,6 @@ def main(argv):
                         xy = c["plans"][k][1]
                         ln = float(np.hypot(*np.diff(xy, axis=0).T).sum())
                         msgs.append(text(950 + n, "plantext", x, y + 1.0, f"plan {k + 1}/{len(c['plans'])}  {ln:.1f} m  from t={c['plans'][k][0]:.1f} s", (1.0, 0.5, 0.0), 0.4))
-                if c.get("walker"):
-                    o = walker_at(c["walker"], tt)
-                    if o:
-                        msgs.append(line(10 * n + 8, "walker", rect(*o, *c["walker"][4]), (0.0, 0.0, 0.0), 0.06))
             if cc is not None:
                 payload = gcm_codec.frame_at(cc["gcm"], ph)
                 if payload is not None and payload is not shown[0]:
@@ -302,8 +261,7 @@ def main(argv):
                     g.info.origin.position.x, g.info.origin.position.y, g.info.origin.orientation.w = meta["origin"][0], meta["origin"][1], 1.0
                     g.data = data.tolist()
                     gcm_pub.publish(g)
-                    ow = walker_at(cc["walker"], min(ph, cc["t"][-1])) if cc.get("walker") else None
-                    wx, wy = ghost.wake_xy(data, static_flat, meta["width"], meta["height"], meta["origin"], meta["res"], [ow[:2]] if ow else [])
+                    wx, wy = ghost.wake_xy(data, static_flat, meta["width"], meta["height"], meta["origin"], meta["res"], [])
                     near_wall = dwall[np.floor((wy - meta["origin"][1]) / meta["res"]).astype(int) * meta["width"] + np.floor((wx - meta["origin"][0]) / meta["res"]).astype(int)] <= 0.6
                     wx, wy = wx[~near_wall], wy[~near_wall]
                     pts = Marker()
@@ -315,7 +273,7 @@ def main(argv):
                     lab.header.frame_id, lab.ns, lab.id, lab.type, lab.action = "map", "wake", 1, Marker.TEXT_VIEW_FACING, Marker.ADD
                     lab.pose.position.x, lab.pose.position.y, lab.pose.position.z = float(meta["origin"][0] + meta["width"] * meta["res"] / 2), float(meta["origin"][1] + meta["height"] * meta["res"] - 1.0), 0.5
                     lab.scale.z, lab.color.r, lab.color.g, lab.color.b, lab.color.a = 0.4, 1.0, 0.4, 1.0, 1.0
-                    lab.text = f"{cc['label']} {cc['id']}  t={ph:5.1f} s   lethal cells with no wall or walker to explain them (magenta): {len(wx)}"
+                    lab.text = f"{cc['label']} {cc['id']}  t={ph:5.1f} s   lethal cells with no wall to explain them (magenta): {len(wx)}"
                     pts.lifetime = lab.lifetime = Duration(sec=1)
                     wake_pub.publish(MarkerArray(markers=[pts, lab]))
             for mk in msgs:

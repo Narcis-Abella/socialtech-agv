@@ -1,17 +1,18 @@
 # Simulator realism (2026-10-30)
 
-Models of what the real Tracer + Mid-360 do, calibrated on real bags, for the Nav2 simulation. Branch `feat/sim-realism`.
+Models of what the real Tracer + Mid-360 do, calibrated on real bags, for the Nav2 simulation.
 
 | Piece | Where | What |
 |---|---|---|
 | `docker/ros_nav/socialtech_simreal` | built into the `sim` image with the other `ros_nav` packages | four nodes: `sim_base_model`, `sim_wheel_odom`, `sim_scan_model`, `sim_imu_model`; the models are in `models.hpp` (no ROS) with gtests |
 | `calibration.json` | here | every number with its source |
-| `lidar_noise_from_scan.py`, `base_response_from_bag.py`, `slip_structure.py`, `caster_kick.py` | here | the estimation from real bags |
-| `sim_selfcheck.py`, `scan_selfcheck.py` | here | check the running simulation against the calibration |
-| `hospital-agv-sim-realism.patch` | here | hooks in the simulator repo (branch `sim-realism`): `SIM_REALISM=1` |
+| `scan_selfcheck.py` | here | check the running simulation's /scan against the calibration |
+| estimators from real bags (`lidar_noise_from_scan`, `base_response_from_bag`, `slip_structure`, `caster_kick`), `livox_sim_geom`, `livox_pattern_compare` | SocialTech `notes/sim_realism/` (removed here 2026-11-08) | one-off estimation and validation |
+| `sim_selfcheck.py`, `run_selfcheck.sh`, `livox_sim_check.py` | git history before 3bb72f1 | one-off validation of the 2D-era base model and of the Mid-360 simulator output |
+| simulator hooks (`SIM_REALISM=1`) | simulator repo, branch `sim-realism` | the patch was applied there |
 
-Use: `SIM_REALISM=1 SIM_ARGS="odom_source:=ground_truth" tools/nav_sim/run_trials.sh ...` (REALISM_SEED, REALISM_ARGS: `outlier_scale:=0 noise_scale:=1 kick:=0.05 deadband:=0.1`).
-With `SIM_REALISM=1`: `/cmd_vel` (Nav2) goes through the base model to Gazebo (`/cmd_vel_gz`); `/odom` is the wheel measurement; the LiDAR-inertial stand-in (`noisy_odom`, odom -> base_footprint TF) publishes `/odom_lio`; `/scan` and `/imu/data` come from the models.
+Use: `tools/nav_sim/sim_up.sh` starts the simulation with `SIM_REALISM=1 SIM_LIO=1` (hospital-agv-sim, branch `sim-realism`); see `tools/nav_sim/README.md`.
+With it, `/cmd_vel` (Nav2) goes through the base model to Gazebo (`/cmd_vel_gz`); `/odom` is the wheel measurement; `/scan` comes from the real chain (FAST-LIO2 on the simulated Mid-360), `/imu` from `sim_imu_model`.
 
 What the data says (see `calibration.json`):
 - `/scan`: gaussian core 10-25 mm (the legacy RPLiDAR model gave 25 cm at 10 m), 2-27 % dropout by range, and surface jumps on a persistent subset of the beams (the closest point of a 0.10-1.80 m band flips between surfaces).
@@ -21,7 +22,7 @@ What the data says (see `calibration.json`):
 - NOT modelled / weak: the caster kick after in-place turns (7 sequences, off by default), vibration, wheel slip on slopes, the transient linear gain > 1 after in-place turns (probably a FAST-LIO artefact).
 
 ## Validated in the running simulation (2026-10-30, AGX, `sim-nav2` image)
-`run_selfcheck.sh`-style run: the sim as **root** (the headless Gazebo server does not start as a normal user in this image), `world:=empty.sdf`, all times in simulation time (real-time factor 0.95):
+Self-check run: the sim as **root** (the headless Gazebo server does not start as a normal user in this image), `world:=empty.sdf`, all times in simulation time (real-time factor 0.95):
 whole chain /cmd_vel -> base model -> Gazebo: linear dead time 0.060 s, lag 0.100 s, gain 1.015; angular moving gain 0.967, in-place deadband as drawn; wheel odometry linear 0.956 / in place 0.930 of the true twist;
 Gazebo alone (/cmd_vel_gz): dead time 0.02 s, gain 1.000, so everything above comes from the models. `scan_selfcheck.py` in the hospital world: core sigma, dropout and jump rate per range bin within the real values.
 Pitfalls found: a test in wall time against a simulator under real time; a command profile that drives into the walls of the hospital world.
@@ -37,9 +38,6 @@ Model (notes/sim_realism/livox_modelo_matematico.md): slot k, line l = k % 4, t 
 | to the node's text format | `livox_model_to_txt.py MODEL.json OUT.lvm` |
 | world to triangles (visuals; boxes, plane, OBJ meshes) | `world_to_tris.py loyola.sdf MODELS_DIR loyola.tris` |
 | run | `ros2 run socialtech_livox_sim livox_mid360_sim --ros-args -p model_file:=... -p scene_file:=... [-p pc2_topic:=/livox/pc2] [-p static_pose:="[x,y,yaw]"] [-p jitter_std:=0.0005]` |
-| output format vs a real bag | `livox_sim_check.py SIM_BAG - REAL_BAG TOPIC` |
-| pattern statistics vs real units | `livox_pattern_compare.py` |
-| geometry vs Gazebo gpu_lidar (inside the sim image) | `livox_sim_geom.py` |
 
 Held-out error (own unit, constants re-estimated on 1 s): azimuth x sin(zenith) median 0.33-0.44 deg, zenith 0.26-0.39 deg. Another unit needs its own 2 s fit (the zenith shape does not transfer: 0.75 deg).
 Known limits: no moving objects in the scene, tag always 0 (a real unit flags ~1.3 %), reflectivity constant, range noise 2 cm is the datasheet value, the robot body does not occlude, mechanism is phenomenological.

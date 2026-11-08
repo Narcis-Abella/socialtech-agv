@@ -12,9 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from correlative_search import pose
-from make_hole_map import hole
-from search_v2 import rank, run_concurrently, source_reach_z, tilt_deg
-from summarize_batch import classify, wilson
+from search_v2 import agreement, distinct, rank, run_concurrently, source_reach_z, temporal_evidence, tilt_deg
 
 
 def row(i, support, T):
@@ -34,6 +32,17 @@ class SearchV2Test(unittest.TestCase):
         same = row('same', .8, pose(math.radians(2), [.1, 0, 0]))  # within 0.30 m / 8 deg of a
         far = row('far', .7, pose(0., [5, 0, 0]))
         self.assertEqual([r['id'] for r in rank([far, same, a])], ['a', 'far'])
+
+    def test_an_exact_rmse_of_zero_is_a_measured_rmse_not_a_missing_one(self):
+        """`rmse or 9.` ranked an rmse of 0.0 behind every other candidate of equal support; None (nothing matched) still goes last."""
+        T = np.eye(4)
+        rows = [row('none', .5, T), row('exact', .5, T), row('worse', .5, T)]
+        rows[0]['geometry']['matched_rmse_m'] = None
+        rows[1]['geometry']['matched_rmse_m'] = 0.0
+        rows[2]['geometry']['matched_rmse_m'] = .05
+        for r, shift in zip(rows, (0., 3., 6.)):                  # distinct places, so rank keeps all three
+            r['result']['T_map_lidar_refined'] = [[1, 0, 0, shift], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+        self.assertEqual([r['id'] for r in rank(rows)], ['exact', 'worse', 'none'])
 
     def test_the_two_searches_run_at_the_same_time_and_both_results_come_back(self):
         barrier = threading.Barrier(2, timeout=5)                     # each waits for the other: a sequential run would break the barrier
@@ -58,18 +67,19 @@ class SearchV2Test(unittest.TestCase):
         T[1:3, 1:3] = [[c, -s], [s, c]]
         self.assertAlmostEqual(tilt_deg(T), 10., places=6)
 
-    def test_negative_classes_never_reward_acceptance(self):
-        self.assertEqual(classify('cross', {'accepted': True, 'decision': 'accepted'}, None), 'wrong_accept')
-        self.assertEqual(classify('hole', {'accepted': False, 'decision': 'reject_no_hypothesis'}, None), 'reject')
-        bad = {'refined': {'within_limits': False}}
-        self.assertEqual(classify('hole', {'accepted': True, 'decision': 'accepted'}, bad), 'wrong_accept')
-        self.assertEqual(classify('own', {'accepted': True, 'decision': 'accepted'}, bad), 'wrong_accept')
-        self.assertEqual(classify('x01', {'accepted': False, 'decision': 'reject_geometry'}, bad), 'false_reject')
+    def test_distinct_and_agreement(self):
+        a = np.eye(4)
+        b = np.eye(4)
+        b[0, 3] = .21
+        self.assertFalse(distinct(a, b))
+        self.assertFalse(agreement(a, b))
+        b[0, 3] = .31
+        self.assertTrue(distinct(a, b))
+        self.assertTrue(agreement(a, np.eye(4)))
 
-    def test_wilson_and_hole(self):
-        self.assertAlmostEqual(wilson(0, 50)[1], .0714, places=3)
-        pts = np.array([[0, 0, 0], [1, 0, 0], [9, 0, 0.]])
-        self.assertEqual(len(hole(pts, (0, 0), 8.)), 1)
+    def test_one_second_ablation_cannot_accept(self):
+        self.assertFalse(temporal_evidence([.0, .1, .2, .3, .4, .5, .6, .7, .8, .9], 0., 1.)[0])
+        self.assertTrue(temporal_evidence([.0, .5, 1., 1.5, 2., 2.5, 2.9], 0., 3.)[0])
 
 
 class WorkerExitCodeTest(unittest.TestCase):
@@ -106,9 +116,6 @@ class WorkerExitCodeTest(unittest.TestCase):
         self.assertEqual(p.returncode, 1, p.stderr)
         self.assertIn('libcorr_search', p.stderr)
 
-
-if __name__ == '__main__':
-    unittest.main()
 
 
 class ZBandRankTest(unittest.TestCase):
@@ -212,18 +219,6 @@ class GlobalHypothesesDeadlineTest(unittest.TestCase):
         ra.assert_not_called()
 
 
-class LoneRefineTimeoutTest(unittest.TestCase):
-    def test_a_timed_out_lone_run_has_no_result_even_if_a_file_exists(self):
-        import search_v2 as sv
-        with tempfile.TemporaryDirectory() as d:
-            d = Path(d)
-            b = d / 'slow'
-            b.write_text('#!/bin/sh\necho "{" > "$5"\nsleep 30\n')
-            b.chmod(0o755)
-            log, result = sv.refine(b, 'm', 's', 'c', np.eye(4), d / 'o', .3, 1)
-        self.assertEqual((log['exit_code'], result), (124, None))
-
-
 class StaleBinaryTest(unittest.TestCase):
     """A register_v2 that does not know --init-list (staged before the tools) must stop the search loudly: 'no candidate survived' would make the supervisor retry for nothing."""
     def test_a_binary_that_fails_without_any_result_raises_with_its_message(self):
@@ -256,3 +251,6 @@ class StaleBinaryTest(unittest.TestCase):
             log, results, timed_out = sv.refine_all(b, 'm', 's', 'c', [np.eye(4)] * 2, d, 'cand', .3, 20)
         self.assertEqual((results, timed_out, log['exit_code']), ([None, None], False, 1))
 
+
+if __name__ == '__main__':
+    unittest.main()

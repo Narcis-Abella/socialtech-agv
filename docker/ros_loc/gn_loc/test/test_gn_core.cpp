@@ -12,7 +12,7 @@ namespace
 constexpr int N = 200;
 constexpr double RES = 0.025;
 
-// a 4 m square room with a wall segment inside, 2.5 cm cells (same as the Python selftest); blob: a 1.4 m checkerboard of occupied cells at x 1.6-3.0, y 2.9-4.3
+// a 4 m square room with a wall segment inside, 2.5 cm cells (the room of the original Python selftest); blob: a 1.4 m checkerboard of occupied cells at x 1.6-3.0, y 2.9-4.3
 // (cluttered furniture as the 2D map shows it: every point inside is within 2 cm of an occupied cell)
 std::vector<int8_t> room(bool blob = false)
 {
@@ -111,6 +111,19 @@ TEST(Core, ExhaustiveSearchCapturesLargeOffsetsQuickly)
     EXPECT_LT(std::abs(wrap(r.Tmo->yaw - c.truth.yaw)), 2.0 * M_PI / 180.0) << c.sxy;
     EXPECT_LT(secs, 2.0) << c.sxy;
   }
+}
+
+TEST(Core, AnInitialPoseWithoutANumberOrWithAHugeCovarianceDoesNotSizeTheSearch)
+{
+  const auto g = room();
+  std::mt19937 rng(0);
+  Core core(std::make_shared<Field>(g, N, N, RES, 0.0, 0.0), Params{});
+  EXPECT_FALSE(core.setInitial({2.0, 1.5, 0.0}, std::nan(""), 0.1));       // an uninitialised covariance: ignored (and reported), the node keeps waiting for a pose
+  EXPECT_EQ(core.state(), State::WaitingPose);
+  EXPECT_TRUE(core.setInitial({2.0, 1.5, 0.0}, 1e6, 1e6));                // 3 sigma = 3000 km: capped, the search ends
+  const auto t0 = std::chrono::steady_clock::now();
+  core.update(0.0, {0, 0, 0}, scan(g, {2.0, 1.5, 0.0}, rng), -M_PI, 2 * M_PI / 720);
+  EXPECT_LT(std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), 30.0);
 }
 
 namespace

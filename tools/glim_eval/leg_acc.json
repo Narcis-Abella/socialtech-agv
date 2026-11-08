@@ -1,7 +1,0 @@
-{
-  "config_sensors.json": {
-    "sensors": {
-      "imu_acc_noise": 0.02
-    }
-  }
-}

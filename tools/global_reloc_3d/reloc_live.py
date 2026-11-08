@@ -1,5 +1,5 @@
 """On-demand global relocalization from the LIVE sensors (for gn_supervisor_node.py), with the frozen pieces of this directory unchanged:
-sliding IMU stillness (the test of rc.ImuGate, 2 s) and a flowing lidar -> S2 exposure of rc.S2_EXPOSURE_S of the RAW Mid-360 frames (livox_frames.py: FAST-LIO2's own preprocessing,
+sliding IMU stillness (imu_ready.window_ok over 2 s) and a flowing lidar -> S2 exposure of rc.S2_EXPOSURE_S of the RAW Mid-360 frames (livox_frames.py: FAST-LIO2's own preprocessing,
 body frame) -> lio_submap.assemble (IMU-levelled fit/check submap) -> search_v2.py worker (FFT search, small_gicp, verify.decide) -> base pose in map.
 
 The robot is held still, so the exposure needs no odometry: a still body is its own odometry (identity), and the robot's FAST-LIO2 is restarted in PARALLEL with the exposure and
@@ -7,7 +7,7 @@ the search (a long blind period leaves it with metres of z drift and degrees of 
 is not an input: only whether the new filter publishes again, because gn_loc needs its odom -> base_footprint when it receives the pose. A robot that moves between the start of the
 exposure and the result is refused (the IMU in the exposure, the wheels after it): nothing carries a pose along a push when the odometry has just been restarted.
 
-Why not reloc_node.py: it starts its own cold FAST-LIO2, which publishes /Odometry and /cloud_registered_body next to the robot's, and broadcasts odom -> base_footprint; on the live
+Why not the previous online node (reloc_node.py, removed 2026-11-08): it starts its own cold FAST-LIO2, which publishes /Odometry and /cloud_registered_body next to the robot's, and broadcasts odom -> base_footprint; on the live
 stack that would corrupt the odometry chain. Here only the sensors are read and nothing is published. Difference from the evidence of PR #14 (cold FAST-LIO2 body clouds started at rest):
 the raw frames carry no undistortion (nothing moves), the density is FAST-LIO2's (point_filter_num) and assemble() levels the submap from the IMU of the exposure, as before. NV on the robot.
 """
@@ -72,19 +72,25 @@ class Worker:
             os.killpg(self.p.pid, signal.SIGKILL)      # also with search_v2 dead (the OOM killer): a register_v2 it forked may live on in the group, beside the next attempt's
         except (ProcessLookupError, PermissionError):  # nobody left in the group, or its number already belongs to another user's
             pass
-        self.p.wait()
+        try:
+            self.p.wait(timeout=2.0)       # SIGKILLed, so normally immediate; in uninterruptible disk wait (the Orin NVMe stalls of 30 s) it would block the supervisor's only thread
+        except subprocess.TimeoutExpired:
+            pass                           # the attempt is over either way; the zombie is reaped by subprocess at the next Popen (callers drop the worker right after kill)
 
 
 class StillWindow:
-    """Stillness of the last rc-ImuGate window (2 s), re-evaluated every 0.1 s with the unchanged test. ImuGate latches the first time it passes; this one follows the robot,
+    """Stillness of the last 2 s window, re-evaluated every 0.1 s with imu_ready.window_ok; it does not latch: it follows the robot,
     so a start waits for the stillness of *now*, not of some moment in the past."""
     def __init__(self, step=.1):
-        self.t, self.g, self.a, self.step, self.next_eval, self.ok, self.stale = collections.deque(), collections.deque(), collections.deque(), step, None, False, False
+        self.t, self.g, self.a, self.step, self.next_eval, self.ok, self.calm, self.stale = collections.deque(), collections.deque(), collections.deque(), step, None, False, False, False
 
     def add(self, stamp, gyro, acc_g, need=True):
         """need=False keeps the window and its grid but skips the test; the next needed call runs it once, at the newest grid time: the answer the eager window had."""
         if self.t and stamp <= self.t[-1]:
-            return self.ok                     # non-monotonic sample: ignored
+            if stamp >= self.t[-1] - .5:
+                return self.ok                 # a duplicate or a slightly late sample: ignored
+            self.t.clear(); self.g.clear(); self.a.clear()         # the clock stepped back (driver re-sync, replayed or sim clock): what is kept belongs to another timeline and its answer
+            self.next_eval, self.ok, self.calm, self.stale = None, False, False, False   # must not freeze as "still"
         self.t.append(stamp); self.g.append(gyro); self.a.append(acc_g)
         while self.t[0] < stamp - imu_ready.WINDOW_S - 1.:
             self.t.popleft(); self.g.popleft(); self.a.popleft()
@@ -97,9 +103,10 @@ class StillWindow:
             t = np.asarray(self.t)
             i, j = np.searchsorted(t, [T - imu_ready.WINDOW_S, T])
             if j - i >= 3:
-                self.ok = imu_ready.window_ok(np.asarray(self.g)[i:j], np.asarray(self.a)[i:j], int(np.ceil(imu_ready.WINDOW_S / float(np.median(np.diff(t[i:j]))))))
+                g, a, n = np.asarray(self.g)[i:j], np.asarray(self.a)[i:j], imu_ready.expected_samples(t[i:j], imu_ready.WINDOW_S)
+                self.ok, self.calm = imu_ready.window_ok(g, a, n), imu_ready.window_ok(g, a, n, imu_ready.MOTION_RESIDUAL_SCALE)   # ok: quiet enough to START; calm: not moved (noise allowed)
             else:
-                self.ok = False
+                self.ok = self.calm = False
         return self.ok
 
 
@@ -155,7 +162,7 @@ class LiveReloc:
                 self.begin(t)
         elif self.stage == 'expose':
             self.imu.append((t, np.asarray(acc_g, float))); self.motion.append((t, gyro, acc_g))
-        elif self.stage == 'search' and not still and self.moved_in is None:
+        elif self.stage == 'search' and not self.still.calm and self.moved_in is None:
             self.moved_in = 'search'                       # latched like the wheels: a shove that ended before the worker returned must still refuse the pose
 
     def begin(self, t):
@@ -229,7 +236,7 @@ class LiveReloc:
         a, b = self.clouds[0][0], self.clouds[-1][0]
         self.info.update(exposure_s=round(b - a, 3), clouds=len(self.clouds))
         t, g, acc = (np.array(x) for x in zip(*[(t, gy, ac) for t, gy, ac in self.motion])) if self.motion else (np.array([]),) * 3
-        if self.moved_in == 'expose' or len(t) < 3 or not imu_ready.window_ok(g, acc, int(np.ceil((t[-1] - t[0]) / float(np.median(np.diff(t))))) if len(t) > 2 else 0):
+        if self.moved_in == 'expose' or len(t) < 3 or not imu_ready.window_ok(g, acc, imu_ready.expected_samples(t), imu_ready.MOTION_RESIDUAL_SCALE):
             return self.end(False, 'moved_during_exposure')
         odom = [(a - .1 + .1 * k, np.eye(4)) for k in range(int(round(b - a + .2, 1) * 10) + 2)]   # a still body is its own odometry
         t0 = time.monotonic()
@@ -258,7 +265,7 @@ class LiveReloc:
 
     def release(self):
         """The accepted pose goes out once the robot is known not to have moved and, after a restart, the new filter is publishing (gn_loc needs odom -> base_footprint)."""
-        if self.moved_in is not None or not self.still.ok:                    # the wheels may be silent (base off, slow creep under their threshold): the IMU window is the other witness
+        if self.moved_in is not None or not self.still.calm:                    # the wheels may be silent (base off, slow creep under their threshold): the IMU window is the other witness
             return self.end(False, 'moved_since_exposure')
         if self.t_restart is not None and not self.odom_new:
             return None

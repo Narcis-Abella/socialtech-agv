@@ -1,5 +1,6 @@
 """Checks bag_check.py: gaps in a message stream and the exit code on a synthetic bag. Run: python3 test_bag_check.py"""
 import tempfile
+import unittest
 from pathlib import Path
 
 import numpy as np
@@ -63,7 +64,7 @@ def write_bag(path, lidar, imu):
 
 def test_main_exits_0_on_a_clean_bag_and_1_on_a_gap_or_a_missing_topic(capsys=None):
     if Writer is None:
-        return                                                          # rosbags missing: skipped
+        raise unittest.SkipTest("rosbags is not installed: the bag writer is missing")
     lidar, imu = np.arange(0, 1000) * 0.1, np.arange(0, 2000) * 0.005
     with tempfile.TemporaryDirectory() as tmp:
         write_bag(Path(tmp) / "ok", lidar, imu)

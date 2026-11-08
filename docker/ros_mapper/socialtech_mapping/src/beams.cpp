@@ -15,7 +15,7 @@ using namespace socialtech_mapping;
 
 namespace {
 
-// xyz of a sensor_msgs/PointCloud2, read as float32 at the x, y, z field offsets (as tools/slam_bench/beams_oracle.py does); non-finite points dropped.
+// xyz of a sensor_msgs/PointCloud2, read as float32 at the x, y, z field offsets (as the former map_visibility.py did); non-finite points dropped.
 double decode_cloud(const rclcpp::SerializedMessage& raw, std::vector<float>& xyz) {
   static const rclcpp::Serialization<sensor_msgs::msg::PointCloud2> ser;
   sensor_msgs::msg::PointCloud2 msg;

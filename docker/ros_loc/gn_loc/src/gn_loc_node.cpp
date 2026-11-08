@@ -1,7 +1,7 @@
 // gn_loc: a lifecycle node (as nav2_amcl) that computes map->odom by Gauss-Newton scan-to-map tracking, standing where nav2_amcl stands.
 // configure: parameters, TF, subscriptions (map, initialpose, scan through the MessageFilter). activate: publishers and the status timer. Scans are ignored while not active.
-// In: scan (LaserScan, in the base frame), map (OccupancyGrid, latched), initialpose (PoseWithCovarianceStamped; its covariance is the prior), TF odom->base.
-// Out: TF map->odom (scan stamp + tf_tolerance), amcl_pose (so listeners of AMCL's pose keep working), gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, one per scan, same text),
+// In: scan (LaserScan, in a frame straight above the base), map (OccupancyGrid, latched), initialpose (PoseWithCovarianceStamped; its covariance is the prior), TF odom->base.
+// Out: TF map->odom (scan stamp + tf_tolerance; its z puts base_footprint on the floor of the map), gn_loc/pose, gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, one per scan, same text),
 //      gn_loc/need_reloc (Bool, latched, on change): true after reloc_after_s in LOST, for whoever starts the global relocalizer; its /initialpose ends LOST.
 // Scans wait in a tf2_ros::MessageFilter until odom->base exists at their stamp (as in nav2_amcl); nothing is dropped for being ahead of the odometry.
 #include <atomic>
@@ -132,7 +132,7 @@ protected:
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
     br_ = std::make_unique<tf2_ros::TransformBroadcaster>(shared_from_this());
 
-    pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("amcl_pose", rclcpp::QoS(1).transient_local().reliable());
+    pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("gn_loc/pose", rclcpp::QoS(1).transient_local().reliable());
     status_pub_ = create_publisher<std_msgs::msg::String>("gn_loc/status", 1);
     fit_pub_ = create_publisher<std_msgs::msg::String>("gn_loc/scan_fit", 10);
     reloc_pub_ = create_publisher<std_msgs::msg::Bool>("gn_loc/need_reloc", rclcpp::QoS(1).transient_local().reliable());
@@ -233,7 +233,10 @@ private:
       RCLCPP_WARN(get_logger(), "initial pose given in frame '%s', not '%s': used as a '%s' pose", m.header.frame_id.c_str(), global_.c_str(), global_.c_str());
     }
     const auto & c = m.pose.covariance;
-    core_->setInitial({m.pose.pose.position.x, m.pose.pose.position.y, yaw}, std::sqrt(std::max(c[0], c[7])), std::sqrt(c[35]));
+    if (!core_->setInitial({m.pose.pose.position.x, m.pose.pose.position.y, yaw}, std::sqrt(std::max(c[0], c[7])), std::sqrt(c[35]))) {
+      RCLCPP_WARN(get_logger(), "initial pose ignored: its pose or covariance is not a finite number (covariance x %.3g y %.3g yaw %.3g)", c[0], c[7], c[35]);
+      return;
+    }
     RCLCPP_INFO(get_logger(), "initial pose %.3f %.3f %.1f deg", m.pose.pose.position.x, m.pose.pose.position.y, yaw * 180 / M_PI);
   }
 
@@ -241,9 +244,7 @@ private:
   {
     std::lock_guard<std::mutex> lk(mtx_);
     if (!active_ || !core_ || core_->state() == gn_loc::State::WaitingPose) {return;}
-    if (m->header.frame_id != base_) {    // the beams are fitted as seen from the base frame (odom->base is what is looked up)
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000, "scan frame '%s' is not the base frame '%s': the fit assumes they are the same", m->header.frame_id.c_str(), base_.c_str());
-    }
+    checkScanFrame(m->header.frame_id);
     geometry_msgs::msg::TransformStamped tf;
     try {
       tf = tf_buffer_->lookupTransform(odom_, base_, m->header.stamp);
@@ -262,6 +263,7 @@ private:
     out.header.stamp = (rclcpp::Time(m->header.stamp) + rclcpp::Duration::from_seconds(tol_));
     out.header.frame_id = global_; out.child_frame_id = odom_;
     out.transform.translation.x = r.Tmo->x; out.transform.translation.y = r.Tmo->y;
+    out.transform.translation.z = -tf.transform.translation.z;   // as nav2_amcl: odom is not at floor level (planar_odom), and the costmaps filter the scan by height in map
     out.transform.rotation.z = std::sin(r.Tmo->yaw / 2); out.transform.rotation.w = std::cos(r.Tmo->yaw / 2);
     br_->sendTransform(out);
     if (publish_pose_) {
@@ -275,6 +277,18 @@ private:
       pose_pub_->publish(pm);
     }
     ++n_;
+  }
+
+  void checkScanFrame(const std::string & frame)   // mtx_ held. The beams are fitted as seen from the base frame (odom->base is what is looked up): a frame straight above it is the same 2D scan
+  {
+    if (frame == scan_frame_ok_) {return;}
+    double xy = -1, yaw = 0;
+    try {
+      const auto t = tf_buffer_->lookupTransform(base_, frame, tf2::TimePointZero).transform;
+      xy = std::hypot(t.translation.x, t.translation.y); yaw = yawOf(t.rotation);
+    } catch (const std::exception &) {}
+    if (xy >= 0 && xy < 1e-3 && std::abs(yaw) < 1e-3) {scan_frame_ok_ = frame; return;}
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000, "scan frame '%s' is not straight above the base frame '%s': the fit assumes it is", frame.c_str(), base_.c_str());
   }
 
   void publishReloc(bool v)
@@ -310,7 +324,7 @@ private:
     status_pub_->publish(s);
   }
 
-  std::string base_, odom_, global_;
+  std::string base_, odom_, global_, scan_frame_ok_;
   double tol_, ratio_ = 0, tight_ = 0;
   bool reloc_sent_ = false;
   bool publish_pose_;

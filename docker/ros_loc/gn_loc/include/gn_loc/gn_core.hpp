@@ -1,5 +1,5 @@
-// The estimator without ROS: Gauss-Newton scan-to-map tracking with a Kalman prior. Port of notes/nav_real_scripts/amcl_replay/gn_localizer.py + gn_loc/gn_loc_node.py (GNCore);
-// the Python files are the reference the port is checked against (same bag, same numbers).
+// The estimator without ROS: Gauss-Newton scan-to-map tracking with a Kalman prior. Originally ported from notes/nav_real_scripts/amcl_replay/gn_localizer.py + gn_loc/gn_loc_node.py (GNCore)
+// of the SocialTech workspace repo; this code has diverged since (robust loss, still window, coarse-to-fine search), so the C++ tests are the reference now.
 #pragma once
 #include <Eigen/Dense>
 
@@ -234,12 +234,12 @@ inline double score(const Field & F, const Beams & b, const Pose & cand, double 
   return sc;
 }
 
-// best pose within +-3 sigma (at least 0.3 m / 8 deg, yaw at most +-180 deg) of `pose`; the caller refines it with gnUpdate. Coarse to fine: a 15 cm / 4.5 deg grid on
+// best pose within +-3 sigma (0.3 m to 5 m, at least 8 deg, yaw at most +-180 deg) of `pose`; the caller refines it with gnUpdate. Coarse to fine: a 15 cm / 4.5 deg grid on
 // every 4th beam with a kernel as wide as the grid, then the 5 cm / 1.5 deg grid on every beam around the 10 best distinct coarse cells. One 5 cm grid over the whole
 // prior grows with its cube (1 m / 30 deg: 1.8 M poses, ~18 s on the AGX), which blocked the node long enough for the lifecycle manager to declare it dead.
 inline Pose exhaustive(const Field & F, const Params & prm, const Beams & b, const Pose & pose, double sxy, double syaw)
 {
-  const double rx = std::max(3 * sxy, 0.3), ry = std::min(std::max(3 * syaw, 8.0 * M_PI / 180.0), M_PI);
+  const double rx = std::min(std::max(3 * sxy, 0.3), 5.0), ry = std::min(std::max(3 * syaw, 8.0 * M_PI / 180.0), M_PI);
   const double cstep = 0.15, ctstep = 4.5 * M_PI / 180.0, fstep = 0.05, ftstep = 1.5 * M_PI / 180.0;
   const int kTop = 10;
   std::vector<std::pair<double, Pose>> coarse;
@@ -294,10 +294,13 @@ public:
   Core(std::shared_ptr<const Field> field, const Params & p)
   : F_(std::move(field)), prm_(p) {}
 
-  void setInitial(const Pose & pose, double sxy, double syaw)
+  // false: a NaN/inf pose or covariance (an uninitialised or negative one gives NaN after sqrt) was ignored and the state is untouched
+  bool setInitial(const Pose & pose, double sxy, double syaw)
   {
+    if (!std::isfinite(sxy) || !std::isfinite(syaw) || !std::isfinite(pose.x) || !std::isfinite(pose.y) || !std::isfinite(pose.yaw)) {return false;}   // a NaN or inf prior (an uninitialised covariance) would size the search grid
     pending_ = {pose, std::max(sxy, 0.02), std::max(syaw, 1.0 * M_PI / 180.0)};
     state_ = State::Tracking; Tmo_.reset(); anchor_.reset(); tBad_.reset(); cand_.reset();
+    return true;
   }
 
   Result update(double t, const Pose & o, const std::vector<float> & ranges, double a0, double inc)

@@ -1,0 +1,19 @@
+Do not fclose a NULL log file: the destructor segfaulted at every shutdown of the robot.
+fopen(Log/pos_log.txt) fails when Log/ is not writable (ROOT_DIR is the build-time source tree, root-owned in the image; the stack runs as a normal user),
+so `fp` stays NULL and `fclose(fp)` in ~LaserMappingNode crashes: exit code -11 on every SIGTERM/SIGINT (the gn_supervisor restart, Ctrl-C).
+Measured on the Nano: 6/6 exits 139 as a user, 0/12 as root, 6/6 clean as a user with a writable Log/ mounted.
+Base: hku-mars/FAST_LIO a4743b0 (ROS2 branch) + 0001 + 0002.
+
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+index d5f450b..8085856 100644
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -944,7 +944,7 @@ public:
+     {
+         fout_out.close();
+         fout_pre.close();
+-        fclose(fp);
++        if (fp) fclose(fp);   // NULL when Log/ is not writable (the image's is root's, the robot runs as a user): fclose(NULL) segfaults at every shutdown
+     }
+ 
+ private:

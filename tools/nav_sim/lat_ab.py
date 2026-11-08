@@ -84,7 +84,7 @@ def main():
                     '--deadline-s', '60', '--threads', '2'] + zb
             w0, s0 = time.monotonic(), n.sim()
             with open(f'{out}.{mode}{k}.log', 'w') as log:
-                p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env={**os.environ, 'LD_LIBRARY_PATH': f"/greloc/build:{os.environ.get('LD_LIBRARY_PATH', '')}"})
+                p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env={**os.environ, 'LD_LIBRARY_PATH': f"/greloc/build:{os.environ.get('LD_LIBRARY_PATH', '')}", 'CORR_SEARCH_LIB': '/greloc/build/libcorr_search.so'})
                 while p.poll() is None:
                     rclpy.spin_once(n, timeout_sec=.05)
                     states.add(n.state)

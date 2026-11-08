@@ -1,5 +1,5 @@
 // Offline development caller, v2: KISS global SE(3) (or 4-DoF Quatro) then small_gicp.
-// Superset of register.cpp (kept frozen for the first result). Adds explicit KISS
+// Successor of the first register.cpp (removed 2026-11-08, git history). Adds explicit KISS
 // configuration and dumps correspondences for evaluator-side diagnosis.
 // No initial transform reaches KISS; GICP starts only from the KISS output.
 #include <kiss_matcher/KISSMatcher.hpp>

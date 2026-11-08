@@ -2,6 +2,16 @@
 import importlib.util
 import os
 
+try:
+    from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+    get_package_share_directory("fast_lio")      # the extrinsic is checked against its config
+    import launch_ros  # noqa: F401
+except (ModuleNotFoundError, PackageNotFoundError) as e:      # fast_lio, launch_ros: only in the robot image
+    if __name__ != "__main__":
+        raise      # under pytest, conftest.py leaves these files out when the image is missing; getting here is a real failure
+    print(f"skip: needs the robot image ({e})")
+    raise SystemExit(0)
+
 from launch import LaunchContext
 from launch.utilities import perform_substitutions
 from launch_ros.actions import Node
@@ -31,7 +41,7 @@ assert respawns(node("fastlio_mapping")), "fastlio_mapping is not respawned"
 assert not respawns(node("livox_ros_driver2_node")), "the Livox driver must not respawn"
 print("ok")
 
-# bond_heartbeat_period lives in the overrides file: gn_loc and map_server must read it, not only AMCL
+# bond_heartbeat_period lives in the overrides file: gn_loc and map_server must read it
 def reads_overrides(executable):
     ctx = LaunchContext()
     ctx.launch_configurations["overrides"] = "OVERRIDES"
@@ -88,4 +98,58 @@ print("ok viz")
 launch_text = [e for e in launch.generate_launch_description().entities if isinstance(e, Node)]
 assert any(e.node_executable == "pointcloud_to_laserscan_node" for e in launch_text), "no pointcloud_to_laserscan_node"
 assert not any(e.node_package == "scan_median" for e in launch_text), "scan_median must be gone"
-print("ok scan")
+# /scan at the height of the lidar, the same band above the floor (scan.yaml): a scan on the floor sits on the costmaps' min_obstacle_height 0 and any error in z drops it
+import yaml
+
+ctx = LaunchContext()
+ctx.launch_configurations["sensor_height"] = "0.5"
+p2l = node("pointcloud_to_laserscan_node")
+extra = [p for p in p2l._Node__parameters if isinstance(p, dict)][0]
+values = {perform_substitutions(ctx, k): v for k, v in extra.items()}
+values = {k: (v.evaluate(ctx) if hasattr(v, "evaluate") else v) for k, v in values.items()}
+assert yaml.safe_load(perform_substitutions(ctx, values["target_frame"])) == "lidar_level", values   # launch_ros keeps a plain string as YAML
+h = 0.5 + 0.04412
+assert abs(values["min_height"] - (0.10 - h)) < 1e-9 and abs(values["max_height"] - (1.80 - h)) < 1e-9, values
+print("ok scan height")
+ctx.launch_configurations.update(map="MAP", sim_time="false")
+assert any(type(e) is ExecuteProcess and any("local_frame_aligner" in perform_substitutions(ctx, c) for c in e.cmd) for e in launch.generate_launch_description().entities), "no local_frame_aligner: the local costmap has no frame"
+print("ok aligner")
+
+
+# level_corrector: off by default (planar_odom keeps the static level), on = planar_odom listens to the correction and the node starts with the same level
+def planar_param(name, level_corrector):
+    ctx = LaunchContext()
+    ctx.launch_configurations.update({"level_corrector": level_corrector, "level_qx": "0", "level_qy": "0", "level_qz": "0", "level_qw": "1", "sensor_height": "0.5"})
+    p = node("planar_odom")._Node__parameters[0]
+    v = next(val for key, val in p.items() if "".join(k.text for k in key) == name)   # launch_ros keys the dict by tuples of TextSubstitution
+    from launch_ros.parameter_descriptions import ParameterValue
+    return perform_substitutions(ctx, v.value) if isinstance(v, ParameterValue) else v
+
+
+assert planar_param("correction_topic", "false") == "", "planar_odom must keep the static level unless level_corrector:=true"
+assert planar_param("correction_topic", "true") == "/level_corrector/correction"
+lc_node = node("level_corrector_node")
+assert lc_node.condition is not None, "level_corrector_node must be conditional on level_corrector:=true"
+def cond(v):
+    ctx = LaunchContext()
+    ctx.launch_configurations["level_corrector"] = v
+    return lc_node.condition.evaluate(ctx)
+
+
+assert cond("true") and not cond("false")
+print("ok level_corrector")
+
+# a crashed corrector comes back (planar_odom drops a C that goes silent, then the corrector re-primes); same policy as FAST-LIO2
+assert respawns(node("level_corrector_node")), "level_corrector_node is not respawned"
+print("ok respawn corrector")
+
+# the lidar offset in the body is copied in the launch and in sim_up.sh: it must be FAST-LIO2's extrinsic_T of the image (nav_live.sh edits the config but not that key)
+import re
+from ament_index_python.packages import get_package_share_directory
+fl = yaml.safe_load(open(os.path.join(get_package_share_directory("fast_lio"), "config", "mid360.yaml")))
+ext = list(fl["/**"]["ros__parameters"]["mapping"]["extrinsic_T"])
+assert ext == launch.LIDAR_IN_BODY, f"launch LIDAR_IN_BODY {launch.LIDAR_IN_BODY} != FAST-LIO2 extrinsic_T {ext}"
+sim_up = open(os.path.join(here, "..", "tools", "nav_sim", "sim_up.sh")).read()
+m = re.search(r"lidar_in_body:=\"\[([^\]]*)\]\"", sim_up)
+assert m and [float(x) for x in m.group(1).split(",")] == ext, f"sim_up.sh lidar_in_body {m and m.group(1)} != extrinsic_T {ext}"
+print("ok extrinsic")

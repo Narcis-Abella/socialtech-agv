@@ -1,4 +1,4 @@
-// gn_offline: the gn_loc core (gn_core.hpp, the same code as the node) run straight over a replay bag (make_replay_bag.py output: /scan + odom->base_footprint in /tf), no ROS
+// gn_offline: the gn_loc core (gn_core.hpp, the same code as the node) run straight over a replay bag (make_replay_bag.py output, in the SocialTech repo notes/nav_real_scripts/amcl_replay/: /scan + odom->base_footprint in /tf), no ROS
 // graph, no clock: every scan is processed in order with the odometry interpolated at its stamp (what the node's tf2 lookup does). Deterministic and faster than 1x, for studying
 // the LOST / false-lock logic over many bags; the node itself is still what the 1x replays measure.
 // usage: gn_offline BAG_DIR MAP_YAML "x y yaw_rad sxy syaw_rad" OUT_TF_CSV OUT_DIAG_CSV [key=value ...]   (keys: the Params fields, angles in rad)

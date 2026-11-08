@@ -8,6 +8,7 @@
 . /ros_env.sh >/dev/null 2>&1
 . /g/$1/setup.bash
 export ROS_DOMAIN_ID=77 CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"lo\"/></Interfaces></General><Discovery><Peers><Peer address=\"localhost\"/></Peers></Discovery></Domain></CycloneDDS>"
+set_cyclone_uri   # this export replaced the URI of ros_env.sh: ask again for the 10 MB receive buffer (docker/cyclone_uri.sh)
 set -m   # job control: the launch gets its own process group and keeps SIGINT (a background job of a non-interactive shell ignores it)
 out=/g/$3; mkdir -p $out; : > $out/summary.txt
 hogs=(); trap 'kill "${hogs[@]}" 2>/dev/null' EXIT

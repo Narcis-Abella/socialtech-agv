@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from offline_s2 import read_ply, voxel, write_xyz
+from pointcloud import read_ply, voxel, write_xyz
 
 Z_LO, Z_HI = -0.5, 5.0   # m above the floor: the floor and the ceiling of the rooms stay, outliers go
 

@@ -5,7 +5,8 @@ set -eo pipefail
 : "${PEER:?set PEER to the laptop IP, as for nav_live.sh}"
 c=$(docker ps -q | head -1)
 [[ -n $c ]] || { echo "FAIL: no container is running" >&2; exit 1; }
-iface=${DDS_IFACE:-$(ip -o route get "$PEER" | sed -n 's/.* dev \([^ ]*\).*/\1/p')}
+iface=${DDS_IFACE:-$(ip -o route get "$PEER" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' || true)}
+[[ -n $iface ]] || { echo "FAIL: no route to PEER='$PEER' (it must be the laptop's IP address, not a host name; or set DDS_IFACE)" >&2; exit 1; }
 ifs="<NetworkInterface name=\"lo\"/>"; [[ $iface == lo ]] || ifs+="<NetworkInterface name=\"$iface\"/>"   # same URI as nav_live.sh: the stack only listens on lo + iface, unicast
 uri="<CycloneDDS><Domain><General><Interfaces>$ifs</Interfaces></General><Discovery><Peers><Peer address=\"$PEER\"/><Peer address=\"localhost\"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>"
 exec docker exec -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e CYCLONEDDS_URI="$uri" "$c" bash -c 'source /ros_env.sh; exec "$@"' _ "$@"

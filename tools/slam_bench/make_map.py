@@ -24,14 +24,17 @@ RULE = {"ghost_vox_m": ghosts.RATIO_VOX, "ghost_margin_m": ghosts.RATIO_MARGIN, 
 def build(cloud, poses, bag, out_dir, *, topic="/livox/lidar", res=0.025, ceil=1.80, ghost_band=(-np.inf, np.inf), traj_check=True, count=None):
     """Write the four cloud and map files into out_dir and return what the report needs. cloud: (n, 3) SLAM cloud (float32 values); poses: (m, 8) t x y z qx qy qz qw of the IMU at the
     end of each scan; count(C, margin) -> (hit, passed): the beam counter (default: the C++ engine over `bag`). ghost_band: heights (m above the floor) the ghost test judges.
-    ValueError (nothing written) when the floor is not found or does not fit the trajectory."""
+    ValueError when the floor is not found or does not fit the trajectory, or when the engine found no scan with a pose (the cloud files are not written then)."""
     Q, info = floor_level.level_to_floor(cloud, traj=(poses[:, 1:4], poses[:, 4:8]) if traj_check else None)
+    scans = None
     if count is None:
         scans = ghosts.BagScans(bag, poses, topic)
         count = lambda C, margin: ghosts.count_beams(C, scans, margin)
     out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
     ghost = ghosts.ghost_points(cloud, Q, count, ghost_band)
+    if scans is not None:
+        ghosts.require_scans(scans)
+    out.mkdir(parents=True, exist_ok=True)
     clean = Q[~ghost]
     cloud_io.write_ply(out / "map.ply", cloud)
     cloud_io.write_ply(out / "map_clean.ply", clean)
@@ -40,7 +43,7 @@ def build(cloud, poses, bag, out_dir, *, topic="/livox/lidar", res=0.025, ceil=1
     grid2d.write_map(out / "map", grid, res, origin, info["T"])
     vote = info["traj"]["position"] if isinstance(info["traj"], dict) else None
     return {"floor_tilt_deg": round(info["tilt_deg"], 2), "sensor_height_m": round(float(vote["height"]), 3) if isinstance(vote, dict) else None,
-            "ghost_points": int(ghost.sum()), "points": len(cloud), "ghost_band": [None if np.isinf(v) else v for v in ghost_band]}
+            "ghost_points": int(ghost.sum()), "points": len(cloud), "scans_counted": scans.counted if scans is not None else None, "ghost_band": [None if np.isinf(v) else v for v in ghost_band]}
 
 
 def check_cloud_has_the_trajectory(cloud, poses, margin=1.0):
@@ -111,8 +114,8 @@ def main(argv):
         print(warning, file=sys.stderr)
     node_log = Path(a.node_log) if a.node_log else out / "node.log"
     map_report.write_report(out, poses_file=poses_file, node_log=node_log, extra={
-        "pipeline": 2, "commit": commit(), "play_rate": a.play_rate, "scans_in_bag": scans, "lost_scan_ratio": round(1 - len(poses) / scans, 4) if scans else None, "warning": warning,
-        "floor_tilt_deg": data["floor_tilt_deg"], "sensor_height_m": data["sensor_height_m"], "ghost_band": data["ghost_band"], "rule": RULE})
+        "pipeline": 2, "commit": commit(), "play_rate": a.play_rate, "topic": a.topic, "res_m": a.res, "ceil_m": a.ceil, "scans_in_bag": scans, "lost_scan_ratio": round(1 - len(poses) / scans, 4) if scans else None, "warning": warning,
+        "floor_tilt_deg": data["floor_tilt_deg"], "sensor_height_m": data["sensor_height_m"], "ghost_band": data["ghost_band"], "ghost_points": data["ghost_points"], "scans_counted": data["scans_counted"], "rule": RULE})
     return 0
 
 

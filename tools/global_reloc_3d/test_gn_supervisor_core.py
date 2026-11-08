@@ -39,6 +39,22 @@ class Fixture(unittest.TestCase):
         return s, t
 
 
+class GnCoreDefaultsTest(unittest.TestCase):
+    def test_the_thresholds_copied_from_gn_core_hpp_are_still_its_defaults(self):
+        """The supervisor judges a recovery candidate with the numbers gn_loc itself uses; they are copies, so this reads the C++ source."""
+        import os
+        import re
+        hpp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'docker', 'ros_loc', 'gn_loc', 'include', 'gn_loc', 'gn_core.hpp')
+        if not os.path.exists(hpp):
+            self.skipTest('gn_core.hpp is not next to this checkout (staged copy)')
+        text = open(hpp).read()
+        p = sc.Params()
+        for name in ('accept_tight', 'min_inliers', 'min_tight'):
+            m = re.search(r'double %s\s*=\s*([0-9.]+);' % name, text)
+            self.assertIsNotNone(m, name)
+            self.assertEqual(float(m.group(1)), getattr(p, name), name)
+
+
 class StartupTest(Fixture):
     def test_navigation_is_held_until_gn_confirms_a_pose(self):
         s = Supervisor(sc.Params(auto_init_s=0.))                      # a pose from elsewhere (the operator): the start-up localization is not what is tested
@@ -48,6 +64,59 @@ class StartupTest(Fixture):
         self.assertTrue(s.hold)
         self.tracking(s, 2.)
         self.assertFalse(s.hold)
+
+
+class ClearCostmapsTest(Fixture):
+    """What the costmaps marked while GN could not be trusted, or under the old pose, must not outlive the hold: Nav2 sees them cleared before it is released."""
+    P = (1., 2., .3)
+
+    def relocalizing(self):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.state, 'RELOCALIZING')
+        return s, t + 1
+
+    def assert_cleared_once_before_the_release(self, actions):
+        self.assertEqual(kinds(actions).count('clear_costmaps'), 1, actions)
+        self.assertLess(kinds(actions).index('clear_costmaps'), [a[:2] for a in actions].index(('state', 'MONITOR')))
+
+    def confirming(self, s, t):
+        a = []
+        for k in range(3):
+            a += run(s, t + k, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', self.P))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'confirmed'))
+        return a
+
+    def test_a_confirmed_relocalization_clears_them(self):
+        s, t = self.relocalizing()
+        a = run(s, t, ('on_reloc_result', True, self.P, 'accepted'))
+        self.assertNotIn('clear_costmaps', kinds(a))                       # GN has not taken the pose yet: scans marked now would be wrong again
+        self.assert_cleared_once_before_the_release(self.confirming(s, t + 1))
+
+    def test_a_confirmed_operator_pose_clears_them(self):
+        s, t = self.new()
+        run(s, t, ('on_operator_pose', self.P))
+        self.assert_cleared_once_before_the_release(self.confirming(s, t + 1))
+
+    def test_a_hold_released_because_gn_agrees_clears_them(self):
+        s, t = self.relocalizing()
+        a = run(s, t, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', self.P), ('on_reloc_result', True, self.P, 'accepted'))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'verified_gn_agrees'))
+        self.assert_cleared_once_before_the_release(a)
+
+    def test_a_parked_check_that_agrees_leaves_them(self):
+        s, t = self.new()
+        s.start_reloc(t, 'parked_verify', 'VERIFYING')
+        a = run(s, t, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', self.P), ('on_reloc_result', True, self.P, 'accepted'))
+        self.assertEqual((s.state, s.reason), ('MONITOR', 'verified_gn_agrees'))
+        self.assertNotIn('clear_costmaps', kinds(a))
+
+    def test_a_failed_relocalization_leaves_them(self):
+        s, t = self.relocalizing()
+        a = run(s, t, ('on_reloc_result', False, None, 'ambiguous'))
+        a += run(s, t + 1, ('on_reloc_result', False, None, 'ambiguous'))
+        self.assertEqual(s.state, 'FAILED')
+        self.assertNotIn('clear_costmaps', kinds(a))
 
 
 class AutoInitTest(Fixture):
@@ -130,7 +199,7 @@ class AutoInitTest(Fixture):
         run(s, 40., ('on_reloc_result', False, None, 'ambiguous'))
         self.assertEqual(s.state, 'FAILED')
         self.assertTrue(s.reason.startswith('needs_operator:'), s.reason)
-        a = run(s, 41., ('on_operator_pose', (1., 2., 0.)))                # the operator always wins
+        run(s, 41., ('on_operator_pose', (1., 2., 0.)))                # the operator always wins
         self.assertEqual((s.state, s.reason), ('CONFIRMING', 'operator_pose'))
 
     def test_a_pose_gn_does_not_confirm_asks_the_operator(self):
@@ -648,8 +717,8 @@ class ScanRateConfirmTest(Fixture):
         self.assertEqual(s.state, 'RELOCALIZING')                            # bad_stop_s alarm, unchanged by the scan stream
 
 
-class FailedRetryTest(Fixture):
-    """FAILED after a relocalization that did not work retries by itself: the lidar may have been uncovered, the robot parked, since."""
+class RetryFixture(Fixture):
+    """Helpers of the tests that drive a relocalization to FAILED and watch the retries."""
     def lost(self, s, t0, t1):
         for k in range(int(t0), int(t1)):
             run(s, float(k), ('on_status', 'LOST', 0., 0.))                    # gn_loc keeps publishing its 1 Hz status
@@ -664,6 +733,18 @@ class FailedRetryTest(Fixture):
         self.assertEqual((s.state, s.reason), ('FAILED', 'reloc_failed_x'))
         return s, t + 9
 
+    def failed_by(self, reason_setup):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 5)
+        run(s, t + 5, ('on_reloc_result', False, None, reason_setup))
+        self.lost(s, t + 6, t + 9)
+        run(s, t + 9, ('on_reloc_result', False, None, reason_setup))
+        return s, t + 9
+
+
+class FailedRetryTest(RetryFixture):
+    """FAILED after a relocalization that did not work retries by itself: the lidar may have been uncovered, the robot parked, since."""
     def test_it_starts_a_new_relocalization_30_s_after_the_failure(self):
         s, t = self.failed()
         self.lost(s, t + 1, t + 30)
@@ -697,15 +778,6 @@ class FailedRetryTest(Fixture):
         self.assertEqual(s.state, 'FAILED')
         run(s, t + 70., ('on_status', 'LOST', 0., 0.))
         self.assertEqual(s.reason, 'failed_retry')
-
-    def failed_by(self, reason_setup):
-        s, t = self.new()
-        run(s, t, ('on_status', 'LOST', 0., 0.))
-        self.lost(s, t + 1, t + 5)
-        run(s, t + 5, ('on_reloc_result', False, None, reason_setup))
-        self.lost(s, t + 6, t + 9)
-        run(s, t + 9, ('on_reloc_result', False, None, reason_setup))
-        return s, t + 9
 
     def test_a_relocalizer_exception_is_not_retried(self):
         s, t = self.failed_by('exception_in_start')
@@ -799,6 +871,40 @@ class FailedRetryTest(Fixture):
         self.assertNotIn('reloc_start', kinds(a))
 
 
+class RetryBudgetTest(RetryFixture):
+    """The counters of the retry policy: what a relocalizer timeout does, and when the budgets start over."""
+    def test_a_relocalizer_timeout_is_retried_like_any_other_failure(self):
+        s, t = self.new(reloc_timeout_s=40., max_attempts=1)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 41)
+        run(s, t + 41, ('on_status', 'LOST', 0., 0.))
+        self.assertEqual((s.state, s.reason), ('FAILED', 'reloc_timeout'))
+        self.assertTrue(s.retry)                                  # a search that ran out of time may succeed with the lidar uncovered: not a bug, unlike a worker crash
+        self.lost(s, t + 42, t + 71)
+        a = run(s, t + 71., ('on_status', 'LOST', 0., 0.))
+        self.assertIn(('reloc_start', 'failed_retry'), a)
+
+    def test_the_retry_budget_starts_over_when_the_robot_is_back_in_monitor(self):
+        s, t = self.failed(failed_retry_max=1)
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.assertEqual((s.state, s.retries), ('RELOCALIZING', 1))
+        run(s, t + 31., ('on_status', 'LOST', 0., 0.), ('on_reloc_result', True, (1., 2., 0.), 'accepted'))
+        for k in range(4):
+            run(s, t + 32. + k, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))
+        self.assertEqual(s.state, 'MONITOR')
+        self.assertEqual(s.retries, 0)                            # else failed_retry_max would cap the retries of the whole run, not of one incident
+
+    def test_every_stop_gets_its_full_attempts(self):
+        s, t = self.new(max_attempts=2)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.attempts, 1)
+        run(s, t + 1, ('on_status', 'LOST', 0., 0.), ('on_reloc_result', False, None, 'reject_geometry'))
+        self.assertEqual(s.attempts, 2)                           # the first attempt failed, the second is running
+        s.stop(t + 2, 'again')                                    # a new incident: counted from one again
+        self.assertEqual(s.attempts, 1)
+
+
 class GoalHoldTest(Fixture):
     def test_a_goal_active_at_start_up_is_cancelled(self):
         s = Supervisor(sc.Params())
@@ -878,7 +984,7 @@ class NotStoppedNoteTest(Fixture):
         self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'gn_lost'))
 
 
-class RetryPolicyTest(FailedRetryTest):
+class RetryPolicyTest(RetryFixture):
     def attempts_fail(self, why):
         s, t = self.new(failed_retry_max=2)
         run(s, t, ('on_status', 'LOST', 0., 0.))

@@ -2,7 +2,9 @@
 # SocialTech robot images for Jetson Orin (JetPack 7.2.1 / L4T r39.2, arm64).
 # One file, layered stages; build one with: docker build --target <stage> .
 #   base   ROS 2 Jazzy + CycloneDDS + CUDA runtime matching the host driver
-#   robot  sensor/base drivers + FAST-LIO2 + rosbag2 (what runs on every robot)
+#   robot  sensor/base drivers + FAST-LIO2 + rosbag2 + localization + Nav2 (what runs on every robot)
+#   sim    robot + Gazebo and the simulation-only packages (tools/nav_sim)
+#   mapper robot + GTSAM + Voxel-SLAM: offline mapping (tools/slam_bench)
 # Run with network_mode: host (DDS discovery, Livox raw sockets) and the GPU requested
 # via NVIDIA_VISIBLE_DEVICES (set below) or --device nvidia.com/gpu=all.
 
@@ -48,6 +50,16 @@ RUN --mount=type=tmpfs,target=/tmp/src \
  && cmake --install /tmp/src/livox-sdk2/build \
  && ldconfig
 
+# small_gicp (Koide): point-to-plane ICP of level_corrector (docker/ros_loc). Same commit register_v2 is built with. Single-threaded (no TBB/OpenMP): the corrector must stay a small share of one core.
+ARG SMALL_GICP_COMMIT=fa0cfc983417c044b6036f71dfa448038bb9c820
+RUN --mount=type=tmpfs,target=/tmp/src \
+    git clone https://github.com/koide3/small_gicp.git /tmp/src/small_gicp \
+ && git -C /tmp/src/small_gicp checkout "${SMALL_GICP_COMMIT}" \
+ && cmake -S /tmp/src/small_gicp -B /tmp/src/small_gicp/build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_WITH_TBB=OFF -DBUILD_WITH_OPENMP=OFF \
+ && cmake --build /tmp/src/small_gicp/build -j"$(nproc)" \
+ && cmake --install /tmp/src/small_gicp/build \
+ && ldconfig
+
 WORKDIR /ws
 COPY robot.repos fetch_repos.py ./
 COPY patches/ patches/
@@ -91,17 +103,17 @@ RUN --mount=type=cache,target=/ws/build \
       --parallel-workers "${COLCON_WORKERS}" \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy
 
-# Navigation bench (tools/nav_bench): localization and scan conversion. After the colcon build so a change here does not rebuild the workspace.
+# Nav2 map server and lifecycle manager, scan conversion (pointcloud_to_laserscan), bondcpp (lifecycle bonds), scipy for the relocalizer. After the colcon build so a change here does not rebuild the workspace.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ros-jazzy-nav2-amcl ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan \
+      ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan \
       ros-jazzy-bondcpp \
       python3-scipy
 # python3-scipy: the global relocalizer that gn_supervisor starts (tools/global_reloc_3d/search_v2.py: FFT, KD-tree); ops/nav_live.sh SUPERVISOR=1 refuses an image without it.
 
-# docker/ros_loc: gn_loc (Gauss-Newton scan-to-map localizer; ops/nav_live.sh selects it with LOCALIZER=gn, AMCL with LOCALIZER=amcl). Its own colcon build: it needs
+# docker/ros_loc: gn_loc (Gauss-Newton scan-to-map localizer, the robot's localizer). Its own colcon build: it needs
 # the Nav2 packages installed just above, which the first build does not have. Tests and the gn_offline study tool are not built in the image (BUILD_TESTING=OFF, GN_LOC_OFFLINE=OFF); see docker/ros_loc/gn_loc/README.md.
 COPY ros_loc/ /ws/src_loc/
 RUN --mount=type=cache,target=/tmp/build_loc \
@@ -110,7 +122,7 @@ RUN --mount=type=cache,target=/tmp/build_loc \
  && cd /ws && colcon --log-base /tmp/log_loc build --base-paths src_loc --merge-install --install-base /opt/socialtech_loc --build-base /tmp/build_loc \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DGN_LOC_OFFLINE=OFF
 
-# Nav2 on the real robot (ops/nav_live.sh NAV=1) and in the simulator, whose stage adds Gazebo on top. docker/ros_nav: socialtech_nav (our params, launch and map) and
+# Nav2 on the real robot (ops/nav_live.sh NAV=1) and in the simulator, whose stage adds Gazebo on top. docker/ros_nav: socialtech_nav (our params and behavior trees) and
 # socialtech_costmap (the decay obstacle layer). The simulation-only packages of ros_nav are built in `sim`. The regulated pure pursuit controller is built from the
 # pinned Nav2 source with nav2/*.patch (rotate_to_heading_dist_tol, which ops/nav2_robot_overrides.yaml sets) and installed in /opt/socialtech_nav, which ros_env.sh
 # sources after /opt/ros: it shadows the apt controller that nav2_bringup pulls in. Not in patches/: that directory is applied to the robot.repos checkouts.

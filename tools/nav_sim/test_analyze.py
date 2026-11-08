@@ -1,5 +1,6 @@
 """Run: python3 -B test_analyze.py   (offline: numpy and scipy)"""
-import math
+
+import os
 
 import numpy as np
 
@@ -196,6 +197,36 @@ def test_compare_pairs_by_id_and_tag():
     d = out["duration"]
     assert d["n_pairs"] == 5 and abs(d["diff"] + 2.0) < 1e-9 and d["hi"] < 0          # failed pair is dropped for the time metric
     assert out["_success"]["only_base"] == 1 and out["_success"]["only_cand"] == 0
+
+
+def test_a_run_is_scored_on_its_own_chain_map_and_the_old_map_only_with_a_notice():
+    import contextlib
+    import io
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert a.default_map(d) == a.OLD_2D_MAP
+        assert "not comparable" in err.getvalue()
+        open(os.path.join(d, a.CHAIN_MAP), "w").write("image: x.pgm\n")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert a.default_map(d) == os.path.join(d, a.CHAIN_MAP)
+        assert err.getvalue() == ""
+    assert a.FOOTPRINT == (0.66, 0.54)       # ops/nav2_robot_overrides.yaml
+
+
+def test_each_run_of_a_comparison_is_scored_on_its_own_map_unless_one_is_given():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d1, tempfile.TemporaryDirectory() as d2:
+        for d in (d1, d2):
+            open(os.path.join(d, a.CHAIN_MAP), "w").write("image: x.pgm\n")
+        assert a.maps_for(["compare", d1, d2], None) == [os.path.join(d1, a.CHAIN_MAP), os.path.join(d2, a.CHAIN_MAP)]
+        assert a.maps_for(["compare", d1, d2], "m.yaml") == ["m.yaml", "m.yaml"]
+        assert a.maps_for(["summarize", d1], None) == [os.path.join(d1, a.CHAIN_MAP)]
+        assert a.same_map(os.path.join(d1, a.CHAIN_MAP), os.path.join(d2, a.CHAIN_MAP))              # two copies of the same map: no notice
+        open(os.path.join(d2, a.CHAIN_MAP), "w").write("image: y.pgm\n")
+        assert not a.same_map(os.path.join(d1, a.CHAIN_MAP), os.path.join(d2, a.CHAIN_MAP))
 
 
 if __name__ == "__main__":

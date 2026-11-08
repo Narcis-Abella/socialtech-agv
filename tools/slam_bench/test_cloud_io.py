@@ -52,14 +52,6 @@ def test_write_ply_stores_float32_and_reads_back_exactly():
         assert np.array_equal(cloud_io.read_ply(Path(tmp) / "a.ply"), P.astype(np.float32).astype(np.float64))
 
 
-def test_read_traj_gives_positions_and_quaternions():
-    with tempfile.TemporaryDirectory() as tmp:
-        f = Path(tmp) / "t.txt"
-        f.write_text("1.0 1 2 3 0 0 0 1\n2.0 4 5 6 0 0 0.5 0.5\n")
-        pos, quat = cloud_io.read_traj(f)
-        assert pos.tolist() == [[1, 2, 3], [4, 5, 6]] and quat.tolist() == [[0, 0, 0, 1], [0, 0, 0.5, 0.5]]
-
-
 def test_frames_land_in_the_world_with_their_pose_and_repeats_collapse():
     with tempfile.TemporaryDirectory() as tmp:
         run = make_run(tmp, [(IDENT, [[1, 0, 0], [0, 1, 0]]), (TURN, [[1, 0, 0]]), (IDENT, [[1, 0, 0], [0, 1, 0]])])
@@ -70,7 +62,7 @@ def test_frames_land_in_the_world_with_their_pose_and_repeats_collapse():
 
 
 def test_the_assembled_cloud_holds_float32_values():
-    # make_map keeps it in memory instead of writing and re-reading world.ply: the values must be the ones that file would give
+    # make_map keeps it in memory instead of writing and re-reading a PLY: the values must be the ones that file would give
     with tempfile.TemporaryDirectory() as tmp:
         run = make_run(tmp, [(IDENT, [[1.1234567, 0.3, 0.2], [0.7654321, 1.3, 0.1]]), (TURN, [[1.9999999, 0.1, 0.05]])])
         _, cloud = cloud_io.assemble_world_cloud(run, 0.05)

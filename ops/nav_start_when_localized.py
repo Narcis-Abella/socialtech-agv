@@ -1,5 +1,5 @@
 """Start Nav2 once the robot is localized. Nav2's lifecycle manager gives up for good when the global costmap times out waiting for map -> base_footprint, and that
-transform only exists after AMCL gets its initial pose (the operator's 2D Pose Estimate in rviz2), so Nav2 is launched with autostart:=false and started here."""
+transform only exists after gn_loc gets its initial pose (the supervisor's, or the operator's 2D Pose Estimate in rviz2), so Nav2 is launched with autostart:=false and started here."""
 import sys
 
 import rclpy
@@ -13,7 +13,7 @@ buf = Buffer()
 TransformListener(buf, node)
 client = node.create_client(ManageLifecycleNodes, "/lifecycle_manager_navigation/manage_nodes")
 node.get_logger().info("waiting for the initial pose (2D Pose Estimate in rviz2) before starting Nav2")
-while rclpy.ok() and not buf.can_transform("map", "base_footprint", rclpy.time.Time()):
+while rclpy.ok() and not (buf.can_transform("map", "base_footprint", rclpy.time.Time()) and buf.can_transform("odom_aligned", "base_footprint", rclpy.time.Time())):   # the local costmap's frame comes right after map -> odom
     rclpy.spin_once(node, timeout_sec=0.5)
 node.get_logger().info("localized: starting Nav2")
 client.wait_for_service()

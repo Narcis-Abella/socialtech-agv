@@ -12,7 +12,7 @@ def test_without_a_legend_the_trial_is_still_shown():
 
 
 def test_the_wake_count_is_a_last_line_only_when_given():
-    assert legend.legend_lines("a", "x", 1, 2, wake=7)[-1] == "estela en el costmap global: 7 celdas"
+    assert legend.legend_lines("a", "x", 1, 2, wake=7)[-1] == "wake in the global costmap: 7 cells"
     assert legend.legend_lines("a", "x", 1, 2) == ["a", "trial x  (1/2)"]
 
 
