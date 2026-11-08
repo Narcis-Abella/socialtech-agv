@@ -43,9 +43,9 @@ def test_no_floor_fails_loudly_instead_of_returning_the_ceiling():
     expect_error(room(floor_pts=0), "floor")
 
 
-def test_too_little_floor_is_refused_by_min_floor():
+def test_too_little_floor_is_refused_by_the_min_floor_gate():
     expect_error(room(floor_pts=150), "support")
-    _, info = floor_level.level_to_floor(room(floor_pts=150), min_floor=50)  # the user can lower the gate
+    _, info = floor_level.level_to_floor(room(floor_pts=150), min_floor=50)  # a caller can lower the gate
     assert info["n_floor"] < 250
 
 
@@ -132,3 +132,21 @@ def test_the_cloud_is_always_aligned_and_landscape_when_it_is_manhattan_enough()
     ex, ey = extent(Q)
     assert ex > 9 and ey < 9 and info["manhattan"] > 0.8, (ex, ey, info)
 
+
+
+def test_fit_plane_recovers_a_tilted_floor_and_refuses_a_missing_one():
+    rng = np.random.default_rng(3)
+    xy = rng.uniform(-5, 5, (4000, 2))
+    tilt = np.radians(1.5)
+    z = xy[:, 0] * np.tan(tilt) + rng.normal(0, 0.004, 4000)
+    n, d, inl = floor_level.fit_plane(np.column_stack([xy, z]), rng)
+    assert abs(np.degrees(np.arccos(n[2])) - 1.5) < 0.1 and inl > 3800
+    wall = np.column_stack([rng.uniform(-5, 5, 2000), np.full(2000, 4.0), rng.uniform(0, 3, 2000)])
+    assert floor_level.fit_plane(wall, rng) is None      # a vertical plane is not a floor (steeper than MAX_TILT)
+
+
+def test_rot_to_z_takes_the_vector_onto_z():
+    u = np.array([0.1, -0.05, 1.0]); u /= np.linalg.norm(u)
+    R = floor_level.rot_to_z(u)
+    assert np.allclose(R @ u, [0, 0, 1]) and np.allclose(R @ R.T, np.eye(3))
+    assert np.allclose(floor_level.rot_to_z(np.array([0., 0., 1.])), np.eye(3))

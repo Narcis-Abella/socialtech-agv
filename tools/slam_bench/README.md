@@ -5,15 +5,12 @@ Not deployment code: tooling run by hand on a laptop and a Jetson.
 
 | File | Purpose |
 |---|---|
-| `m3dgr_convert.py` | M3DGR ROS 1 bag (Livox `CustomMsg`) -> ROS 2 mcap with Mid-360 `PointCloud2` (`x y z intensity tag line timestamp`) + IMU |
-| `pc2_to_custom.py` | Mid-360 `PointCloud2` bag -> `livox_ros_driver2/CustomMsg` bag (FAST-LIO2 ignores per-point time in `PointCloud2`) |
+| `pc2_to_custom.py` | Mid-360 `PointCloud2` bag -> `livox_ros_driver2/CustomMsg` bag, for old bags recorded as `PointCloud2` (the robot records `CustomMsg` since `xfer_format 1`; FAST-LIO2 ignores per-point time in `PointCloud2`) |
 | `voxelslam_run.sh` | run Voxel-SLAM on one bag inside an image (workspace at `/ws`, tools at `/tools`, output at `/out`) in `socialtech:mapper` |
-| `floor_tilt.py` | Ground-truth-free flatness of a SLAM dump (`floor_level.py` imports it): floor plane per submap, global floor tilt from x-y, floor residual (`floor_tilt.py [-v] <run_dir>...`) |
-| `static_offset.py` | IMU-vs-floor/ceiling offset of the Livox from raw bags (still windows); prints a `T_lidar_imu` overlay that cancels the map tilt (`rot_to_z` is imported by `floor_level.py`) |
 | `make_map.sh` | Bag -> map in one command, inside the `mapper` image: Voxel-SLAM replay at 2x (`degrade_bound` 100000; the end is the file `vs/edge.txt`) and then `make_map.py`. `--reuse-slam` redoes everything after the SLAM of an earlier run in seconds. Leaves `map.pgm` + `map.yaml` (with `T_map_world`), `map.ply` (the raw Voxel-SLAM cloud), `map_clean.ply` (ghost-free, whole height), `report.json` and `vs/run/alidarState.txt` (the reference for `pose_eval`) |
 | `make_map.py` | The whole post-SLAM pipeline in one process: world cloud of the run (or `map.ply` + poses) -> level the floor once -> remove ghosts -> `map_clean.ply` -> 2D map from its band 0.10-`CEIL` -> `report.json` |
 | `cloud_io.py` | PLY and pose I/O; the world cloud of a Voxel-SLAM run (one body-frame PCD per frame + `alidarState.txt`) in memory, float32 values like `map.ply` |
-| `floor_level.py` | Floor of a SLAM cloud -> levelled (floor z = 0) -> walls on the axes -> cross-check with the trajectory. XYZ only, any SLAM; refuses when the floor cannot be trusted. Needs scipy (host/laptop, not in the robot image). Choices and evidence: `notes/ply_to_map_suelo.md` in the SocialTech repo |
+| `floor_level.py` | Floor of a SLAM cloud -> levelled (floor z = 0) -> walls on the axes -> cross-check with the trajectory. XYZ only, any SLAM; refuses when the floor cannot be trusted. Needs scipy. Holds `fit_plane` (RANSAC floor plane) and `rot_to_z`. Choices and evidence: `notes/ply_to_map_suelo.md` in the SocialTech repo |
 | `ghosts.py` | Ghost removal: a 5 cm voxel the beams mostly pass through is not there. The beam test is `libsocialtech_mapping_beams.so` (C++, all cores) |
 | `grid2d.py` | Rasterize a levelled cloud (halo, islands), free the unknown cells the beams crossed, write the PGM + `map_server` YAML |
 | `map_report.py` | The `report.json` of a `make_map.sh` run (`pipeline: 2`, commit, replay rate, scans of the bag and the lost-scan warning, floor tilt, sensor height) |

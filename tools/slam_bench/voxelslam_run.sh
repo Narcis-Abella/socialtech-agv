@@ -3,7 +3,7 @@
 # The poses are only written after the global stage, which is triggered by setting the `finish` parameter after playback.
 # usage (in container): voxelslam_run.sh <bag_dir> <lidar_topic> <imu_topic> <out_dir>
 # blind is 0.1 m (the Mid-360 blind zone; upstream 0.5): the near wall and door-jamb returns are kept. 2x replay gave identical poses (notes/mapeo_optimizacion_2026-10-30.md).
-# env: PLAY_RATE (2: the node follows the data's timestamps, not the clock; poses were identical to 1x on the 366 s bag, N=1)   VS_SED (sed script applied to the generated config, one expression per line; voxelslam_degrade.sed raises degrade_bound)
+# env: PLAY_RATE (2: the node follows the data's timestamps, not the clock; poses were identical at 1x and 2x on one 366 s bag)   VS_SED (sed script applied to the generated config, one expression per line; voxelslam_degrade.sed raises degrade_bound)
 set -eo pipefail
 bag=$1; lidar=$2; imu=$3; out=$4
 source /opt/ros/jazzy/setup.bash

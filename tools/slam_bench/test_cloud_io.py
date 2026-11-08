@@ -70,7 +70,7 @@ def test_frames_land_in_the_world_with_their_pose_and_repeats_collapse():
 
 
 def test_the_assembled_cloud_holds_float32_values():
-    # make_map keeps it in memory instead of writing and re-reading world.ply: the values must be the ones that file would give
+    # make_map keeps it in memory instead of writing and re-reading a PLY: the values must be the ones that file would give
     with tempfile.TemporaryDirectory() as tmp:
         run = make_run(tmp, [(IDENT, [[1.1234567, 0.3, 0.2], [0.7654321, 1.3, 0.1]]), (TURN, [[1.9999999, 0.1, 0.05]])])
         _, cloud = cloud_io.assemble_world_cloud(run, 0.05)
