@@ -24,7 +24,7 @@ Setup helper, not imported by the runtime: `prepare_map.py` builds the prior (`<
 
 `search_v2.py` uses the C++ search by default (`--corr-backend python`: the numpy path, for an environment without the library); a missing library is an error, never a silent fallback. Differences from the numpy path: exact EDT by lower envelope (same distances as scipy's feature transform), per-yaw ties among equal scores broken by cell index, `rot_z` product without BLAS. Measured on the AGX, 17 real inputs x 2: decisions 34/34 equal, primary poses identical, scores within 2e-7 (`CppBackendTest`, skipped without the library; point `CORR_SEARCH_LIB` at it).
 
-`-DGN_SUPERVISOR_PYTHON_ONLY=ON` installs the Python alone (an overlay of this source over an image, as `OVERLAY=1` of `ops/nav_live.sh` and the simulation scripts do): the launch finds the binaries in the first prefix of the ament path that has them.
+`-DGN_SUPERVISOR_PYTHON_ONLY=ON` installs the Python alone (an overlay of this source over an image, as the simulation scripts do; `OVERLAY=1` of `ops/nav_live.sh` swaps only bringup and nav): the launch finds the binaries in the first prefix of the ament path that has them.
 
 ## Tests
 

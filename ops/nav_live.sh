@@ -56,11 +56,11 @@ ping -c1 -W2 "$LIDAR_IP" >/dev/null 2>&1 || die "Livox $LIDAR_IP does not answer
 
 if [[ -n ${SUPERVISOR:-} ]]; then   # validated first: an error must not come after the "a goal MOVES THE ROBOT" banner
   [[ -z ${HEAVY_DDS:-} ]] || die "HEAVY_DDS=1 puts the driver on a loopback-only DDS URI that the supervisor (default URI) is not known to receive the raw lidar and IMU on: untested together, use SUPERVISOR=0 with HEAVY_DDS=1"
-  if [[ ! -f $MAP/prior/map.xyz ]]; then   # a map made before the prior was part of the mapping run: built now from its own cleaned cloud
-    [[ -f $MAP/map_clean.ply && -f $MAP/report.json ]] || die "$MAP has no prior/map.xyz and no map_clean.ply to build it from: make the map again with ops/make_map.sh (REUSE_SLAM=1 redoes it from the existing SLAM run in seconds), or SUPERVISOR=0"
+  if [[ ! -f $MAP/prior/map.xyz || ! -f $MAP/prior/map_manifest.json ]]; then   # none, or an interrupted one (the manifest is written last): built now from the cleaned cloud of the map
+    [[ -f $MAP/map_clean.ply && -f $MAP/report.json ]] || die "$MAP has no prior/map.xyz and no map_clean.ply to build it from: make the map again with ops/make_map.sh (REUSE_SLAM=1 redoes it from the existing SLAM run in seconds), or SUPERVISOR=0 to run without the supervisor"
     echo "no 3D prior in $MAP/prior: building it from map_clean.ply"
     docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$MAP:/m" "$IMAGE" python3 -B /opt/socialtech/lib/gn_supervisor/prepare_map.py --map-dir /m --out /m/prior >"$MAP/prior.log" 2>&1 \
-      || die "the 3D prior of $MAP could not be built ($(tail -1 "$MAP/prior.log")): see $MAP/prior.log"
+      || die "the 3D prior of $MAP could not be built ($(tail -1 "$MAP/prior.log")): see $MAP/prior.log (a map made before pipeline 2 needs REUSE_SLAM=1 ops/make_map.sh; or SUPERVISOR=0)"
   fi
   echo "SUPERVISOR: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
 fi

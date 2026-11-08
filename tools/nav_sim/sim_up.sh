@@ -12,7 +12,6 @@ src_overlay() {
 }
 if [ -d /src ]; then   # socialtech_simreal / socialtech_livox_sim / socialtech_costmap / planar_odom newer than the image's
   src_overlay ours socialtech_simreal socialtech_livox_sim socialtech_costmap planar_odom socialtech_bringup
-  OVERLAY_CMAKE="--cmake-args -DGN_SUPERVISOR_PYTHON_ONLY=ON" src_overlay sup gn_supervisor   # the Python of the checkout; the worker's binaries stay the image's (the launch finds them along the ament path)
 fi
 # The robot's own run scripts and defaults (the image's, or the overlay of /src): flags (normalize_flags), the FAST-LIO2 parameter edits (fastlio_yaml), the launch files and config.
 BRINGUP=$(ros2 pkg prefix socialtech_bringup)/lib/socialtech_bringup; BRINGUP_SHARE=$(ros2 pkg prefix socialtech_bringup)/share/socialtech_bringup
@@ -64,6 +63,7 @@ chain_map() {
 stack_up() {
   if [ -d /src ]; then   # gn_loc newer than the image's (gn_loc/scan_fit, which the supervisor confirms with): overlay
     src_overlay loc gn_loc
+    OVERLAY_CMAKE="--cmake-args -DGN_SUPERVISOR_PYTHON_ONLY=ON" src_overlay sup gn_supervisor   # the Python of the checkout; the worker's binaries stay the image's (the launch finds them along the ament path)
   fi
   fastlio_yaml "$out/fastlio.yaml"
   python3 /tools/sim_realism/tris_to_prior.py /pat/loyola.tris "$out/prior.xyz" 0.2 0.1 > "$out/prior.log"

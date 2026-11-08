@@ -35,7 +35,9 @@ def main(argv=None):
     raw = read_ply(d / 'map_clean.ply')
     keep = np.isfinite(raw).all(1) & (raw[:, 2] >= Z_LO) & (raw[:, 2] <= Z_HI)
     prior = voxel(raw[keep], a.voxel)
-    write_xyz(out / 'map.xyz', prior)
+    (out / 'map_manifest.json').unlink(missing_ok=True)       # the manifest is written last: a prior without one is a half-made prior
+    write_xyz(out / 'map.xyz.tmp', prior)
+    (out / 'map.xyz.tmp').rename(out / 'map.xyz')
     manifest = {'map_dir': str(d), 'pipeline': 2, 'raw_points': len(raw), 'finite_cropped_points': int(keep.sum()), 'voxel_points': len(prior), 'voxel_m': a.voxel,
                 'frame': 'map', 'truth_used': False}
     (out / 'map_manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
