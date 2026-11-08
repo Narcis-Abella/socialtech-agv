@@ -86,7 +86,7 @@ def test_build_fails_when_the_engine_counted_no_scan_instead_of_returning_a_map_
     monkeypatch.setattr(ghosts, "count_beams", no_scan_had_a_pose)
     with pytest.raises(ValueError, match="had a pose"):
         make_map.build(P, poses_of(traj), "bag", tmp_path / "out", res=0.05)
-    assert not (tmp_path / "out" / "map.ply").exists()
+    assert not (tmp_path / "out").exists()          # not even an empty directory a wrapper could take for a previous map
 
 
 def test_a_floor_that_is_not_found_stops_the_run_and_leaves_no_file(tmp_path):

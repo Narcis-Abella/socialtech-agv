@@ -5,6 +5,8 @@ import importlib.util
 collect_ignore = []
 if importlib.util.find_spec("nav2_msgs") is None:
     collect_ignore += ["test_send_goal.py", "test_local_frame_aligner.py"]
+if importlib.util.find_spec("launch") is None:
+    collect_ignore += ["test_supervisor_launch.py"]
 try:
     from ament_index_python.packages import get_package_share_directory
     get_package_share_directory("fast_lio")

@@ -233,7 +233,10 @@ private:
       RCLCPP_WARN(get_logger(), "initial pose given in frame '%s', not '%s': used as a '%s' pose", m.header.frame_id.c_str(), global_.c_str(), global_.c_str());
     }
     const auto & c = m.pose.covariance;
-    core_->setInitial({m.pose.pose.position.x, m.pose.pose.position.y, yaw}, std::sqrt(std::max(c[0], c[7])), std::sqrt(c[35]));
+    if (!core_->setInitial({m.pose.pose.position.x, m.pose.pose.position.y, yaw}, std::sqrt(std::max(c[0], c[7])), std::sqrt(c[35]))) {
+      RCLCPP_WARN(get_logger(), "initial pose ignored: its pose or covariance is not a finite number (covariance x %.3g y %.3g yaw %.3g)", c[0], c[7], c[35]);
+      return;
+    }
     RCLCPP_INFO(get_logger(), "initial pose %.3f %.3f %.1f deg", m.pose.pose.position.x, m.pose.pose.position.y, yaw * 180 / M_PI);
   }
 

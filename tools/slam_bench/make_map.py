@@ -31,10 +31,10 @@ def build(cloud, poses, bag, out_dir, *, topic="/livox/lidar", res=0.025, ceil=1
         scans = ghosts.BagScans(bag, poses, topic)
         count = lambda C, margin: ghosts.count_beams(C, scans, margin)
     out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
     ghost = ghosts.ghost_points(cloud, Q, count, ghost_band)
     if scans is not None:
         ghosts.require_scans(scans)
+    out.mkdir(parents=True, exist_ok=True)
     clean = Q[~ghost]
     cloud_io.write_ply(out / "map.ply", cloud)
     cloud_io.write_ply(out / "map_clean.ply", clean)

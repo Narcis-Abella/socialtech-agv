@@ -294,11 +294,13 @@ public:
   Core(std::shared_ptr<const Field> field, const Params & p)
   : F_(std::move(field)), prm_(p) {}
 
-  void setInitial(const Pose & pose, double sxy, double syaw)
+  // false: a NaN/inf pose or covariance (an uninitialised or negative one gives NaN after sqrt) was ignored and the state is untouched
+  bool setInitial(const Pose & pose, double sxy, double syaw)
   {
-    if (!std::isfinite(sxy) || !std::isfinite(syaw) || !std::isfinite(pose.x) || !std::isfinite(pose.y) || !std::isfinite(pose.yaw)) {return;}   // a NaN or inf prior (an uninitialised covariance) would size the search grid
+    if (!std::isfinite(sxy) || !std::isfinite(syaw) || !std::isfinite(pose.x) || !std::isfinite(pose.y) || !std::isfinite(pose.yaw)) {return false;}   // a NaN or inf prior (an uninitialised covariance) would size the search grid
     pending_ = {pose, std::max(sxy, 0.02), std::max(syaw, 1.0 * M_PI / 180.0)};
     state_ = State::Tracking; Tmo_.reset(); anchor_.reset(); tBad_.reset(); cand_.reset();
+    return true;
   }
 
   Result update(double t, const Pose & o, const std::vector<float> & ranges, double a0, double inc)
