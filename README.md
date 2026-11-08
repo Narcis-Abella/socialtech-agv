@@ -67,55 +67,11 @@ Shells opened with `docker exec -it <container> bash` get the same ROS environme
 
 ## Tools
 
-The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; used offline to build the maps: it is in the `mapper` image, not in `robot`, which runs FAST-LIO2 and gn_loc on the finished map). The tools below are offline research helpers used for that comparison and for the maps; none of them is part of the image. The GLIM ones are kept as reference and comparison tooling.
+The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; the comparison scripts were removed on 2026-11-08, see git history). It runs offline to build the maps: it is in the `mapper` image, not in `robot`, which runs FAST-LIO2 and gn_loc on the finished map. The tools below are offline helpers; none of them is part of the `robot` image.
 
-- `tools/slam_bench/`: benchmark scripts for the five SLAMs and ground-truth-free map diagnostics (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
+- `tools/slam_bench/`: map building from a bag (`make_map.sh`), Voxel-SLAM cost measurements on the Jetsons, and the floor diagnostics `make_map` uses (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
 - `tools/slam_bench/bag_check.py`: gaps in the LiDAR and IMU streams of a bag, from the recording times; run it right after recording (a scan lost while recording is gone for good and nothing warns about it).
 - `tools/slam_bench/make_map.sh`: bag to map in one command inside the `mapper` image: Voxel-SLAM replay (2x) and then `make_map.py`, one process that levels the floor, removes the ghosts the beams go through, writes `map.ply` (raw SLAM cloud), `map_clean.ply` (ghost-free, whole height), `map.pgm` + `map.yaml` (2D, from the band 0.10-1.80 m of the clean cloud, unknown cells the beams crossed freed) and `report.json`. The modules are `cloud_io.py`, `floor_level.py`, `ghosts.py` (beam counting in C++, `docker/ros_mapper/socialtech_mapping`), `grid2d.py`; the relocalizer prior is built from `map_clean.ply` by `tools/global_reloc_3d/prepare_map.py`. See `tools/slam_bench/README.md`.
-
-```bash
-# GLIM map dump (glim_rosbag -p dump_path:=...) -> PLY, same points as offline_viewer's Export Points.
-python3 tools/glim_dump_to_ply.py <dump_dir> map.ply
-python3 tools/test_glim_dump_to_ply.py   # self-check
-```
-
-Needs numpy (apt: `python3-numpy`). Differences from the GUI export are listed in the script's docstring.
-
-### GLIM config evaluation
-
-Compare GLIM configs on recorded bags. GLIM is not deterministic, so each config runs several times.
-
-```bash
-# In the robot image (needs GLIM): N runs of one config = installed defaults + overlays, in order.
-docker run --rm --network host -v ~/rosbags:/bags -v ~/glim_eval:/eval -v "$PWD/tools:/tools" socialtech:robot \
-  /tools/glim_eval.sh /bags/mapping_eco_-1_01 /eval/eco01_legacy 3 /tools/glim_eval/base.json /tools/glim_eval/legacy.json
-# Anywhere with numpy + scipy: metrics per run + divergence between runs.
-python3 tools/glim_metrics.py ~/glim_eval/eco01_legacy/run*/
-python3 tools/test_glim_config.py && python3 tools/test_glim_metrics.py   # self-checks
-```
-
-`glim_config.py` rejects overlay parameters that the installed GLIM does not have (GLIM itself ignores them silently).
-Metrics need no ground truth; definitions in `glim_metrics.py`. The main signals: `revisit_p90_m`
-(doubled walls where a place is passed again), `mme` (Mean Map Entropy: blur anywhere, also within
-one pass), `z_range_m` / `roll_range_deg` / `pitch_range_deg` (drift on a flat floor), run divergence (stability).
-
-| Overlay (`tools/glim_eval/`) | On top of | What |
-|---|---|---|
-| `base.json` | defaults | Livox topics, Mid-360 `T_lidar_imu` (IMU pose in the LiDAR frame, Mid-360 manual), headless modules |
-| `legacy.json` | `base.json` | Previous (Humble, GLIM 1.0.x) config ported to 1.2.x, including its `T_lidar_imu`, to reproduce its results |
-| `mid360_T.json` | `legacy.json` | Restores the Mid-360 `T_lidar_imu` over the legacy one |
-| `keyframes.json` | `base.json` | Legacy `odometry_estimation` + `sub_mapping` only (keyframe and submap density) |
-| `loop_overlap.json` | `base.json` | `min_implicit_loop_overlap` 0.05: more loop constraints (needs dense keyframes to matter) |
-| `far_8m.json` | `base.json` | `distance_far_thresh` 8 m, as in the legacy config: more frequent keyframes/submaps? |
-| `density.json` | `base.json` | Denser submaps: more keyframes, 5 cm voxels, no point cap |
-
-`base.json` alone is not a usable map: GLIM's default keyframing gives ~3 submaps per 170 m (about 20x fewer
-points than the legacy config) and almost no backend optimization. `mme` is only comparable between maps of
-similar density (a sparse map scores "crisper").
-
-Not portable from the legacy config: its crop box kept only z in [-0.43, 1.23] m through a `crop_bbox_invert`
-parameter that upstream GLIM does not have (1.2.x only removes points inside the box). Left out: frame IDs,
-QoS, image topic, `ring_field` (Livox has no ring field; ignored when absent), viewers.
 
 ## Where changes go
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Voxel-SLAM on eco_-1_01 at 1x, alone on the AGX, with CPU / GPU / RAM logged each second (tegrastats) and per-container (docker stats) every 5 s.
 # Experiment 1: does rotating the LiDAR->IMU extrinsic by the pooled IMU offset level the map? base = shipped mid360.yaml; rot_pos = offset (R_imu<-lidar = transpose of GLIM's T_lidar_imu); rot_neg = opposite sign (control: should get worse).
-# usage: vs_queue1.sh variant...   (variant = base | a file ~/bench_tools/vs_ext/<variant>.sed)
+# usage: vs_queue1.sh variant...   (variant = base | a sed file /tools/vs_ext/<variant>.sed you provide)
 cd ~
 log=~/bench_out/queue.log
 for v in "$@"; do

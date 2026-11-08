@@ -134,7 +134,7 @@ def summary(bags):
     return out
 
 
-XYZ = [0.011, 0.02329, -0.04412]  # T_lidar_imu translation, Mid-360 manual (tools/glim_eval/base.json)
+XYZ = [0.011, 0.02329, -0.04412]  # T_lidar_imu translation, Mid-360 manual
 
 
 def correction_quaternion(off):

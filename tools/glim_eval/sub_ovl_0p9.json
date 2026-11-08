@@ -1,7 +1,0 @@
-{
-  "config_sub_mapping_gpu.json": {
-    "sub_mapping": {
-      "max_keyframe_overlap": 0.9
-    }
-  }
-}
