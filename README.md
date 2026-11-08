@@ -70,7 +70,7 @@ Shells opened with `docker exec -it <container> bash` get the same ROS environme
 
 The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GLIM, FAST-LIO2, iG-LIO and KISS-ICP; the comparison scripts were removed on 2026-11-08, see git history). It runs offline to build the maps: it is in the `mapper` image, not in `robot`, which runs FAST-LIO2 and gn_loc on the finished map. The tools below are offline helpers; none of them is part of the `robot` image.
 
-- `tools/slam_bench/`: map building from a bag (`make_map.sh`), Voxel-SLAM cost measurements on the Jetsons, and the floor diagnostics `make_map` uses (`floor_tilt.py`, `static_offset.py`); see its `README.md`.
+- `tools/slam_bench/`: map building from a bag (`make_map.sh`), Voxel-SLAM cost measurements on the Jetsons; see its `README.md`.
 - `tools/slam_bench/bag_check.py`: gaps in the LiDAR and IMU streams of a bag, from the recording times; run it right after recording (a scan lost while recording is gone for good and nothing warns about it).
 - `tools/slam_bench/make_map.sh`: bag to map in one command inside the `mapper` image: Voxel-SLAM replay (2x) and then `make_map.py`, one process that levels the floor, removes the ghosts the beams go through, writes `map.ply` (raw SLAM cloud), `map_clean.ply` (ghost-free, whole height), `map.pgm` + `map.yaml` (2D, from the band 0.10-1.80 m of the clean cloud, unknown cells the beams crossed freed) and `report.json`. The modules are `cloud_io.py`, `floor_level.py`, `ghosts.py` (beam counting in C++, `docker/ros_mapper/socialtech_mapping`), `grid2d.py`; the relocalizer prior is built from `map_clean.ply` by `tools/global_reloc_3d/prepare_map.py`. See `tools/slam_bench/README.md`.
 
