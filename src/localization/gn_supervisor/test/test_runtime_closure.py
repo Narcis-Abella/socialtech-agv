@@ -46,3 +46,10 @@ def test_the_readme_lists_every_runtime_module():
     text = open(os.path.join(PKG, 'README.md')).read()
     missing = [m for m in RUNTIME if m + '.py' not in text and m not in text]
     assert not missing, missing
+
+
+def test_the_node_the_launch_starts_is_an_executable_with_a_shebang():
+    """The launch starts it as a node of the package (executable='gn_supervisor_node.py'): without the execute bit it is 'not found on the libexec directory', and no test that runs it through python3 notices."""
+    node = os.path.join(HERE, 'gn_supervisor_node.py')
+    assert os.access(node, os.X_OK), f"{node} is not executable (git update-index --chmod=+x)"
+    assert open(node).readline().startswith('#!/usr/bin/env python3')

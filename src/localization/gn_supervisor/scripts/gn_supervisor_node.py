@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """ROS 2 node: supervisor of gn_loc with on-demand global relocalization (logic in gn_supervisor_core.py, relocalizer in reloc_live.py).
 
 In:  gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, per scan: confirms a pose), gn_loc/need_reloc (Bool, latched), gn_loc/pose (GN's pose), wheel_topic (Tracer /odom; 'none' = no parked checks),
