@@ -279,12 +279,16 @@ private:
   void checkScanFrame(const std::string & frame)   // mtx_ held. The beams are fitted as seen from the base frame (odom->base is what is looked up): a frame straight above it is the same 2D scan
   {
     if (frame == scan_frame_ok_) {return;}
-    double xy = -1, yaw = 0;
+    double xy = 0, yaw = 0;
     try {
       const auto t = tf_buffer_->lookupTransform(base_, frame, tf2::TimePointZero).transform;
       xy = std::hypot(t.translation.x, t.translation.y); yaw = yawOf(t.rotation);
-    } catch (const std::exception &) {}
-    if (xy >= 0 && xy < 1e-3 && std::abs(yaw) < 1e-3) {scan_frame_ok_ = frame; return;}
+    } catch (const std::exception & e) {
+      // not the same problem as a misplaced frame: at start-up the static transform may simply not have arrived yet (it is checked again with the next scan)
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000, "cannot look up the scan frame '%s' from the base frame '%s' yet (%s): the fit assumes it is straight above the base", frame.c_str(), base_.c_str(), e.what());
+      return;
+    }
+    if (xy < 1e-3 && std::abs(yaw) < 1e-3) {scan_frame_ok_ = frame; return;}
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000, "scan frame '%s' is not straight above the base frame '%s': the fit assumes it is", frame.c_str(), base_.c_str());
   }
 
