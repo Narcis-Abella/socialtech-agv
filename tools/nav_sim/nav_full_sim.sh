@@ -21,7 +21,7 @@ fi
 SPAWN=$(python3 -c "import json,sys; print(*json.load(open(sys.argv[1]))['trials'][0]['start'])" "$scenario")   # assigned first: export would hide a failing python
 export SPAWN
 source /tools/nav_sim/sim_up.sh
-if [ -d /src ]; then src_overlay loc gn_loc; fi
+if [ -d /src ]; then src_overlay loc gn_loc || { echo "gn_loc build failed: see $out/build_loc.log" >&2; exit 1; }; fi
 chain_map
 fastlio_yaml "$out/fastlio.yaml"
 # LEVEL_CORRECTOR=1: level_corrector (registers the cloud against the world's own 3D points, written here) built over the image's packages (small_gicp prebuilt in /sg); planar_odom

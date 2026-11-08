@@ -7,7 +7,7 @@ trap 'kill $(jobs -p) 2> /dev/null || true' EXIT
 # OVERLAY_CMAKE="--cmake-args ..." adds CMake arguments. Used here and by the scripts that source this one.
 src_overlay() {
   local name=$1; shift
-  mkdir -p "/tmp/ws_$name" && (cd "/tmp/ws_$name" && colcon build --base-paths /src --packages-select "$@" --merge-install --install-base "/tmp/${name}_install" ${OVERLAY_CMAKE:-} > "$out/build_$name.log" 2>&1) || return 1
+  mkdir -p "/tmp/ws_$name" && (cd "/tmp/ws_$name" && colcon build --base-paths /src/localization /src/navigation /src/simulation /src/bringup --packages-select "$@" --merge-install --install-base "/tmp/${name}_install" ${OVERLAY_CMAKE:-} > "$out/build_$name.log" 2>&1) || return 1
   source "/tmp/${name}_install/setup.bash"
 }
 if [ -d /src ]; then   # socialtech_simreal / socialtech_livox_sim / socialtech_costmap / planar_odom newer than the image's
