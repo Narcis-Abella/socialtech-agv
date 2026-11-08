@@ -1,6 +1,6 @@
 # Simulator realism (2026-10-30)
 
-Models of what the real Tracer + Mid-360 do, calibrated on real bags, for the Nav2 simulation. Branch `feat/sim-realism`.
+Models of what the real Tracer + Mid-360 do, calibrated on real bags, for the Nav2 simulation.
 
 | Piece | Where | What |
 |---|---|---|

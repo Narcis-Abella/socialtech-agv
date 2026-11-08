@@ -13,6 +13,8 @@ import sys
 
 import numpy as np
 
+import livox_io as io
+
 T_SLOT = 5e-6
 NH = 3
 
@@ -93,7 +95,6 @@ def errors(C, M, s, az, ze, line, full=False): return fmt(*err_arrays(C, M, s, a
 
 
 def load(bag, topic, t0, sec):
-    sys.path.insert(0, "/home/narcis/Documents/GitHub/SocialTech/notes/sim_realism"); import livox_io as io
     S, L, AZ, ZE, V, P = [], [], [], [], [], []; g = 0
     for _, _, d in io.frames(bag, topic, t0, t0 + sec):
         n = len(d["t"]); assert n % 96 == 0 and (d["line"] == np.arange(n) % 4).all(), "message is not whole packets of 4-line groups"
