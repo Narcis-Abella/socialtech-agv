@@ -32,7 +32,7 @@ collision_monitor:
     ZoneOuter: {action_type: limit, linear_limit: 0.42, angular_limit: 1.2}
     ZoneInner: {action_type: limit, linear_limit: 0.24, angular_limit: 1.2}
     # 2026-10-29: true makes every getData ask the TF at curr_time (timeout transform_tolerance); FAST-LIO publishes odom->base_footprint at 10 Hz, 33 ms old, so each process() waits ~100 ms for the next
-    # sample: 1 of 10 cmd_vel messages came out (10 Hz) with ~0.1 s delay (cm_probe.py, 100 Hz in). false uses the latest TF, no wait; the scan is placed with the base pose of its own stamp (error ~ v * scan age, a few cm).
+    # sample: 1 of 10 cmd_vel messages came out (10 Hz) with ~0.1 s delay (cm_probe.py in SocialTech notes/nav_real_scripts, 100 Hz in). false uses the latest TF, no wait; the scan is placed with the base pose of its own stamp (error ~ v * scan age, a few cm).
     base_shift_correction: false
 global_costmap:
   global_costmap:
@@ -43,7 +43,7 @@ velocity_smoother:
     # 2026-10-27 (Narcis): linear acceleration 0.5 -> 0.3 m/s^2 (lists are replaced whole, so the other two axes are repeated). A hard start after turning in place leaves the
     # swivel casters sideways and the drive wheels slip; a gentler ramp avoids it, at the price of ~0.8 s more to reach 0.6 m/s. Angular 1.5 rad/s^2 unchanged.
     # 2026-10-29 (Narcis): angular accel/decel 1.5 -> 100 rad/s^2 (a pass-through for the turn): RPP already limits its own command (max_angular_accel) and the base accelerates at ~4 rad/s^2 (gyro,
-    # delay_probe.py), so the 1.5 ramp only added ~120 ms before the base reacts and made the turn brake at 1.5. Linear 0.3 / -1.0 unchanged (the casters, 2026-10-27). max_decel is replaced whole.
+    # delay_probe.py in SocialTech notes/nav_real_scripts), so the 1.5 ramp only added ~120 ms before the base reacts and made the turn brake at 1.5. Linear 0.3 / -1.0 unchanged (the casters, 2026-10-27). max_decel is replaced whole.
     max_accel: [0.3, 0.0, 100.0]
     max_decel: [-1.0, 0.0, -100.0]
     # 2026-10-28 (Narcis): smoothing timer 20 -> 100 Hz: a pass-through smoother still waits for its next tick (measured 48 ms median at 20 Hz), 10 ms at 100 Hz.
@@ -58,7 +58,7 @@ controller_server:
       # Cost: the base reports ~73 % of small angular commands (NEXT-41), so the turn in place is slower. Not measured at 0.6: check the first lab turns.
       rotate_to_heading_angular_vel: 0.4
       # 2026-10-29 (Narcis): max_angular_accel 5.0 -> 3.0 -> 2.0 (Narcis: neither too high nor too low; 2.0 is above the stall limit ~1.5 and half the base 4 rad/s^2). RPP clamps its command to (measured w +- a * dt) and brakes with sqrt(2 * a * angle). The stall seen with a <= 1.0-1.5 comes from /odom reading
-      # 0.02-0.03 rad/s low at small w (1 rpm resolution): the command stalls while a * dt (0.05 s) < the largest order-/odom gap (~0.07 rad/s), i.e. a < ~1.5. Measured on the robot (rot_ab.py, 120 deg turns):
+      # 0.02-0.03 rad/s low at small w (1 rpm resolution): the command stalls while a * dt (0.05 s) < the largest order-/odom gap (~0.07 rad/s), i.e. a < ~1.5. Measured on the robot (rot_ab.py in SocialTech notes/nav_real_scripts, 120 deg turns):
       # a 5.0 / 3.0 / 2.0 / 1.5 -> 6.2 / 6.3 / 6.9 / 7.8 s, a 1.0 aborts; the final error does not depend on a. 2.0 costs 0.3-0.5 s per 120 deg turn over 5.0. See notes/nav2_stack_resultados.md.
       max_angular_accel: 2.0
       # 2026-10-30 (Narcis): two radii. RPP stops advancing and rotates to the goal heading inside 0.05 m and keeps doing so until it is outside xy_goal_tolerance (0.15 m); upstream flips at the 0.15 m edge and
