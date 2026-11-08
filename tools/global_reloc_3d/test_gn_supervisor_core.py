@@ -701,8 +701,8 @@ class ScanRateConfirmTest(Fixture):
         self.assertEqual(s.state, 'RELOCALIZING')                            # bad_stop_s alarm, unchanged by the scan stream
 
 
-class FailedRetryTest(Fixture):
-    """FAILED after a relocalization that did not work retries by itself: the lidar may have been uncovered, the robot parked, since."""
+class RetryFixture(Fixture):
+    """Helpers of the tests that drive a relocalization to FAILED and watch the retries."""
     def lost(self, s, t0, t1):
         for k in range(int(t0), int(t1)):
             run(s, float(k), ('on_status', 'LOST', 0., 0.))                    # gn_loc keeps publishing its 1 Hz status
@@ -717,6 +717,18 @@ class FailedRetryTest(Fixture):
         self.assertEqual((s.state, s.reason), ('FAILED', 'reloc_failed_x'))
         return s, t + 9
 
+    def failed_by(self, reason_setup):
+        s, t = self.new()
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 5)
+        run(s, t + 5, ('on_reloc_result', False, None, reason_setup))
+        self.lost(s, t + 6, t + 9)
+        run(s, t + 9, ('on_reloc_result', False, None, reason_setup))
+        return s, t + 9
+
+
+class FailedRetryTest(RetryFixture):
+    """FAILED after a relocalization that did not work retries by itself: the lidar may have been uncovered, the robot parked, since."""
     def test_it_starts_a_new_relocalization_30_s_after_the_failure(self):
         s, t = self.failed()
         self.lost(s, t + 1, t + 30)
@@ -750,15 +762,6 @@ class FailedRetryTest(Fixture):
         self.assertEqual(s.state, 'FAILED')
         run(s, t + 70., ('on_status', 'LOST', 0., 0.))
         self.assertEqual(s.reason, 'failed_retry')
-
-    def failed_by(self, reason_setup):
-        s, t = self.new()
-        run(s, t, ('on_status', 'LOST', 0., 0.))
-        self.lost(s, t + 1, t + 5)
-        run(s, t + 5, ('on_reloc_result', False, None, reason_setup))
-        self.lost(s, t + 6, t + 9)
-        run(s, t + 9, ('on_reloc_result', False, None, reason_setup))
-        return s, t + 9
 
     def test_a_relocalizer_exception_is_not_retried(self):
         s, t = self.failed_by('exception_in_start')
@@ -931,7 +934,7 @@ class NotStoppedNoteTest(Fixture):
         self.assertEqual((s.state, s.reason), ('RELOCALIZING', 'gn_lost'))
 
 
-class RetryPolicyTest(FailedRetryTest):
+class RetryPolicyTest(RetryFixture):
     def attempts_fail(self, why):
         s, t = self.new(failed_retry_max=2)
         run(s, t, ('on_status', 'LOST', 0., 0.))

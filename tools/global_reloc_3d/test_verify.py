@@ -19,9 +19,6 @@ class VerifyTest(unittest.TestCase):
         self.assertEqual(decide(solver, score(pts, pts, wrong)), 'reject_geometry')
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class SharedTreeTest(unittest.TestCase):
     def test_a_prebuilt_tree_gives_the_same_score(self):
@@ -30,3 +27,7 @@ class SharedTreeTest(unittest.TestCase):
         m = rng.uniform(-5, 5, (800, 3)); c = m[:200] + rng.normal(0, .02, (200, 3))
         T = np.eye(4)
         self.assertEqual(score(m, c, T), score(m, c, T, tree=cKDTree(m)))
+
+
+if __name__ == '__main__':
+    unittest.main()

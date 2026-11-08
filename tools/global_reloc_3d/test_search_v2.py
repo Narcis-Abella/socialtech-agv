@@ -92,9 +92,6 @@ class WorkerExitCodeTest(unittest.TestCase):
         self.assertIn('libcorr_search', p.stderr)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class ZBandRankTest(unittest.TestCase):
     def row(self, z):
@@ -241,3 +238,6 @@ class StaleBinaryTest(unittest.TestCase):
             log, results, timed_out = sv.refine_all(b, 'm', 's', 'c', [np.eye(4)] * 2, d, 'cand', .3, 20)
         self.assertEqual((results, timed_out, log['exit_code']), ([None, None], False, 1))
 
+
+if __name__ == '__main__':
+    unittest.main()

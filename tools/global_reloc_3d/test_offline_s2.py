@@ -34,9 +34,6 @@ class TestOfflineS2(unittest.TestCase):
         self.assertNotIn('truth', m.prepare.__code__.co_varnames)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class VoxelEquivalenceTest(unittest.TestCase):
     def test_voxel_equals_the_np_unique_axis0_formula_including_the_order(self):
@@ -47,3 +44,7 @@ class VoxelEquivalenceTest(unittest.TestCase):
             inv = inv.ravel()
             want = np.column_stack([np.bincount(inv, weights=pts[:, j]) for j in range(3)]) / cnt[:, None]
             np.testing.assert_allclose(m.voxel(pts, size), want, atol=1e-12)
+
+
+if __name__ == '__main__':
+    unittest.main()

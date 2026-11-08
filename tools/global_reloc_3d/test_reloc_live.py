@@ -330,9 +330,6 @@ class WorkerTest(unittest.TestCase):
         w.kill()
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class LazyStillWindowTest(unittest.TestCase):
     def test_a_window_evaluated_only_when_needed_answers_like_the_eager_one(self):
@@ -462,3 +459,7 @@ class ReviewFixesTest(LiveRelocBase):
         res = self.feed(r, 4.5, 16., odom=lambda t: t < 2.2 or t > 6.)
         self.assertTrue(res['ok'], res)
         self.assertEqual(len(self.restarts), 2)                             # the first filter started while the hand covered the window: no points to initialise on
+
+
+if __name__ == '__main__':
+    unittest.main()
