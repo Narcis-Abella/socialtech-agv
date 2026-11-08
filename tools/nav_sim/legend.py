@@ -1,4 +1,4 @@
-"""Text of the on-screen legend rviz2 shows while a job runs: the LEGEND env of the job (set by agx_queue.sh: name | overlays | overrides), one line per ' | ' part, then which trial is running."""
+"""Text of the on-screen legend rviz2 shows while a job runs: the LEGEND env of the job (name | overlays | overrides), one line per ' | ' part, then which trial is running."""
 
 
 def legend_lines(legend, trial_id, k, n, wake=None):

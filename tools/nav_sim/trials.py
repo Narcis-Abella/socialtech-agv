@@ -287,7 +287,7 @@ class Runner:
                "recoveries": recoveries, "stops": stops, "ghost_series": self.ghost_series, "cm_log": self.cm_log, "gcm_meta": self.gcm_meta, "gcm_frames": self.gcm_frames, "ghost_cells": self.ghost if not chained else [None, self.ghost_cells()], "feedback": feedback, "n_plans": len(self.plans),
                "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
                "plan_log": self.plan_log,
-               "plan_all": [[round(t, 3), xy[::10]] for t, xy in self.plans],   # every plan, thinned, to see which route the planner chose each time (flip_metrics.py)
+               "plan_all": [[round(t, 3), xy[::10]] for t, xy in self.plans],   # every plan, thinned, to see which route the planner chose each time
                "plan_times": [round(t, 3) for t, _ in self.plans],
                "cols": ["t", "gt_x", "gt_y", "gt_yaw", "est_x", "est_y", "est_yaw", "nav_vx", "nav_wz", "sm_vx", "sm_wz", "cmd_vx", "cmd_wz", "odom_x", "odom_y", "odom_yaw"], "rows": self.rows}
         json.dump(rec, open(os.path.join(self.out, f"trial_{tag}_{trial['id']}.json"), "w"))

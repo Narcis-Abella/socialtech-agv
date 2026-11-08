@@ -1,5 +1,5 @@
 #!/bin/bash
-# Laptop side: runs the full-chain simulation (simulated Mid-360 + real FAST-LIO2) on the AGX; same conventions as agx_run.sh. No sudo; refuses when the board is busy.
+# Laptop side: runs the full-chain simulation (simulated Mid-360 + real FAST-LIO2) on the AGX; same conventions as the removed agx_run.sh. No sudo; refuses when the board is busy.
 #   agx_full.sh start <lio|fid|sup|lat|clock|nav> <name> [args of the script]   lio: lio_sim.sh [leg v w]   fid: fid_sim.sh [seconds]   clock: clock_sim.sh [seconds] (CPU of an idle sim-time node against a wall-time one)   lat: lat_sim.sh [reps] [idle_s] (does a search disturb FAST-LIO; needs ~/lat_input on the board)   sup: sup_sim.sh [cover_s] [--push-after S | --move-covered M]   nav: nav_full_sim.sh <scenario.json or auto[:N] (N pairs on the chain's own map)> [reps] (Nav2 + trials.py)
 #   agx_full.sh wait <remote dir>        blocks until it has ended and prints the last lines of its result
 #   agx_full.sh fetch <remote dir> <local dir>
