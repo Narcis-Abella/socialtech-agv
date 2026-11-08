@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # SocialTech robot images for Jetson Orin (JetPack 7.2.1 / L4T r39.2, arm64).
-# One file, layered stages; build one with: docker build --target <stage> .
+# One file, layered stages; the build context is the REPOSITORY ROOT (docker/ holds this file and what the image copies from it, deps/ the pinned third-party sources and
+# their patches). Build one stage with: docker build -f docker/Dockerfile --target <stage> .   (or ops/build_image.sh <stage>)
 #   base   ROS 2 Jazzy + CycloneDDS + CUDA runtime matching the host driver
 #   robot  sensor/base drivers + FAST-LIO2 + rosbag2 + localization + Nav2 (what runs on every robot)
 #   sim    robot + Gazebo and the simulation-only packages (tools/nav_sim)
@@ -42,7 +43,7 @@ FROM base AS robot
 
 # Livox-SDK2: plain CMake library (not a ROS package), needed by livox_ros_driver2.
 # Its bundled spdlog/fmt symbols are hidden by a linker version script (why: docker/livox_sdk_hide_spdlog.map); the check runs here, right after the install.
-COPY livox_sdk_hide_spdlog.map test_livox_sdk_symbols.sh /opt/livox-sdk-build/
+COPY docker/livox_sdk_hide_spdlog.map docker/test_livox_sdk_symbols.sh /opt/livox-sdk-build/
 ARG LIVOX_SDK2_COMMIT=c0796f04c143143899c87a773d9f6b7136453c0b
 RUN --mount=type=tmpfs,target=/tmp/src \
     git clone https://github.com/Livox-SDK/Livox-SDK2.git /tmp/src/livox-sdk2 \
@@ -64,13 +65,13 @@ RUN --mount=type=tmpfs,target=/tmp/src \
  && ldconfig
 
 WORKDIR /ws
-COPY robot.repos fetch_repos.py ./
-COPY patches/ patches/
+COPY deps/robot/robot.repos deps/fetch_repos.py ./
+COPY deps/robot/patches/ patches/
 RUN python3 fetch_repos.py robot.repos src \
  # livox_ros_driver2 ships ROS1/ROS2 variants; its build.sh swaps these in before building.
  && cp src/livox_ros_driver2/package_ROS2.xml src/livox_ros_driver2/package.xml \
  && cp -r src/livox_ros_driver2/launch_ROS2 src/livox_ros_driver2/launch \
- # Fixes to third-party code: patches/<repo name in robot.repos>/*.patch, applied in order.
+ # Fixes to third-party code: deps/robot/patches/<repo name in robot.repos>/*.patch (here patches/...), applied in order.
  && shopt -s nullglob \
  && for p in patches/*/*.patch; do \
       repo=$(basename "$(dirname "$p")"); echo "applying $p"; \
@@ -93,7 +94,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-jazzy-rosbag2-storage-mcap
 
 # Our own packages (docker/ros/<pkg>): built with the third-party ones.
-COPY ros/ src/
+COPY docker/ros/ src/
 
 # build/ and log/ live in cache mounts so they never land in the image. (A refetch gives sources
 # new mtimes, so it still rebuilds everything.) Few parallel packages: each already compiles with
@@ -118,7 +119,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # docker/ros_loc: gn_loc (Gauss-Newton scan-to-map localizer, the robot's localizer). Its own colcon build: it needs
 # the Nav2 packages installed just above, which the first build does not have. Tests and the gn_offline study tool are not built in the image (BUILD_TESTING=OFF, GN_LOC_OFFLINE=OFF); see docker/ros_loc/gn_loc/README.md.
-COPY ros_loc/ /ws/src_loc/
+COPY docker/ros_loc/ /ws/src_loc/
 RUN --mount=type=cache,target=/tmp/build_loc \
     --mount=type=cache,target=/tmp/log_loc \
     . /opt/ros/jazzy/setup.sh \
@@ -127,8 +128,8 @@ RUN --mount=type=cache,target=/tmp/build_loc \
 
 # Nav2 on the real robot (ops/nav_live.sh NAV=1) and in the simulator, whose stage adds Gazebo on top. docker/ros_nav: socialtech_nav (our params and behavior trees) and
 # socialtech_costmap (the decay obstacle layer). The simulation-only packages of ros_nav are built in `sim`. The regulated pure pursuit controller is built from the
-# pinned Nav2 source with nav2/*.patch (rotate_to_heading_dist_tol, which ops/nav2_robot_overrides.yaml sets) and installed in /opt/socialtech_nav, which ros_env.sh
-# sources after /opt/ros: it shadows the apt controller that nav2_bringup pulls in. Not in patches/: that directory is applied to the robot.repos checkouts.
+# pinned Nav2 source with deps/nav2/patches/*.patch (rotate_to_heading_dist_tol, which ops/nav2_robot_overrides.yaml sets) and installed in /opt/socialtech_nav, which ros_env.sh
+# sources after /opt/ros: it shadows the apt controller that nav2_bringup pulls in. Not in deps/robot/patches/: that directory is applied to the robot.repos checkouts.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
@@ -136,15 +137,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-jazzy-nav2-bringup ros-jazzy-nav2-regulated-pure-pursuit-controller ros-jazzy-nav2-smac-planner
 # One RUN: the Nav2 checkout (150 MB) must not stay in a layer. The build fails if the apt Nav2 is not the version of the source: the controller is compiled against the
 # apt headers of nav2_core, nav2_costmap_2d and the rest, and a newer sync would make that an ABI mismatch that only shows on the robot.
-COPY nav2/ /ws/nav2/
-COPY ros_nav/ /ws/src_nav/
+COPY deps/nav2/ /ws/nav2/
+COPY docker/ros_nav/ /ws/src_nav/
 RUN --mount=type=tmpfs,target=/tmp/build_nav \
     --mount=type=tmpfs,target=/tmp/log_nav \
     python3 fetch_repos.py nav2/nav2.repos src_nav2 \
- && for p in nav2/*.patch; do echo "applying $p"; git -C src_nav2/navigation2 apply "/ws/$p" || exit 1; done \
+ && for p in nav2/patches/*.patch; do echo "applying $p"; git -C src_nav2/navigation2 apply "/ws/$p" || exit 1; done \
  && src=$(sed -n 's|.*<version>\(.*\)</version>.*|\1|p' src_nav2/navigation2/nav2_core/package.xml | head -1) \
  && apt=$(dpkg-query -W -f='${Version}' ros-jazzy-nav2-core | cut -d- -f1) \
- && { [ "$src" = "$apt" ] || { echo "apt Nav2 is $apt but docker/nav2/nav2.repos pins $src: bump the commit and re-check nav2/*.patch"; exit 1; }; } \
+ && { [ "$src" = "$apt" ] || { echo "apt Nav2 is $apt but deps/nav2/nav2.repos pins $src: bump the commit and re-check deps/nav2/patches/*.patch"; exit 1; }; } \
  && . /opt/ros/jazzy/setup.sh \
  && colcon --log-base /tmp/log_nav build --base-paths src_nav src_nav2/navigation2/nav2_regulated_pure_pursuit_controller --build-base /tmp/build_nav \
       --packages-select socialtech_nav socialtech_costmap nav2_regulated_pure_pursuit_controller \
@@ -153,10 +154,10 @@ RUN --mount=type=tmpfs,target=/tmp/build_nav \
 
 # ROS environment shared by the entrypoint and interactive shells (`docker exec -it ... bash`).
 # Last on purpose: editing these scripts must not invalidate the SDK and colcon layers above.
-COPY cyclone_uri.sh /cyclone_uri.sh
-COPY ros_env.sh /ros_env.sh
+COPY docker/cyclone_uri.sh /cyclone_uri.sh
+COPY docker/ros_env.sh /ros_env.sh
 RUN echo 'source /ros_env.sh' >> /etc/bash.bashrc
-COPY --chmod=755 entrypoint.sh /entrypoint.sh
+COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
 
@@ -196,7 +197,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN pip3 install --no-cache-dir --break-system-packages rosbags==0.11.5
 
 WORKDIR /ws
-COPY mapper.repos ./
+COPY deps/mapper/mapper.repos ./
 ARG COLCON_WORKERS=2
 RUN python3 fetch_repos.py mapper.repos src_mapper \
  && . /opt/ros/jazzy/setup.sh && . /opt/socialtech/setup.sh \
@@ -208,7 +209,7 @@ RUN python3 fetch_repos.py mapper.repos src_mapper \
  && rm /tmp/ldd.txt
 
 # socialtech_mapping: the beam counting of tools/slam_bench/ghosts.py in C++ (libsocialtech_mapping_beams.so, loaded with ctypes, BEAMS_LIB). After Voxel-SLAM so a change here does not rebuild it.
-COPY ros_mapper/ src_mapper_local/
+COPY docker/ros_mapper/ src_mapper_local/
 RUN . /opt/ros/jazzy/setup.sh \
  && colcon --log-base /tmp/log_mapper_local build --base-paths src_mapper_local --merge-install --install-base /opt/socialtech \
       --build-base /tmp/build_mapper_local --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \

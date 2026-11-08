@@ -1,0 +1,4 @@
+# The build context is the repository root; only what the Dockerfile copies goes to the daemon (an allowlist: a new top-level folder is out until listed here).
+*
+!docker
+!deps

@@ -1,6 +1,6 @@
 # Patches to third-party sources
 
-Applied at image build, after fetching `robot.repos`: `patches/<repo>/*.patch` in lexical order,
+Applied at image build, after fetching `deps/robot/robot.repos`: `patches/<repo>/*.patch` in lexical order,
 where `<repo>` is the key in `robot.repos`. A fix inside a git submodule of that repo goes in `patches/<repo>/<submodule path>/*.patch`
 (e.g. `FAST_LIO/include/ikd-Tree/`): `git apply` of the parent cannot reach into it. A patch that no longer applies fails the build.
 
@@ -16,7 +16,7 @@ Create a patch against the pinned commit:
 git init x && cd x
 git fetch --depth 1 <url> <commit> && git checkout FETCH_HEAD
 # edit files
-git diff > ../patches/<repo>/NNNN-short-description.patch
+git diff > <repo root>/deps/robot/patches/<repo>/NNNN-short-description.patch
 ```
 
 Put a short "why" and the base commit at the top of the file (text before `diff --git` is ignored).
