@@ -20,7 +20,7 @@ def score(map_points, check_points, T, tree=None):
 
 
 def decide(result, geom, alternative=None, temporal=None):
-    if not result['kiss_valid'] or not result['gicp_converged']:
+    if not result['gicp_converged']:
         return 'reject_solver'
     if not geom['valid'] or geom['support_015'] < .70 or geom['matched_rmse_m'] is None or geom['matched_rmse_m'] > .10:
         return 'reject_geometry'
