@@ -7,7 +7,7 @@ Not deployment code: tooling run by hand on a laptop and a Jetson.
 |---|---|
 | `m3dgr_convert.py` | M3DGR ROS 1 bag (Livox `CustomMsg`) -> ROS 2 mcap with Mid-360 `PointCloud2` (`x y z intensity tag line timestamp`) + IMU |
 | `pc2_to_custom.py` | Mid-360 `PointCloud2` bag -> `livox_ros_driver2/CustomMsg` bag (FAST-LIO2 ignores per-point time in `PointCloud2`) |
-| `voxelslam_run.sh` | run Voxel-SLAM on one bag inside an image (workspace at `/ws`, tools at `/tools`, output at `/out`): `socialtech:mapper` for Voxel-SLAM, `socialtech:robot` for FAST-LIO2; iG-LIO is in no image |
+| `voxelslam_run.sh` | run Voxel-SLAM on one bag inside an image (workspace at `/ws`, tools at `/tools`, output at `/out`) (`socialtech:mapper`) |
 | `floor_tilt.py` | Ground-truth-free flatness of a SLAM dump (`floor_level.py` imports it): floor plane per submap, global floor tilt from x-y, floor residual (`floor_tilt.py [-v] <run_dir>...`) |
 | `static_offset.py` | IMU-vs-floor/ceiling offset of the Livox from raw bags (still windows); prints a `T_lidar_imu` overlay that cancels the map tilt (`rot_to_z` is imported by `floor_level.py`) |
 | `make_map.sh` | Bag -> map in one command, inside the `mapper` image: Voxel-SLAM replay at 2x (`degrade_bound` 100000; the end is the file `vs/edge.txt`) and then `make_map.py`. `--reuse-slam` redoes everything after the SLAM of an earlier run in seconds. Leaves `map.pgm` + `map.yaml` (with `T_map_world`), `map.ply` (the raw Voxel-SLAM cloud), `map_clean.ply` (ghost-free, whole height), `report.json` and `vs/run/alidarState.txt` (the reference for `pose_eval`) |

@@ -18,4 +18,6 @@ Setup helper (used by `prepare_live_prior.sh` of the team workspace, not at runt
 
 ## Tests
 
+`test_runtime_closure.py` is a deliberate guard: it fails when a module appears in this directory that is neither in the table above nor the documented setup helper. Put analysis scripts elsewhere (the team workspace repo), or add the module to the table and to the test.
+
 `python3 -m pytest -q test_*.py` inside the robot image (`source /ros_env.sh` first; scipy, numpy and rclpy are needed). `test_register_synthetic.py` skips without `REGISTER_BINARY`. Expect `test_reloc_live.py` ~15 s.

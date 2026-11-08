@@ -1,7 +1,7 @@
 """Runs the trials of a scenario file against Nav2 in the simulation and records raw series for offline analysis (metrics.py).
 usage (inside the sim image, with the simulation and Nav2 running): trials.py <scenario.json> <out dir> [reps] --ros-args -p use_sim_time:=true
-Each trial: put the robot at `start` (Gazebo set_pose), reset AMCL and the costmaps, wait until the estimate is within 0.3 m of the ground truth, send the goal, record until the result.
-env: CHAIN (unset): 1 = only the first trial resets the robot and AMCL, the next ones start where the previous ended (long-horizon localisation drift); INIT_SIGMA_XY (0.1 m), INIT_SIGMA_YAW (0.1 rad) of the /initialpose covariance; INIT_OFFSET_M / INIT_OFFSET_DEG (0, 0): the pose given to AMCL is the true start moved by that much (direction turns 60 deg per trial, yaw sign alternates) to test convergence; SETTLE_TIMEOUT (15 s) how long to wait for the estimate to be within 0.3 m before sending the goal; TRIAL_TIMEOUT (240 s of simulation time); ROBOT_NAME (tracer_robot); WORLD (loyola)."""
+Each trial: put the robot at `start` (Gazebo set_pose), reset the localizer and the costmaps, wait until the estimate is within 0.3 m of the ground truth, send the goal, record until the result.
+env: CHAIN (unset): 1 = only the first trial resets the robot and the localizer, the next ones start where the previous ended (long-horizon localisation drift); INIT_SIGMA_XY (0.1 m), INIT_SIGMA_YAW (0.1 rad) of the /initialpose covariance; INIT_OFFSET_M / INIT_OFFSET_DEG (0, 0): the pose given to the localizer is the true start moved by that much (direction turns 60 deg per trial, yaw sign alternates) to test convergence; SETTLE_TIMEOUT (15 s) how long to wait for the estimate to be within 0.3 m before sending the goal; TRIAL_TIMEOUT (240 s of simulation time); ROBOT_NAME (tracer_robot); WORLD (loyola)."""
 import json
 import math
 import os
@@ -154,7 +154,7 @@ class Runner:
 
     def ghost_cells(self):
         """Lethal cells (254) of the global costmap that are free in the static map: obstacles the lidar marked at the wrong place or that nobody cleared. With the moving obstacles parked away,
-        anything above a few cells is contamination from the previous trial or from the AMCL offset. None before both grids have arrived or when their sizes differ."""
+        anything above a few cells is contamination from the previous trial or from the the localizer offset. None before both grids have arrived or when their sizes differ."""
         a, b = self.static_map, self.gcm
         if a is None or b is None or (a.info.width, a.info.height) != (b.info.width, b.info.height):
             return None
@@ -196,7 +196,7 @@ class Runner:
                         break
                 else:
                     good_since = None
-        # Clear again once the AMCL has converged: the clear above ran while the estimate was still offset by up to the initial sigma, and the scans that kept arriving were marked at the wrong
+        # Clear again once the the localizer has converged: the clear above ran while the estimate was still offset by up to the initial sigma, and the scans that kept arriving were marked at the wrong
         # place (a ghost wall in the global costmap). The global costmap repaints at its publish rate, so let it do so before the goal is sent.
         before = self.ghost_cells()
         for c in self.clear:
@@ -208,7 +208,7 @@ class Runner:
 
     def run_trial(self, trial, tag):
         offset = init_offset(self.k, float(os.environ.get("INIT_OFFSET_M", 0)), float(os.environ.get("INIT_OFFSET_DEG", 0)))
-        chained = bool(os.environ.get("CHAIN")) and self.k > 0   # CHAIN=1: no teleport and no AMCL reset after the first trial; the robot continues from where it is
+        chained = bool(os.environ.get("CHAIN")) and self.k > 0   # CHAIN=1: no teleport and no the localizer reset after the first trial; the robot continues from where it is
         self.k += 1
         self.publish_legend(trial["id"])
         est = self.estimate()

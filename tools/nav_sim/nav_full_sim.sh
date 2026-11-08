@@ -9,7 +9,7 @@ export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-57}
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces></General><Discovery><Peers><Peer address="localhost"/></Peers><MaxAutoParticipantIndex>40</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
 # LIVE_PEER=<laptop IP>: DDS on the board's wifi towards the laptop, so rviz2 there (PEER=<board IP>, ROS_DOMAIN_ID as here) sees the run
 [ -z "$LIVE_PEER" ] || export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"${LIVE_IFACE:-wlP1p1s0}\"/></Interfaces></General><Discovery><Peers><Peer address=\"$LIVE_PEER\"/></Peers><MaxAutoParticipantIndex>40</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>"
-# scenario `auto[:N]`: N start/goal pairs sampled on the chain's own map (the legacy scenarios were made on loyola.pgm: on this map some goals are in closed rooms)
+# scenario `auto[:N]`: N start/goal pairs sampled on the chain's own map
 if [[ $scenario == auto* ]]; then
   mkdir -p "$out"; n=${scenario#auto}; n=${n#:}
   python3 /tools/sim_realism/tris_to_map.py /pat/loyola.tris "$out/loyola_chain" -13.0,0.0 > "$out/map.log"

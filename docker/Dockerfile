@@ -101,7 +101,7 @@ RUN --mount=type=cache,target=/ws/build \
       --parallel-workers "${COLCON_WORKERS}" \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy
 
-# Navigation bench (tools/nav_bench): localization and scan conversion. After the colcon build so a change here does not rebuild the workspace.
+# Nav2 map server and lifecycle manager, scan conversion (pointcloud_to_laserscan), scipy for the relocalizer. After the colcon build so a change here does not rebuild the workspace.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
@@ -120,7 +120,7 @@ RUN --mount=type=cache,target=/tmp/build_loc \
  && cd /ws && colcon --log-base /tmp/log_loc build --base-paths src_loc --merge-install --install-base /opt/socialtech_loc --build-base /tmp/build_loc \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DGN_LOC_OFFLINE=OFF
 
-# Nav2 on the real robot (ops/nav_live.sh NAV=1) and in the simulator, whose stage adds Gazebo on top. docker/ros_nav: socialtech_nav (our params, launch and map) and
+# Nav2 on the real robot (ops/nav_live.sh NAV=1) and in the simulator, whose stage adds Gazebo on top. docker/ros_nav: socialtech_nav (our params and behavior trees) and
 # socialtech_costmap (the decay obstacle layer). The simulation-only packages of ros_nav are built in `sim`. The regulated pure pursuit controller is built from the
 # pinned Nav2 source with nav2/*.patch (rotate_to_heading_dist_tol, which ops/nav2_robot_overrides.yaml sets) and installed in /opt/socialtech_nav, which ros_env.sh
 # sources after /opt/ros: it shadows the apt controller that nav2_bringup pulls in. Not in patches/: that directory is applied to the robot.repos checkouts.
