@@ -1,7 +1,6 @@
 #!/bin/bash
 # usage (inside the robot image, with the package under test sourced): run_band_test.sh stock|band    one costmap node + band_test.py; exit code of the test
 here=$(dirname "$(readlink -f "$0")"); source /ros_env.sh
-[ -f /ov/install/setup.bash ] && source /ov/install/setup.bash
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-97}; export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 mode=$1
 if [ "$mode" = band ]; then band="height_band_clearing: true"; exp=1; else band=""; exp=0; fi

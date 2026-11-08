@@ -33,7 +33,7 @@ grep -qE '^exec docker run .* -e LEVEL_CORRECTOR="\$\{LEVEL_CORRECTOR:-\}"' "$nl
 grep -qxF '  [[ -z ${LEVEL_CORRECTOR:-} ]] || extra+=(level_corrector:=true)' "$nl" || { echo "FAIL: level_corrector:=true is not exactly 'LEVEL_CORRECTOR set -> level_corrector:=true'"; fail=1; }
 awk '/(^|;) *extra=\(/ {n = NR} /extra\+=\(level_corrector:=true\)/ {v = NR} END {exit !(v > n)}' "$nl" || { echo "FAIL: level_corrector:=true is added before extra is (re)assigned"; fail=1; }
 grep -q 'ros2 pkg prefix level_corrector' "$nl" || { echo "FAIL: nav_live.sh does not check the image for level_corrector"; fail=1; }
-# inside the container the planar_odom that would run (an overlay or an old image can shadow the image's) must know correction_topic, or the corrector would run and change nothing
+# inside the container the planar_odom that would run (an image older than the checkout has one that ignores it) must know correction_topic, or the corrector would run and change nothing
 grep -qF 'grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom"' "$nl" || { echo "FAIL: nav_live.sh does not check that the effective planar_odom has correction_topic"; fail=1; }
 # LEVEL_CORRECTOR is ON unless set to something off (the corrector is the robot's default since 2026-11-07); LEVEL_CORRECTOR=0 turns it off
 grep -qxF 'LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default: only an explicit LEVEL_CORRECTOR=0 (or off/false/no) turns it off' "$nl" || { echo "FAIL: LEVEL_CORRECTOR is not on by default"; fail=1; }
