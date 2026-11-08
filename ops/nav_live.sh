@@ -80,7 +80,7 @@ if [[ -n ${NAV:-} && -z ${PROD:-} ]]; then   # the DEV recorder writes raw /livo
   (( free_gb >= ${MIN_FREE_GB:-20} )) || die "only ${free_gb} GB free in $RUN (the bag needs MIN_FREE_GB=${MIN_FREE_GB:-20}); free space, or PROD=1 to run without recording"
 fi
 {   # what ran: the image (its tag moves; the label is its commit), this checkout, and whether OVERLAY=1 built socialtech_bringup and socialtech_nav from it
-  echo "checkout: $(git -C "$REPO" describe --always --dirty 2>/dev/null || echo unknown)"
+  echo "checkout: $(checkout_revision "$REPO" || true)$(checkout_dirty "$REPO" && echo -dirty || true)"   # git, or REVISION of a copy made by git archive; empty = not known
   { git -C "$REPO" status --porcelain 2>/dev/null || true; } | sed 's/^/  /'   # the board's checkout is often a plain copy, not a repository: git fails and set -e/pipefail would end the script
   img_id=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
   echo "image: $IMAGE ${img_id:-unknown} revision $(rev=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE" 2>/dev/null); echo "${rev:-unknown}")"
