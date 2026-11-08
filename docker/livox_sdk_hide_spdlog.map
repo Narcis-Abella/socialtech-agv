@@ -4,6 +4,7 @@
 # livox_ros_driver2_node died with SIGSEGV (-11) in about 1 of 10 shutdowns. Keeping every spdlog/fmt symbol local stops interposition in both directions; the Livox API stays exported.
 # The globs are infix on purpose: the symbols to hide include `guard variable for spdlog::...` and std templates carrying spdlog types, which a prefix such as _ZN6spdlog would miss
 # (at the pinned SDK commit all 502 hidden symbols mention spdlog or fmt). Only the shared library is covered: the static one still has them, and nothing here links it.
+# When LIVOX_SDK2_COMMIT is bumped: diff `nm -D --defined-only` of a build with and without this script and check that everything hidden is spdlog/fmt (an unrelated name containing 3fmt would go too).
 {
   global: *;
   local: *6spdlog*; *3fmt*;
