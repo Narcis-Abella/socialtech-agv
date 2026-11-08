@@ -9,11 +9,15 @@ import time
 os.environ["ROS_DOMAIN_ID"] = "91"
 os.environ["ROS_AUTOMATIC_DISCOVERY_RANGE"] = "LOCALHOST"
 
-import rclpy  # noqa: E402
-from geometry_msgs.msg import TransformStamped  # noqa: E402
-from nav2_msgs.srv import ClearEntireCostmap  # noqa: E402
-from rclpy.qos import DurabilityPolicy, QoSProfile  # noqa: E402
-from tf2_msgs.msg import TFMessage  # noqa: E402
+try:
+    import rclpy  # noqa: E402
+    from geometry_msgs.msg import TransformStamped  # noqa: E402
+    from nav2_msgs.srv import ClearEntireCostmap  # noqa: E402
+    from rclpy.qos import DurabilityPolicy, QoSProfile  # noqa: E402
+    from tf2_msgs.msg import TFMessage  # noqa: E402
+except ImportError as e:      # nav2_msgs: only in the robot image
+    print(f"skip: needs the robot image ({e})")
+    raise SystemExit(0)
 from tf2_ros import TransformBroadcaster  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))

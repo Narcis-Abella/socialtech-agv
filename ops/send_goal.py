@@ -1,5 +1,5 @@
 """Send one recorded goal to Nav2 and measure how the robot sets off. THE ROBOT MOVES. Runs where ROS and the stack are (docker exec into the nav container).
-  goal_test.py [INDEX|auto] [--timeout 60]      INDEX = 0-based position in goals_lab.yaml; auto = the goal that needs the biggest turn from the current gn_loc pose (1.2-5 m away)
+  send_goal.py [INDEX|auto] [--timeout 60]      INDEX = 0-based position in goals_lab.yaml; auto = the goal that needs the biggest turn from the current gn_loc pose (1.2-5 m away)
 The goal is oriented along the line robot -> goal, so no final turn adds to the measure. Reported: time to the first translation, and while turning in place before it
 (commanded |w| > 0.05 rad/s, |vx| < 0.02): duration, mean and peak commanded |w|, and the angle the base itself reports (integral of /odom w).
 Always cancels the goal on exit: Ctrl-C, timeout or error."""
@@ -54,7 +54,7 @@ def phases(cmd, odom, t_send):
 
 class Probe(Node):
     def __init__(self):
-        super().__init__("goal_test")
+        super().__init__("send_goal")
         self.cmd, self.odom, self.pose = [], [], None
         self.create_subscription(Twist, "/cmd_vel_nav", lambda m: self.cmd.append((time.time(), m.linear.x, m.angular.z)), 10)
         self.create_subscription(Odometry, "/odom", lambda m: self.odom.append((time.time(), m.twist.twist.angular.z)), 10)

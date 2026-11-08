@@ -221,7 +221,8 @@ def test_the_flags_make_map_passes_exist_in_the_real_tool():
     helptext = subprocess.run([sys.executable, str(HERE / "make_map.py"), "--help"], capture_output=True, text=True).stdout
     for flag in ("--run", "--cloud", "--poses", "--bag", "--out", "--res", "--voxel", "--ceil", "--topic", "--play-rate"):
         assert flag in helptext, (flag, helptext)
-    assert "--check-engine" in (HERE / "ghosts.py").read_text()
+    engine_help = subprocess.run([sys.executable, str(HERE / "ghosts.py"), "--help"], capture_output=True, text=True)
+    assert "--check-engine" in engine_help.stdout + engine_help.stderr      # the step make_map.sh runs before the replay
 
 
 def finished_map(out, content="a map that works"):

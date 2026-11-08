@@ -73,6 +73,22 @@ def test_a_higher_ceil_keeps_the_corridor_ceiling_as_an_obstacle(tmp_path):
     assert occupied("high") > occupied("low")
 
 
+def test_build_fails_when_the_engine_counted_no_scan_instead_of_returning_a_map_without_ghosts(tmp_path, monkeypatch):
+    """The engine path of build(): count_beams reports 0 scans with a pose (a wrong topic, or poses on another time base). require_scans must stop the run
+    before any file is written; the engine itself is replaced by a stub that behaves like a bag whose scans none got a pose."""
+    scans, traj = drive(planes())
+    P, n, Q = world_cloud(scans, PHANTOM)
+
+    def no_scan_had_a_pose(C, bag_scans, margin):
+        bag_scans.counted = 0
+        return np.zeros(len(C), np.int32), np.zeros(len(C), np.int32)
+
+    monkeypatch.setattr(ghosts, "count_beams", no_scan_had_a_pose)
+    with pytest.raises(ValueError, match="had a pose"):
+        make_map.build(P, poses_of(traj), "bag", tmp_path / "out", res=0.05)
+    assert not (tmp_path / "out" / "map.ply").exists()
+
+
 def test_a_floor_that_is_not_found_stops_the_run_and_leaves_no_file(tmp_path):
     P = room(floor_pts=0)
     with pytest.raises(ValueError, match="floor"):

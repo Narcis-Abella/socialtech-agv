@@ -216,6 +216,16 @@ def test_a_run_is_scored_on_its_own_chain_map_and_the_old_map_only_with_a_notice
     assert a.FOOTPRINT == (0.66, 0.54)       # ops/nav2_robot_overrides.yaml
 
 
+def test_each_run_of_a_comparison_is_scored_on_its_own_map_unless_one_is_given():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d1, tempfile.TemporaryDirectory() as d2:
+        for d in (d1, d2):
+            open(os.path.join(d, a.CHAIN_MAP), "w").write("image: x.pgm\n")
+        assert a.maps_for(["compare", d1, d2], None) == [os.path.join(d1, a.CHAIN_MAP), os.path.join(d2, a.CHAIN_MAP)]
+        assert a.maps_for(["compare", d1, d2], "m.yaml") == ["m.yaml", "m.yaml"]
+        assert a.maps_for(["summarize", d1], None) == [os.path.join(d1, a.CHAIN_MAP)]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

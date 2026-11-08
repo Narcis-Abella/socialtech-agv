@@ -2,6 +2,14 @@
 import importlib.util
 import os
 
+try:
+    from ament_index_python.packages import get_package_share_directory
+    get_package_share_directory("fast_lio")      # the extrinsic is checked against its config
+    import launch_ros  # noqa: F401
+except Exception as e:      # fast_lio, launch_ros: only in the robot image
+    print(f"skip: needs the robot image ({e})")
+    raise SystemExit(0)
+
 from launch import LaunchContext
 from launch.utilities import perform_substitutions
 from launch_ros.actions import Node

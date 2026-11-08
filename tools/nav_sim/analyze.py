@@ -45,6 +45,11 @@ def default_map(run_dir):
     return OLD_2D_MAP
 
 
+def maps_for(pos, explicit):
+    """The map of each run named in pos (summarize: one, compare: two): its own unless --map says otherwise."""
+    return [explicit or default_map(run) for run in pos[1:3]]
+
+
 def wrap(a):
     return (a + math.pi) % (2 * math.pi) - math.pi
 
@@ -199,7 +204,7 @@ def parse(argv):
 def main(argv):
     pos, opts = parse(argv)
     tol = float(opts["--tol"])
-    maps = [opts["--map"] or default_map(run) for run in pos[1:3]]       # each run is scored on its own map unless --map says otherwise
+    maps = maps_for(pos, opts["--map"])
     ctx, ctx_cand = context(maps[0], tol), context(maps[-1], tol)
     if pos[0] == "compare" and maps[0] != maps[1]:
         print(f"analyze: base and candidate are scored on different maps ({maps[0]} / {maps[1]}): clearance and collisions are not paired on the same walls", file=sys.stderr)

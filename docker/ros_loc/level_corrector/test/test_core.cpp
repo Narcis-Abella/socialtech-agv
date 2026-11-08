@@ -68,6 +68,8 @@ TEST(Gates, EachLimitRejectsWithItsOwnReason) {
   EXPECT_STREQ(gate_reason({1000, 1050, 0.02, 0.31, 1.0}, g), "dxy");
   EXPECT_STREQ(gate_reason({1000, 1050, 0.02, 0.1, -3.1}, g), "dyaw");
   EXPECT_STREQ(gate_reason({1000, 1050, 0.02, NAN, 1.0}, g), "dxy");       // a NaN must not pass a "<=" test written as "!(x > max)"
+  EXPECT_STREQ(gate_reason({1000, 1050, NAN, 0.1, 1.0}, g), "rms");       // the same for every gate, not only dxy
+  EXPECT_STREQ(gate_reason({1000, 1050, 0.02, 0.1, NAN}, g), "dyaw");
   EXPECT_STREQ(gate_reason({0, 0, INFINITY, INFINITY, 0}, g), "inliers");  // an empty scan: no division by zero in the ratio
 }
 TEST(Filter, StartsAtIdentityAndTakesTheFirstMeasurementWhole) {

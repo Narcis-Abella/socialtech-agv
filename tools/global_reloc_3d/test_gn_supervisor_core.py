@@ -871,6 +871,40 @@ class FailedRetryTest(RetryFixture):
         self.assertNotIn('reloc_start', kinds(a))
 
 
+class RetryBudgetTest(RetryFixture):
+    """The counters of the retry policy: what a relocalizer timeout does, and when the budgets start over."""
+    def test_a_relocalizer_timeout_is_retried_like_any_other_failure(self):
+        s, t = self.new(reloc_timeout_s=40., max_attempts=1)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.lost(s, t + 1, t + 41)
+        run(s, t + 41, ('on_status', 'LOST', 0., 0.))
+        self.assertEqual((s.state, s.reason), ('FAILED', 'reloc_timeout'))
+        self.assertTrue(s.retry)                                  # a search that ran out of time may succeed with the lidar uncovered: not a bug, unlike a worker crash
+        self.lost(s, t + 42, t + 71)
+        a = run(s, t + 71., ('on_status', 'LOST', 0., 0.))
+        self.assertIn(('reloc_start', 'failed_retry'), a)
+
+    def test_the_retry_budget_starts_over_when_the_robot_is_back_in_monitor(self):
+        s, t = self.failed(failed_retry_max=1)
+        self.lost(s, t + 1, t + 30)
+        run(s, t + 30., ('on_status', 'LOST', 0., 0.))
+        self.assertEqual((s.state, s.retries), ('RELOCALIZING', 1))
+        run(s, t + 31., ('on_status', 'LOST', 0., 0.), ('on_reloc_result', True, (1., 2., 0.), 'accepted'))
+        for k in range(4):
+            run(s, t + 32. + k, ('on_status', 'TRACKING', .9, .8), ('on_gn_pose', (1., 2., 0.)))
+        self.assertEqual(s.state, 'MONITOR')
+        self.assertEqual(s.retries, 0)                            # else failed_retry_max would cap the retries of the whole run, not of one incident
+
+    def test_every_stop_gets_its_full_attempts(self):
+        s, t = self.new(max_attempts=2)
+        run(s, t, ('on_status', 'LOST', 0., 0.))
+        self.assertEqual(s.attempts, 1)
+        run(s, t + 1, ('on_status', 'LOST', 0., 0.), ('on_reloc_result', False, None, 'reject_geometry'))
+        self.assertEqual(s.attempts, 2)                           # the first attempt failed, the second is running
+        s.stop(t + 2, 'again')                                    # a new incident: counted from one again
+        self.assertEqual(s.attempts, 1)
+
+
 class GoalHoldTest(Fixture):
     def test_a_goal_active_at_start_up_is_cancelled(self):
         s = Supervisor(sc.Params())
