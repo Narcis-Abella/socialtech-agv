@@ -17,7 +17,7 @@ import stats
 
 OLD_2D_MAP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps", "loyola_gt.yaml")      # built from the removed 2D simulation's lidar: its walls are not the ones the Mid-360 chain sees
 CHAIN_MAP = "loyola_chain.yaml"       # written by sim_up.sh into every run folder: the map the chain localized on, from the same triangles the simulated Mid-360 sees
-FOOTPRINT = (0.66, 0.54)              # the Nav2 footprint of ops/nav2_robot_overrides.yaml (2026-10-26)
+FOOTPRINT = (0.66, 0.54)              # the Nav2 footprint of socialtech_bringup/config/nav2_robot_overrides.yaml (2026-10-26)
 STOP_TOL = 0.5                        # a via pose counts as visited within this distance (NavigateThroughPoses does not stop on it)
 HZ = 50.0                              # sampling rate of trials.py rows
 COMPARED = ["duration", "path_len", "spl", "final_err_xy", "recoveries", "jerk_lin_rms", "jerk_lin_p95", "acc_lin_p95", "jerk_ang_rms", "acc_ang_p95", "vx_reversals",

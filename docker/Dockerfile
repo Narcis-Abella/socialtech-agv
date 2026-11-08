@@ -133,7 +133,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ros-jazzy-nav2-bringup ros-jazzy-nav2-regulated-pure-pursuit-controller ros-jazzy-nav2-smac-planner
-# The regulated pure pursuit controller is built from the pinned Nav2 source (deps/nav2) with deps/nav2/patches/*.patch (rotate_to_heading_dist_tol, which ops/nav2_robot_overrides.yaml
+# The regulated pure pursuit controller is built from the pinned Nav2 source (deps/nav2) with deps/nav2/patches/*.patch (rotate_to_heading_dist_tol, which socialtech_bringup/config/nav2_robot_overrides.yaml
 # sets) and installed in /opt/socialtech, which ros_env.sh sources after /opt/ros: it shadows the apt controller that nav2_bringup pulls in. Not in deps/robot/patches/: that directory is
 # applied to the robot.repos checkouts. Before src/navigation is copied on purpose: an edit of our params or costmap must not fetch 150 MB of Nav2 again.
 # One RUN: the Nav2 checkout must not stay in a layer. The build fails if the apt Nav2 is not the version of the source: the controller is compiled against the
@@ -159,6 +159,14 @@ RUN --mount=type=tmpfs,target=/tmp/build_nav \
     . /opt/ros/jazzy/setup.sh \
  && colcon --log-base /tmp/log_nav build --base-paths src_nav --build-base /tmp/build_nav \
       --merge-install --install-base /opt/socialtech --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+
+# src/bringup: socialtech_bringup (launch files, config, run_live). The last of our layers: it changes the most and builds in seconds.
+COPY src/bringup/ /ws/src_bringup/
+RUN --mount=type=tmpfs,target=/tmp/build_bringup \
+    --mount=type=tmpfs,target=/tmp/log_bringup \
+    . /opt/ros/jazzy/setup.sh \
+ && colcon --log-base /tmp/log_bringup build --base-paths src_bringup --build-base /tmp/build_bringup \
+      --merge-install --install-base /opt/socialtech
 
 # ROS environment shared by the entrypoint and interactive shells (`docker exec -it ... bash`).
 # Last on purpose: editing these scripts must not invalidate the SDK and colcon layers above.

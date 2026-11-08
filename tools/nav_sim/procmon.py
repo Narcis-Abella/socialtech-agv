@@ -17,7 +17,7 @@ STACK = [('register_v2', r'^\S*/register_v2 '), ('search_worker', r'^\S*python\S
          ('supervisor', r'gn_supervisor_node'), ('live_paths', r'live_paths'),
          ('driver', r'livox_ros_driver2'), ('base', r'tracer_base'), ('recorder', r'ros2 bag record'), ('amcl', r'nav2_amcl'),     # the robot; before nav2, whose `nav2_` would take amcl
          ('nav2', r'controller_server|planner_server|bt_navigator|behavior_server|smoother_server|velocity_smoother|collision_monitor|lifecycle_manager|map_server|waypoint_follower|route_server|nav2_'),
-         ('launch', r'ros2 launch|launch_ros|/ops/')]
+         ('launch', r'ros2 launch|launch_ros|socialtech_bringup')]
 
 
 def group(cmd):

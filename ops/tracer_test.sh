@@ -14,7 +14,7 @@ die() { echo "FAIL: $*" >&2; exit 1; }
 [[ $(cat /sys/class/net/can_tracer/operstate 2>/dev/null) == up ]] || die "can_tracer is not UP (ip -br link; host/setup_host.sh --check)"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image $IMAGE not found"
 [[ -z $(docker ps -q) ]] || die "a container is running (docker ps): stop the navigation stack first, nothing else may publish /cmd_vel"
-python3 "$REPO/ops/base_state.py" || die "the base is not ready (see above)"
+python3 "$REPO/src/bringup/socialtech_bringup/scripts/base_state.py" || die "the base is not ready (see above)"
 
 CAN_LOG=$HOME/tracer_test_can.log   # every frame on the bus, as candump -L: what we send (loopback) and what the base answers
 candump -L can_tracer >"$CAN_LOG" &
@@ -30,7 +30,7 @@ docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp
     trap zero EXIT
     ros2 launch tracer_base tracer_base.launch.py port_name:=can_tracer odom_frame:=wheel_odom base_frame:=wheel_base_link >/tmp/base.log 2>&1 &
     sleep 3
-    python3 "$REPO/ops/base_state.py" --require-can || { echo "aborted before any command: no countdown, nothing was sent"; exit 1; }   # the node has asked for CAN mode by now
+    python3 "$REPO/src/bringup/socialtech_bringup/scripts/base_state.py" --require-can || { echo "aborted before any command: no countdown, nothing was sent"; exit 1; }   # the node has asked for CAN mode by now
     ros2 topic echo /odom --field twist.twist.linear.x </dev/null | while read -r v; do [ "$v" = "---" ] || echo "$(date +%T.%3N) base reports vx=$v"; done &
     for i in $(seq "$LIFT_SECS" -1 1); do echo "$(date +%T.%3N) LIFT NOW: $i"; sleep 1; done
     echo "$(date +%T.%3N) COMMAND vx=$SPEED for ${RUN_SECS}s"

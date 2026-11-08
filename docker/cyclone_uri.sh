@@ -20,6 +20,17 @@ cyclone_uri() {
   printf '<CycloneDDS><Domain>%s%s</Domain></CycloneDDS>' "$iface" "$(_rcvbuf_xml)"
 }
 
+# stack_cyclone_uri [IFACE [PEER [MAX_INDEX]]]: the URI of the live stack (run_live, nav_exec.sh, the simulation scripts). Loopback first: the stack's own traffic (driver -> FAST-LIO2, the
+# recorder) must not ride on the link to the laptop (pinned to the Wi-Fi interface alone it went as multicast there, and when the link dropped every local send failed: IMU lost 7-8 s, 29 Oct).
+# Then IFACE (skipped when it is lo or empty: the same interface twice is a Cyclone error) and a unicast PEER (the laptop, for rviz2) when given. lo has no multicast, so local discovery needs
+# the localhost peer. The caller passes the result through set_cyclone_uri, which adds the receive buffer.
+stack_cyclone_uri() {
+  local iface=${1:-} peer=${2:-} max=${3:-30} ifs peers
+  ifs='<NetworkInterface name="lo"/>'; [[ -z $iface || $iface == lo ]] || ifs+="<NetworkInterface name=\"$iface\"/>"
+  peers='<Peer address="localhost"/>'; [[ -z $peer ]] || peers="<Peer address=\"$peer\"/>$peers"
+  printf '<CycloneDDS><Domain><General><Interfaces>%s</Interfaces></General><Discovery><Peers>%s</Peers><MaxAutoParticipantIndex>%s</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>' "$ifs" "$peers" "$max"
+}
+
 # Exports the URI. A caller's CYCLONEDDS_URI replaces the whole configuration (interface included), but the buffer
 # request is the fix for silent scan loss, so it is prepended: Cyclone merges comma-separated fragments and the last
 # one wins on a conflict, so a caller that sets its own SocketReceiveBufferSize keeps it (and is left untouched).

@@ -6,7 +6,6 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import Path
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from map_frame import read_map_yaml, reference_map
 
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)

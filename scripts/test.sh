@@ -9,6 +9,6 @@ python3 -m pytest -q
 docker/run_cpp_tests.sh
 docker/test_cyclone_uri.sh
 docker/test_robot_stage.sh
-ops/test_flags.sh
-ops/test_fastlio_check.sh
+src/bringup/socialtech_bringup/test/test_flags.sh
+src/bringup/socialtech_bringup/test/test_fastlio_check.sh
 ops/test_image_revision.sh

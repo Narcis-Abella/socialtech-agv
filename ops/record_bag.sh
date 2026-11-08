@@ -32,7 +32,7 @@ free_gb=$(df --output=avail -BG "$BAG_DIR" | tail -1 | tr -dc 0-9)
 
 CFG=$(mktemp -d)
 trap 'rm -f "$CFG/MID360_config.json"; rmdir "$CFG" 2>/dev/null || true' EXIT   # the dir holds that one file: no recursive delete needed
-LIVOX_HOST_IP=$HOST_IP LIVOX_LIDAR_IP=$LIDAR_IP "$REPO/ops/livox_config.sh" >"$CFG/MID360_config.json"
+LIVOX_HOST_IP=$HOST_IP LIVOX_LIDAR_IP=$LIDAR_IP "$REPO/src/bringup/socialtech_bringup/scripts/livox_config.sh" >"$CFG/MID360_config.json"
 
 err_before=$(udp_rcvbuf_errors)
 echo "recording $BAG_DIR/$NAME ${DURATION:+for ${DURATION}s }(Ctrl-C to stop)"

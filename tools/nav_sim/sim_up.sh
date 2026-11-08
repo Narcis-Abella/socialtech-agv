@@ -11,8 +11,11 @@ src_overlay() {
   source "/tmp/${name}_install/setup.bash"
 }
 if [ -d /src ]; then   # socialtech_simreal / socialtech_livox_sim / socialtech_costmap / planar_odom newer than the image's
-  src_overlay ours socialtech_simreal socialtech_livox_sim socialtech_costmap planar_odom
+  src_overlay ours socialtech_simreal socialtech_livox_sim socialtech_costmap planar_odom socialtech_bringup
 fi
+# The robot's own run scripts and defaults (the image's, or the overlay of /src): flags (normalize_flags), the FAST-LIO2 parameter edits (fastlio_yaml), the launch files and config.
+BRINGUP=$(ros2 pkg prefix socialtech_bringup)/lib/socialtech_bringup; BRINGUP_SHARE=$(ros2 pkg prefix socialtech_bringup)/share/socialtech_bringup
+source "$BRINGUP/flags.sh"; source "$BRINGUP/fastlio_config.sh"
 if ! ros2 pkg prefix hospital-agv-sim > /dev/null 2>&1; then
   mkdir -p /tmp/ws/src && ln -sfn "${SIM_SRC:?hospital-agv-sim is not in the image: set SIM_SRC}" /tmp/ws/src/hospital-agv-sim
   (cd /tmp/ws && colcon build --merge-install --install-base /tmp/sim_install > "$out/build.log" 2>&1)
@@ -30,14 +33,6 @@ ros2 run socialtech_simreal sim_imu_model $SIM -p seed:=${SEED:-1} -p rate_hz:=2
 sleep "${SIM_WAIT:-30}"
 ros2 run socialtech_livox_sim livox_mid360_sim $SIM -p model_file:=/pat/ours.lvm -p sensor_xyz:="[0.0,0.0,$LIDAR_Z]" -p scene_file:=/pat/loyola.tris -p pose_topic:=/odom_gt_raw -p custom_topic:=/livox/lidar -p frame_id:=livox_frame -p seed:=${SEED:-1} -p jitter_std:=0.0005 > "$out/livox.log" 2>&1 &
 
-# FAST-LIO2 parameters: the robot's edits of the upstream mid360.yaml (ops/nav_live.sh: gyr_cov 0.01, acc_cov 1.0, blind 0.1, filter_size_map 0.25, point_filter_num 2) -> $1
-fastlio_yaml() {
-  sed -e "s|pcd_save_en:.*|pcd_save_en: false|" -e "s|map_en:.*|map_en: false|" -e "s|path_en:.*|path_en: false|" \
-      -e "s|^\( *\)gyr_cov:.*|\1gyr_cov: ${GYR_COV:-0.01}|" -e "s|^\( *\)acc_cov:.*|\1acc_cov: 1.0|" -e "s|^\( *\)blind:.*|\1blind: 0.1|" \
-      -e "s|^\( *\)filter_size_map:.*|\1filter_size_map: ${FILTER_SIZE_MAP:-0.25}|" -e "s|^\( *\)point_filter_num:.*|\1point_filter_num: ${POINT_FILTER_NUM:-2}|" \
-      "$(ros2 pkg prefix fast_lio)/share/fast_lio/config/mid360.yaml" > "$1"
-}
-
 # FAST-LIO2 + planar_odom + pointcloud_to_laserscan exactly as on the robot, on the simulated sensors; waits 8 s so FAST-LIO2 takes gravity from the still IMU
 lio_nodes() {
   fastlio_yaml "$out/fastlio.yaml"
@@ -51,7 +46,7 @@ lio_nodes() {
     scan_out=/scan_chain
     ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
   fi
-  ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node --ros-args --params-file /tools/nav_common/config/scan.yaml -p use_sim_time:=true -p target_frame:=lidar_level -p min_height:=$(python3 -c "print(0.10 - $LIDAR_Z)") -p max_height:=$(python3 -c "print(1.80 - $LIDAR_Z)") -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
+  ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node --ros-args --params-file $BRINGUP_SHARE/config/scan.yaml -p use_sim_time:=true -p target_frame:=lidar_level -p min_height:=$(python3 -c "print(0.10 - $LIDAR_Z)") -p max_height:=$(python3 -c "print(1.80 - $LIDAR_Z)") -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
   sleep 8
 }
 
@@ -63,8 +58,8 @@ chain_map() {
   CHAIN_MAP="$out/loyola_chain.yaml"
 }
 
-# The robot's own ops/nav_live.launch.py (driver off, sim time) with gn_loc and the supervisor over the simulator, 10 s to come up (sup_sim.sh, lat_sim.sh). PROD (normalised by the caller): viz:=false.
-# mounts: src/ at /src (optional), ops/ at /ops, GRELOC_BUILD (register_v2, libsmall_gicp.so, libcorr_search.so) at /greloc/build
+# The robot's own nav_live.launch.py (socialtech_bringup; driver off, sim time) with gn_loc and the supervisor over the simulator, 10 s to come up (sup_sim.sh, lat_sim.sh). PROD (normalised by the caller): viz:=false.
+# mounts: src/ at /src (optional), GRELOC_BUILD (register_v2, libsmall_gicp.so, libcorr_search.so) at /greloc/build
 stack_up() {
   if [ -d /src ]; then   # gn_loc newer than the image's (gn_loc/scan_fit, which the supervisor confirms with): overlay
     src_overlay loc gn_loc
@@ -74,7 +69,7 @@ stack_up() {
   mkdir -p "$out/runs"
   export SUPERVISOR=1 SUP_PRIOR="$out/prior.xyz"
   chain_map; map=$CHAIN_MAP
-  ros2 launch /ops/nav_live.launch.py livox_config:=/dev/null fastlio_params:="$out/fastlio.yaml" map:="$map" overrides:=/ops/live_overrides.yaml \
+  ros2 launch socialtech_bringup nav_live.launch.py livox_config:=/dev/null fastlio_params:="$out/fastlio.yaml" map:="$map" \
     sensor_height:=$SENSOR_H level_qx:=0.0 level_qy:=0.0 level_qz:=0.0 level_qw:=1.0 driver:=false sim_time:=true ${PROD:+viz:=false} > "$out/launch.log" 2>&1 &
   sleep 10
 }

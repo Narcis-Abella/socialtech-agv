@@ -17,7 +17,7 @@ Parameters: `ros2 param list /gn_loc` after `configure`; the defaults are declar
 ros2 launch gn_loc gn_loc.launch.py map:=MAP.yaml use_sim_time:=false
 ```
 
-Starts `map_server`, `gn_loc` and a lifecycle manager for both. The live stack starts it from `ops/nav_live.launch.py`.
+Starts `map_server`, `gn_loc` and a lifecycle manager for both. The live stack starts it from `socialtech_bringup/launch/nav_live.launch.py`.
 
 ## Build and tests
 

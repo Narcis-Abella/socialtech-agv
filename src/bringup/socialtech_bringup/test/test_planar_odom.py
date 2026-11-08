@@ -1,4 +1,8 @@
 """Checks planar_odom.footprint (numpy only, no ROS). Run: python3 test_planar_odom.py"""
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "scripts"))   # the module under test: run by path, not installed as a package
+
 import numpy as np
 
 import planar_odom as po

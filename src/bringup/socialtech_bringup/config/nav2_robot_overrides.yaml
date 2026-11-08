@@ -1,4 +1,4 @@
-# Over socialtech_nav's nav2_params.yaml (the simulated Tracer), for the real one: merged by ops/merge_params.py. Only what differs.
+# Over socialtech_nav's nav2_params.yaml (the simulated Tracer), for the real one: merged by socialtech_bringup/scripts/merge_params.py. Only what differs.
 # 2026-10-26 (Narcis): the real robot runs the stack tested in the sim, speeds included (0.6 m/s, smoother 0.7). The accelerations and rotation speed of that day (0.5 / -1.0 and
 # 1.5 rad/s^2) were replaced later: the velocity_smoother block below has the values in force (linear 0.3 / -1.0, angular 100 / -100 rad/s^2; see its comments and the
 # team ledger NEXT-41). Previous real-robot overrides, replaced by those:
@@ -13,7 +13,7 @@ docking_server:
 local_costmap:
   local_costmap:
     ros__parameters:
-      global_frame: odom_aligned   # odom with the axes of map, so that the walls stay straight rows of cells (ops/local_frame_aligner.py). Not map itself: a frozen localizer would not stop the controller
+      global_frame: odom_aligned   # odom with the axes of map, so that the walls stay straight rows of cells (socialtech_bringup/scripts/local_frame_aligner.py). Not map itself: a frozen localizer would not stop the controller
       footprint: "[[0.33, 0.27], [0.33, -0.27], [-0.33, -0.27], [-0.33, 0.27]]"   # 2026-10-26 (Narcis): half-width 0.29 -> 0.27 (inscribed radius = 0.27)
       obstacle_layer:
         # odom is not at floor level: planar_odom sets odom -> base_footprint z = FAST-LIO z - sensor_height, relative to where FAST-LIO started (measured -0.51 m and -1.24 m on two boots). /scan, in lidar_level, sits at

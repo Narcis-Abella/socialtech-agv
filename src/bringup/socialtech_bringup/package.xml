@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>socialtech_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch files, defaults and run scripts that bring the robot's localization and navigation stack up</description>
+  <maintainer email="narcis.abellallos@gmail.com">Narcis-Abella</maintainer>
+  <license>GPL-2.0-only</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>fast_lio</exec_depend>
+  <exec_depend>planar_odom</exec_depend>
+  <exec_depend>level_corrector</exec_depend>
+  <exec_depend>gn_loc</exec_depend>
+  <exec_depend>tracer_base</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>pointcloud_to_laserscan</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

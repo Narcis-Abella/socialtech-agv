@@ -1,5 +1,5 @@
 """The 2D occupancy map the full-chain simulation localizes on, from the same triangle soup the simulated Mid-360 sees (world_to_tris.py): obstacle = surface in the band the robot's /scan
-uses (0.10 .. 1.80 m over the floor, tools/nav_common/config/scan.yaml), free = what can be reached from the seeds without crossing an obstacle, the rest unknown (what make_map.sh gives the real
+uses (0.10 .. 1.80 m over the floor, socialtech_bringup/config/scan.yaml), free = what can be reached from the seeds without crossing an obstacle, the rest unknown (what make_map.sh gives the real
 robot). The old loyola.pgm was surveyed with the simulator's 2D lidar: 0.1-0.3 m away from what the Mid-360 chain sees, which GN follows (constant offset against the truth).
 usage: tris_to_map.py WORLD.tris OUT_PREFIX x,y [x,y ...]      writes OUT_PREFIX.pgm and OUT_PREFIX.yaml; the seeds are floor points inside the building (the spawn)."""
 import sys

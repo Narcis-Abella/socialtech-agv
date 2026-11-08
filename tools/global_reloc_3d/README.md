@@ -2,7 +2,7 @@
 
 Global relocalization of the robot in the 3D prior of its map, and the supervisor that decides when to call it. Everything here runs on the robot (or is a test of it, or builds the prior). The previous pipeline of the AMCL era (boot-time node, permit/gate chain, evaluation campaigns) was removed on 2026-11-08; it is in the git history before that commit.
 
-`gn_supervisor_node.py` (started by `ops/nav_live.launch.py` with `SUPERVISOR=1`) watches `gn_loc`; when gn_loc is lost, starved of scans, silent or drifting it holds Nav2, restarts FAST-LIO2, relocalizes and gives gn_loc a new `/initialpose`. The import closure of the node and of its search worker is exactly these modules (`test_runtime_closure.py` keeps it that way):
+`gn_supervisor_node.py` (started by `socialtech_bringup/launch/nav_live.launch.py` with `SUPERVISOR=1`) watches `gn_loc`; when gn_loc is lost, starved of scans, silent or drifting it holds Nav2, restarts FAST-LIO2, relocalizes and gives gn_loc a new `/initialpose`. The import closure of the node and of its search worker is exactly these modules (`test_runtime_closure.py` keeps it that way):
 
 | module | role |
 |---|---|

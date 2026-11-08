@@ -1,4 +1,8 @@
-"""Checks of base_state.verdict (no CAN needed): python3 ops/test_base_state.py"""
+"""Checks of base_state.verdict (no CAN needed): python3 src/bringup/socialtech_bringup/test/test_base_state.py"""
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "scripts"))   # the module under test: run by path, not installed as a package
+
 from base_state import verdict
 
 NORMAL_CAN = (0, 1, 27.3, 0)

@@ -1,5 +1,9 @@
 """Checks the C++ planar_odom node (src/localization/planar_odom) against planar_odom.footprint, the Python reference. Needs ROS 2 and the built package
 (run inside the robot image: python3 test_planar_odom_node.py); skips without rclpy. Run the unit tests of the reference with test_planar_odom.py."""
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "scripts"))   # the module under test: run by path, not installed as a package
+
 import subprocess
 import sys
 import time

@@ -1,5 +1,5 @@
 # Base Nav2 parameters of the SocialTech Tracer, inside the image (socialtech_nav). Origin: nav2_bringup/params/nav2_params.yaml of Jazzy 1.3.13, with RPP instead of MPPI and Smac2D instead of Navfn.
-# Nothing uses this file alone: ops/nav2_robot_overrides.yaml is merged over it (ops/merge_params.py: nav_live.sh, tools/nav_sim/nav_full_sim.sh). The split is deliberate: the overrides are bind-mounted
+# Nothing uses this file alone: socialtech_bringup/config/nav2_robot_overrides.yaml is merged over it (socialtech_bringup/scripts/merge_params.py: nav_live.sh, tools/nav_sim/nav_full_sim.sh). The split is deliberate: the overrides are bind-mounted
 # from the checkout, so tuning the robot needs no image rebuild. The values in force are the merged ones, and the dated reasons for each change are in the overrides. What they always replace (footprint,
 # local frame, smoother accelerations, RPP lookahead/rotation/acceleration, goal checkers, default_server_timeout, collision-monitor zones) keeps its first value here only as a default.
 # Costmaps: local = ObstacleLayer on /scan (rolling window) + inflation 0.70 m; global = DecayObstacleLayer (socialtech_costmap) on /cloud_registered_body, marking cut at 0.10 m, cells expire after 60 s,
@@ -39,7 +39,7 @@ controller_server:
     progress_checker: {plugin: 'nav2_controller::SimpleProgressChecker', required_movement_radius: 0.5, movement_time_allowance: 20.0}
     general_goal_checker: {stateful: true, plugin: 'nav2_controller::SimpleGoalChecker', xy_goal_tolerance: 0.15, yaw_goal_tolerance: 0.25}
     # max_angular_accel: rotateToHeading clamps the command to (measured w +- max_angular_accel * dt) (controller_server passes the /odom twist). The real Tracer reports ~73 % of a low angular command, so the command
-    # stalls at a * dt / (1 - 0.73): 1.0 rad/s^2 at 20 Hz gave 0.18 rad/s (122 deg in 13 s on the robot, 2026-10-07). Reaching rotate_to_heading_angular_vel needs a >= 0.9 * 0.27 / 0.05 = 4.9; the robot now runs 2.0 (ops/nav2_robot_overrides.yaml).
+    # stalls at a * dt / (1 - 0.73): 1.0 rad/s^2 at 20 Hz gave 0.18 rad/s (122 deg in 13 s on the robot, 2026-10-07). Reaching rotate_to_heading_angular_vel needs a >= 0.9 * 0.27 / 0.05 = 4.9; the robot now runs 2.0 (socialtech_bringup/config/nav2_robot_overrides.yaml).
     # The real ramp is still limited by velocity_smoother max_accel. The simulated base follows the command exactly, so the sim does not show this stall.
     FollowPath: {plugin: 'nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController', desired_linear_vel: 0.6, lookahead_dist: 0.6,
       min_lookahead_dist: 0.3, max_lookahead_dist: 0.9, use_velocity_scaled_lookahead_dist: true, use_regulated_linear_velocity_scaling: true,
@@ -83,7 +83,7 @@ global_costmap:
         observation_expiry: 60.0   # what the lidar cannot see any more is remembered for 60 s, then freed (Narcis, 2026-11-04)
         enabled: true
         observation_sources: cloud
-        min_obstacle_height: 0.10   # marking cut: the floor cut of tools/nav_common/config/scan.yaml
+        min_obstacle_height: 0.10   # marking cut: the floor cut of socialtech_bringup/config/scan.yaml
         max_obstacle_height: 1.8
         cloud: {topic: /cloud_registered_body, data_type: PointCloud2, sensor_frame: lidar_level, min_obstacle_height: -0.5, max_obstacle_height: 1.8, clearing: true, marking: true,   # -0.5: the floor stays in the source, the rays that end on it free low objects
           raytrace_max_range: 10.0, raytrace_min_range: 0.0, obstacle_max_range: 10.0, obstacle_min_range: 0.0}
