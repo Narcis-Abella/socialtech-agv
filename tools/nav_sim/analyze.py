@@ -1,5 +1,5 @@
 """Metrics, summary table and paired comparison of recorded trials (offline: numpy, scipy).
-usage: analyze.py summarize <run dir> [--map map.yaml] [--csv out.csv] [--first N] [--exclude p19,p20]
+usage: analyze.py summarize <run dir> [--map map.yaml (default: <run dir>/loyola_chain.yaml)] [--csv out.csv] [--first N] [--exclude p19,p20]
        analyze.py compare <base run dir> <candidate run dir> [--map map.yaml] [--first N] [--exclude ids]
 <run dir> holds trial_*.json (trials.py). `reached` = Nav2 says succeeded AND the ground-truth pose is within --tol (0.25 m) of the goal. Clearance and collisions use the footprint against the
 occupied cells of the map (unknown cells are not obstacles). Times, SPL and smoothness are compared only on pairs both runs reached."""
@@ -15,8 +15,9 @@ import metrics as m
 import scenarios as sc
 import stats
 
-DEFAULT_MAP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps", "loyola_gt.yaml")      # registered to the simulated world
-FOOTPRINT = (0.70, 0.58)
+OLD_2D_MAP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps", "loyola_gt.yaml")      # built from the removed 2D simulation's lidar: its walls are not the ones the Mid-360 chain sees
+CHAIN_MAP = "loyola_chain.yaml"       # written by sim_up.sh into every run folder: the map the chain localized on, from the same triangles the simulated Mid-360 sees
+FOOTPRINT = (0.66, 0.54)              # the Nav2 footprint of ops/nav2_robot_overrides.yaml (2026-10-26)
 STOP_TOL = 0.5                        # a via pose counts as visited within this distance (NavigateThroughPoses does not stop on it)
 HZ = 50.0                              # sampling rate of trials.py rows
 COMPARED = ["duration", "path_len", "spl", "final_err_xy", "recoveries", "jerk_lin_rms", "jerk_lin_p95", "acc_lin_p95", "jerk_ang_rms", "acc_ang_p95", "vx_reversals",
@@ -30,9 +31,18 @@ def load_trials(run_dir):
     return recs
 
 
-def context(map_yaml=DEFAULT_MAP, tol=0.25, footprint=FOOTPRINT):
+def context(map_yaml, tol=0.25, footprint=FOOTPRINT):
     mp = sc.load_map(map_yaml)
     return {"dist": m.distance_to_occupied(mp["occ"], mp["res"]), "origin": mp["origin"], "res": mp["res"], "footprint": footprint, "tol": tol}
+
+
+def default_map(run_dir):
+    """The map of the run (<run dir>/loyola_chain.yaml); else the old 2D-sim map with a notice: clearance on it reads up to 45 cm (p95) more than on the chain's map."""
+    own = os.path.join(run_dir, CHAIN_MAP)
+    if os.path.exists(own):
+        return own
+    print(f"analyze: {own} not found: clearance uses {OLD_2D_MAP}, which differs from what the chain sees (not comparable with runs scored on {CHAIN_MAP}); pass --map to choose", file=sys.stderr)
+    return OLD_2D_MAP
 
 
 def wrap(a):
@@ -173,7 +183,7 @@ def select(rows, first):
 
 
 def parse(argv):
-    opts = {"--map": DEFAULT_MAP, "--csv": None, "--tol": "0.25", "--first": None, "--exclude": None}
+    opts = {"--map": None, "--csv": None, "--tol": "0.25", "--first": None, "--exclude": None}
     pos = []
     i = 0
     while i < len(argv):
@@ -188,7 +198,7 @@ def parse(argv):
 
 def main(argv):
     pos, opts = parse(argv)
-    ctx = context(opts["--map"], float(opts["--tol"]))
+    ctx = context(opts["--map"] or default_map(pos[1]), float(opts["--tol"]))
     first = int(opts["--first"]) if opts["--first"] else None
     excl = opts["--exclude"].split(",") if opts["--exclude"] else None
     if pos[0] == "summarize":

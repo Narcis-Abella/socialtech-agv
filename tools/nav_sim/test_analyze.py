@@ -203,3 +203,12 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("ok")
+
+
+def test_a_run_is_scored_on_its_own_chain_map_and_the_old_map_only_with_a_notice(tmp_path, capsys):
+    assert a.default_map(str(tmp_path)) == a.OLD_2D_MAP
+    assert "not comparable" in capsys.readouterr().err
+    (tmp_path / a.CHAIN_MAP).write_text("image: x.pgm\n")
+    assert a.default_map(str(tmp_path)) == str(tmp_path / a.CHAIN_MAP)
+    assert capsys.readouterr().err == ""
+    assert a.FOOTPRINT == (0.66, 0.54)       # ops/nav2_robot_overrides.yaml

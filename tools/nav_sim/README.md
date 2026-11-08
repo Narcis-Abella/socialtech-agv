@@ -17,7 +17,7 @@ Simulated Mid-360 (`socialtech_livox_sim`, non-repetitive) + ICM-40609 IMU 200 H
 - Needs on the board: `~/livox_pat/{ours.lvm,loyola.tris}` (the unit's pattern model and the world's triangles, `../sim_realism/world_to_tris.py`) and `~/greloc/build/{register_v2,libsmall_gicp.so,libcorr_search.so}` for the supervisor.
 
 ## Nav2 scenarios
-`nav_full_sim.sh auto:N` (or a `scenarios.py` json made by `make_scenario.py` / `make_mission.py`) runs start/goal pairs against Nav2; `trials.py` records raw series, `analyze.py` / `stats.py` / `metrics.py` summarise and compare paired runs. `NAV2_OVERLAY=<file in tools/nav_sim/params/>` merges one extra parameter file over the robot's (no overlay is kept; write one for an experiment and delete it after).
+`nav_full_sim.sh auto:N` (or a `scenarios.py` json made by `make_scenario.py` / `make_mission.py`) runs start/goal pairs against Nav2; `trials.py` records raw series, `analyze.py` / `stats.py` / `metrics.py` summarise and compare paired runs. Clearance and collisions are scored on the run's own `loyola_chain.yaml` (the map the chain localized on) with the Nav2 footprint 0.66 x 0.54; results scored before 2026-11-08 used the old 2D-sim map and a 0.70 x 0.58 body, so their clearance reads higher (p95 +45 cm on free cells near obstacles) and is not comparable. `NAV2_OVERLAY=<file in tools/nav_sim/params/>` merges one extra parameter file over the robot's (no overlay is kept; write one for an experiment and delete it after).
 
 ## Tests
 with the laptop's ROS sourced: `python3 -m pytest tools/nav_sim --ignore=tools/nav_sim/test_trials.py` (95 pass); `test_trials.py` needs `nav2_msgs`, so run it in the `sim` image.
