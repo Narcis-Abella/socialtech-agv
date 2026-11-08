@@ -69,5 +69,11 @@ for script in "$repo"/ops/nav_live.sh "$repo"/src/bringup/socialtech_bringup/scr
   # every export of the URI is followed (comments and blank lines aside; consecutive exports count as one) by set_cyclone_uri before any other statement
   awk -v f="$script" '/^[[:space:]]*#/ || /^[[:space:]]*$/ {next} /export.*CYCLONEDDS_URI=/ {pending = 1; next} /^[[:space:]]*set_cyclone_uri/ {pending = 0; next} pending {print f ": an export of CYCLONEDDS_URI is followed by: " $0; bad = 1; pending = 0} END {if (pending) bad = 1; exit bad}' "$script" || fail "$script replaces the URI without asking for the receive buffer again"
 done
+# stack_cyclone_uri: lo first, DDS_IFACE and the unicast peer when given, localhost always, the interface once
+u=$(stack_cyclone_uri lo); [[ $u == '<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces></General><Discovery><Peers><Peer address="localhost"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>' ]] || fail "loopback-only URI: $u"
+[[ $(stack_cyclone_uri "" "") == "$u" ]] || fail "no interface and no peer must be loopback only"
+u=$(stack_cyclone_uri wlan0 192.168.1.53); [[ $u == *'<NetworkInterface name="lo"/><NetworkInterface name="wlan0"/>'* && $u == *'<Peer address="192.168.1.53"/><Peer address="localhost"/>'* ]] || fail "interface and peer: $u"
+[[ $(stack_cyclone_uri lo 10.0.0.2) == *'<Peer address="10.0.0.2"/><Peer address="localhost"/>'* && $(stack_cyclone_uri lo 10.0.0.2) != *'name="lo"/><NetworkInterface name="lo"'* ]] || fail "lo twice or peer lost"
+[[ $(stack_cyclone_uri lo "" 40) == *'<MaxAutoParticipantIndex>40<'* ]] || fail "the participant index must be settable"
 unset CYCLONEDDS_URI
 echo ok

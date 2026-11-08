@@ -15,12 +15,7 @@ if [[ -n ${LEVEL_CORRECTOR:-} ]]; then
   ros2 run level_corrector level_corrector_node --ros-args -p map_dir:=/map -p check_only:=true >/tmp/lc_check.log 2>&1 || { echo "FAIL: level_corrector cannot load /map (map.ply: binary little-endian, float x y z only; map.yaml: the four T_map_world rows): $(tail -2 /tmp/lc_check.log | tr '\n' ' ') -- or LEVEL_CORRECTOR=0" >&2; exit 1; }
 fi
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-53}
-# lo first: the stack's own traffic (driver -> FAST-LIO, recorder) must not ride on the link to the laptop. Pinned to DDS_IFACE alone,
-# it went as multicast on that interface, and when the USB/Wi-Fi link dropped every local send failed (IMU lost 7-8 s, 29 Oct).
-# lo disables multicast, so local discovery needs the localhost peer. Same interface twice is a Cyclone error: skip DDS_IFACE=lo. No PEER (a robot with no laptop on the network): only localhost.
-ifs="<NetworkInterface name=\"lo\"/>"; [[ -z ${DDS_IFACE:-} || $DDS_IFACE == lo ]] || ifs+="<NetworkInterface name=\"$DDS_IFACE\"/>"
-peers="<Peer address=\"localhost\"/>"; [[ -z ${PEER:-} ]] || peers="<Peer address=\"$PEER\"/>$peers"
-export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces>$ifs</Interfaces></General><Discovery><Peers>$peers</Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>"
+export CYCLONEDDS_URI=$(stack_cyclone_uri "${DDS_IFACE:-}" "${PEER:-}")   # lo, DDS_IFACE and the laptop (PEER) if there is one: docker/cyclone_uri.sh
 set_cyclone_uri   # this export replaced the URI of ros_env.sh: ask again for the 10 MB receive buffer (docker/cyclone_uri.sh)
 h=$(python3 -c "import json; print(json.load(open('/map/report.json'))['sensor_height_m'])")
 read -r qx qy qz qw < <(python3 "$HERE/map_frame.py" level --ref /map/vs/run/alidarState.txt --map /map/map.yaml)
