@@ -9,6 +9,7 @@ export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-57}
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces></General><Discovery><Peers><Peer address="localhost"/></Peers><MaxAutoParticipantIndex>40</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
 # LIVE_PEER=<laptop IP>: DDS on the board's wifi towards the laptop, so rviz2 there (PEER=<board IP>, ROS_DOMAIN_ID as here) sees the run
 [ -z "$LIVE_PEER" ] || export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"${LIVE_IFACE:-wlP1p1s0}\"/></Interfaces></General><Discovery><Peers><Peer address=\"$LIVE_PEER\"/></Peers><MaxAutoParticipantIndex>40</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>"
+set_cyclone_uri   # this export replaced the URI of ros_env.sh: ask again for the 10 MB receive buffer (docker/cyclone_uri.sh)
 # scenario `auto[:N]`: N start/goal pairs sampled on the chain's own map
 if [[ $scenario == auto* ]]; then
   mkdir -p "$out"; n=${scenario#auto}; n=${n#:}

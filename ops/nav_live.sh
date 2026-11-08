@@ -39,6 +39,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   # lo disables multicast, so local discovery needs the localhost peer. Same interface twice is a Cyclone error: skip DDS_IFACE=lo.
   ifs="<NetworkInterface name=\"lo\"/>"; [[ $DDS_IFACE == lo ]] || ifs+="<NetworkInterface name=\"$DDS_IFACE\"/>"
   export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces>$ifs</Interfaces></General><Discovery><Peers><Peer address=\"$PEER\"/><Peer address=\"localhost\"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>"
+  set_cyclone_uri   # this export replaced the URI of ros_env.sh: ask again for the 10 MB receive buffer (docker/cyclone_uri.sh)
   h=$(python3 -c "import json; print(json.load(open('/map/report.json'))['sensor_height_m'])")
   read -r qx qy qz qw < <(python3 "$NB/map_frame.py" level --ref /map/vs/run/alidarState.txt --map /map/map.yaml)
   "$REPO/ops/livox_config.sh" >/tmp/MID360_config.json

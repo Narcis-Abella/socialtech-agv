@@ -8,6 +8,7 @@ out=${1:?out dir}; secs=${2:-60}
 source "${ROS_ENV:-/ros_env.sh}"
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-55}
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces></General><Discovery><Peers><Peer address="localhost"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+set_cyclone_uri   # this export replaced the URI of ros_env.sh: ask again for the 10 MB receive buffer (docker/cyclone_uri.sh)
 source /tools/nav_sim/sim_up.sh
 sleep 20
 timeout 15 ros2 topic hz /clock --window 100 2>&1 | tail -3 | tee "$out/clock_hz.txt" || true

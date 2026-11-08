@@ -8,6 +8,7 @@ out=${1:?out dir}; cover_s=${2:-20}; settle_s=${SETTLE:-10}; shift 2 || true
 source "${ROS_ENV:-/ros_env.sh}"
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-55}
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces></General><Discovery><Peers><Peer address="localhost"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+set_cyclone_uri   # this export replaced the URI of ros_env.sh: ask again for the 10 MB receive buffer (docker/cyclone_uri.sh)
 source /ops/flags.sh; normalize_flags PROD PROCMON   # =0 means off, as in ops/nav_live.sh
 source /tools/nav_sim/sim_up.sh
 stack_up
