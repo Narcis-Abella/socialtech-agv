@@ -16,9 +16,9 @@ if [[ $scenario == auto* ]]; then
   (cd /tools/nav_sim && python3 make_scenario.py "$out/loyola_chain.yaml" "$out/scenario.json" "${n:-6}" 20261102 "${CLEARANCE:-0.6}")   # 0.6 m: the footprint's corners are at 0.43 m, so a start 0.45 m from a wall cannot turn in place
   scenario=$out/scenario.json
 fi
-# FAST-LIO2 does not survive a teleport: the robot is spawned at the first start of the scenario and the trials chain from where the previous one ended (trials.py CHAIN=1)
+# FAST-LIO2 does not survive a teleport: the robot is spawned at the first start of the scenario and the trials chain from where the previous one ended (trials.py chains every trial after the first)
 SPAWN=$(python3 -c "import json,sys; print(*json.load(open(sys.argv[1]))['trials'][0]['start'])" "$scenario")   # assigned first: export would hide a failing python
-export SPAWN CHAIN=${CHAIN:-1}
+export SPAWN
 source /tools/nav_sim/sim_up.sh
 if [ -d /locsrc ]; then
   mkdir -p /tmp/locws && (cd /tmp/locws && colcon build --base-paths /locsrc --packages-select gn_loc --merge-install --install-base /tmp/loc_install > "$out/build_loc.log" 2>&1)

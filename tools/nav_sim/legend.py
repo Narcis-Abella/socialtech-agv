@@ -3,4 +3,4 @@
 
 def legend_lines(legend, trial_id, k, n, wake=None):
     parts = [p.strip() for p in (legend or "").split(" | ") if p.strip()] or ["(no legend set)"]
-    return parts + [f"trial {trial_id}  ({k}/{n})"] + ([] if wake is None else [f"estela en el costmap global: {wake} celdas"])
+    return parts + [f"trial {trial_id}  ({k}/{n})"] + ([] if wake is None else [f"wake in the global costmap: {wake} cells"])

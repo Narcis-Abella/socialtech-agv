@@ -1,4 +1,4 @@
-"""Live view helper (runs on the board next to the bench): publishes the Voxel-SLAM reference as a latched nav_msgs/Path on /ref_path and gn_loc's trail as /gn_path.
+"""Live view helper (runs on the board next to the stack): publishes the Voxel-SLAM reference as a latched nav_msgs/Path on /ref_path and gn_loc's trail as /gn_path.
 usage: live_paths.py <alidarState.txt | -> <map.yaml> --ros-args -p use_sim_time:=true"""
 import math, os, sys
 import rclpy

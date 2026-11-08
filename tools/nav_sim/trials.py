@@ -1,14 +1,13 @@
 """Runs the trials of a scenario file against Nav2 in the simulation and records raw series for offline analysis (metrics.py).
 usage (inside the sim image, with the simulation and Nav2 running): trials.py <scenario.json> <out dir> [reps] --ros-args -p use_sim_time:=true
-Each trial: put the robot at `start` (Gazebo set_pose), reset the localizer and the costmaps, wait until the estimate is within 0.3 m of the ground truth, send the goal, record until the result.
-env: CHAIN (unset): 1 = only the first trial resets the robot and the localizer, the next ones start where the previous ended (long-horizon localisation drift); INIT_SIGMA_XY (0.1 m), INIT_SIGMA_YAW (0.1 rad) of the /initialpose covariance; INIT_OFFSET_M / INIT_OFFSET_DEG (0, 0): the pose given to the localizer is the true start moved by that much (direction turns 60 deg per trial, yaw sign alternates) to test convergence; SETTLE_TIMEOUT (15 s) how long to wait for the estimate to be within 0.3 m before sending the goal; TRIAL_TIMEOUT (240 s of simulation time); ROBOT_NAME (tracer_robot); WORLD (loyola)."""
+Each trial: the first one puts the robot at `start` (Gazebo set_pose), resets the localizer and the costmaps and waits until the estimate is within 0.3 m of the ground truth; the next ones start where the previous ended (FAST-LIO2 does not survive a teleport). Then it sends the goal and records until the result.
+env: SETTLE_TIMEOUT (15 s) how long the first trial waits for the estimate to be within 0.3 m before sending the goal; CLEAR_SETTLE (2 s) after clearing the costmaps; TRIAL_TIMEOUT (240 s of simulation time); DWELL (<s>: visit the stops of a mission one NavigateToPose at a time and wait <s> at each); TAIL_S (keep watching the global costmap that many seconds after a trial); REC_GCM (record every global costmap publication, see gcm_codec.py); LEGEND (text of the rviz legend); ROBOT_NAME (tracer_robot); WORLD (loyola)."""
 import json
 import math
 import os
 import subprocess
 import sys
 
-import numpy as np
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
@@ -22,11 +21,9 @@ from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker
 
-import dyn
 import gcm_codec
 import ghost
 import legend
-from initpose import init_offset
 
 HZ = 50.0
 
@@ -53,8 +50,6 @@ class Runner:
         self.gt = None
         self.cmd = {"cmd_vel_nav": (0.0, 0.0), "cmd_vel_smoothed": (0.0, 0.0), "cmd_vel": (0.0, 0.0)}
         self.recording, self.rows, self.plans, self.k = False, [], [], 0
-        self.mover = None   # dyn.Mover, created by the first trial that has moving obstacles
-        self.plan_log = []   # per plan: [t, poses, distance est->plan, distance gt->plan, distance est->first pose, plan stamp]
         node.create_subscription(PoseStamped, "/gt/pose", self.on_gt, 10)
         for name in self.cmd:
             node.create_subscription(Twist, "/" + name, lambda m, k=name: self.cmd.__setitem__(k, (m.linear.x, m.angular.z)), 10)
@@ -63,7 +58,7 @@ class Runner:
         node.create_subscription(Odometry, "/odom", self.on_odom, 10)
         self.init_pub = node.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
         self.clear = [node.create_client(ClearEntireCostmap, s) for s in ("/local_costmap/clear_entirely_local_costmap", "/global_costmap/clear_entirely_global_costmap")]
-        self.static_map, self.gcm, self.ghost = None, None, [None, None]
+        self.static_map, self.gcm = None, None
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
         node.create_subscription(OccupancyGrid, "/map", lambda m: setattr(self, "static_map", m), latched)
         node.create_subscription(OccupancyGrid, "/global_costmap/costmap", self.on_gcm, 1)
@@ -88,12 +83,7 @@ class Runner:
 
     def on_plan(self, m):
         if self.recording:
-            xy = path_xy(m)
-            self.plans.append((self.now(), xy))
-            est, gt = self.estimate(), self.gt
-            near = lambda p: min(math.hypot(x - p[0], y - p[1]) for x, y in xy) if p and xy else math.nan
-            self.plan_log.append([round(self.now(), 3), len(xy), round(near(est), 3), round(near(gt), 3),
-                                  round(math.hypot(xy[0][0] - est[0], xy[0][1] - est[1]), 3) if est and xy else math.nan, round(m.header.stamp.sec + m.header.stamp.nanosec * 1e-9, 3)])
+            self.plans.append((self.now(), path_xy(m)))
 
     def estimate(self):
         try:
@@ -115,20 +105,11 @@ class Runner:
             self.cm_log.append([round(self.now(), 2), int(m.action_type), m.polygon_name])
         self.cm_last = key
 
-    def walker_xy(self):
-        """Current ground-truth position of every moving obstacle (last command sent to the simulator)."""
-        if self.mover is None:
-            return []
-        last = {}
-        for e in reversed(self.mover.log[-400:]):
-            last.setdefault(e[1], (e[2], e[3]))
-        return list(last.values())
-
     def on_gcm(self, m):
         self.gcm = m
         a = self.static_map
         if (self.recording or self.tail_watch) and a is not None and (a.info.width, a.info.height) == (m.info.width, m.info.height):
-            n = ghost.wake_cells(m.data, a.data, m.info.width, m.info.height, (m.info.origin.position.x, m.info.origin.position.y), m.info.resolution, self.walker_xy())
+            n = ghost.wake_cells(m.data, a.data, m.info.width, m.info.height, (m.info.origin.position.x, m.info.origin.position.y), m.info.resolution, [])
             self.ghost_series.append([round(self.now(), 2), n])
             if os.environ.get("REC_GCM"):
                 self.gcm_meta = {"width": m.info.width, "height": m.info.height, "res": m.info.resolution, "origin": [m.info.origin.position.x, m.info.origin.position.y]}
@@ -152,20 +133,12 @@ class Runner:
         k.text = "\n".join(legend.legend_lines(os.environ.get("LEGEND"), trial_id, self.k, self.total, self.last_wake))
         self.legend_pub.publish(k)
 
-    def ghost_cells(self):
-        """Lethal cells (254) of the global costmap that are free in the static map: obstacles the lidar marked at the wrong place or that nobody cleared. With the moving obstacles parked away,
-        anything above a few cells is contamination from the previous trial or from the localizer offset. None before both grids have arrived or when their sizes differ."""
-        a, b = self.static_map, self.gcm
-        if a is None or b is None or (a.info.width, a.info.height) != (b.info.width, b.info.height):
-            return None
-        return int(np.count_nonzero((np.asarray(b.data, np.int16) == 254) & (np.asarray(a.data, np.int16) == 0)))
-
     def spin_for(self, seconds):
         end = self.now() + seconds
         while self.now() < end:
             rclpy.spin_once(self.n, timeout_sec=0.02)
 
-    def reset(self, start, offset=(0.0, 0.0, 0.0)):
+    def reset(self, start):
         x, y, yaw = start
         z, w = yaw_to_quat(yaw)
         req = f'name: "{os.environ.get("ROBOT_NAME", "tracer_robot")}" position {{x: {x} y: {y} z: 0.15}} orientation {{z: {z} w: {w}}}'
@@ -174,11 +147,10 @@ class Runner:
         self.spin_for(2.0)
         m = PoseWithCovarianceStamped()
         m.header.frame_id, m.header.stamp = "map", self.n.get_clock().now().to_msg()
-        m.pose.pose.position.x, m.pose.pose.position.y = x + offset[0], y + offset[1]
-        m.pose.pose.orientation.z, m.pose.pose.orientation.w = yaw_to_quat(yaw + offset[2])
-        sxy, syaw = float(os.environ.get("INIT_SIGMA_XY", 0.1)), float(os.environ.get("INIT_SIGMA_YAW", 0.1))
-        m.pose.covariance[0] = m.pose.covariance[7] = sxy ** 2
-        m.pose.covariance[35] = syaw ** 2
+        m.pose.pose.position.x, m.pose.pose.position.y = x, y
+        m.pose.pose.orientation.z, m.pose.pose.orientation.w = yaw_to_quat(yaw)
+        m.pose.covariance[0] = m.pose.covariance[7] = 0.1 ** 2      # sigma 0.1 m / 0.1 rad: the click of a person in rviz
+        m.pose.covariance[35] = 0.1 ** 2
         self.init_pub.publish(m)
         self.spin_for(1.0)
         for c in self.clear:
@@ -198,28 +170,19 @@ class Runner:
                     good_since = None
         # Clear again once the localizer has converged: the clear above ran while the estimate was still offset by up to the initial sigma, and the scans that kept arriving were marked at the wrong
         # place (a ghost wall in the global costmap). The global costmap repaints at its publish rate, so let it do so before the goal is sent.
-        before = self.ghost_cells()
         for c in self.clear:
             if c.wait_for_service(timeout_sec=2.0):
                 rclpy.spin_until_future_complete(self.n, c.call_async(ClearEntireCostmap.Request()), timeout_sec=3.0)
         self.spin_for(float(os.environ.get("CLEAR_SETTLE", 2.0)))
-        self.ghost = [before, self.ghost_cells()]
         return err
 
     def run_trial(self, trial, tag):
-        offset = init_offset(self.k, float(os.environ.get("INIT_OFFSET_M", 0)), float(os.environ.get("INIT_OFFSET_DEG", 0)))
-        chained = bool(os.environ.get("CHAIN")) and self.k > 0   # CHAIN=1: no teleport and no localizer reset after the first trial; the robot continues from where it is
+        chained = self.k > 0     # no teleport and no localizer reset after the first trial; the robot continues from where it is
         self.k += 1
         self.publish_legend(trial["id"])
         est = self.estimate()
-        init_err = (math.hypot(est[0] - self.gt[0], est[1] - self.gt[1]) if est else math.nan) if chained else self.reset(trial["start"], offset)
+        init_err = (math.hypot(est[0] - self.gt[0], est[1] - self.gt[1]) if est else math.nan) if chained else self.reset(trial["start"])
         self.publish_legend(trial["id"])      # again: the first call can come before the map has arrived
-        walkers = trial.get("dyn", [])
-        if walkers:
-            self.mover = self.mover or dyn.Mover(os.environ.get("WORLD", "loyola"), self.now)
-            self.mover.park(walkers)
-            self.mover.log.clear()
-        waiting = list(walkers)
         def stamped(g):
             p = PoseStamped()
             p.header.frame_id, p.header.stamp = "map", self.n.get_clock().now().to_msg()
@@ -230,7 +193,7 @@ class Runner:
         dwell = float(os.environ.get("DWELL", -1))      # DWELL=<s>: visit the stops of a mission one NavigateToPose at a time and wait <s> at each (NavigateThroughPoses only passes near them)
         chain = bool(via) and dwell >= 0
         feedback, stops, status, code, msg, recoveries = [], [], "rejected", -1, "", 0
-        self.rows, self.plans, self.plan_log, self.recording = [], [], [], True
+        self.rows, self.plans, self.recording = [], [], True
         self.ghost_series, self.gcm_frames, self.cm_log = [], [], []
         t0 = self.now()
         limit = float(os.environ.get("TRIAL_TIMEOUT", 240))
@@ -252,9 +215,6 @@ class Runner:
                 result = handle.get_result_async()
                 while not result.done() and self.now() - t0 < limit:
                     rclpy.spin_once(self.n, timeout_sec=0.02)
-                    for d in [d for d in waiting if dyn.triggered(self.gt, d["trigger"])]:
-                        waiting.remove(d)
-                        self.mover.start(d)
                 if result.done():
                     r = result.result()
                     status = {GoalStatus.STATUS_SUCCEEDED: "succeeded", GoalStatus.STATUS_ABORTED: "aborted", GoalStatus.STATUS_CANCELED: "canceled"}.get(r.status, str(r.status))
@@ -277,18 +237,12 @@ class Runner:
             self.tail_watch = True
             self.spin_for(tail)
             self.tail_watch = False
-        dyn_log = list(self.mover.log) if walkers else []
-        if walkers:
-            self.mover.park(walkers)
         self.spin_for(1.0)
-        rec = {"dyn": walkers, "dyn_log": dyn_log, "dyn_unstarted": [d["model"] for d in waiting],
-"id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "via": via or [], "shortest": trial.get("shortest"), "init_err": init_err, "init_offset": [round(v, 4) for v in offset],
-               "status": status, "error_code": code, "error_msg": msg, "t0": round(t0, 3), "t1": round(t1, 3), "duration": round(t1 - t0, 3),
-               "recoveries": recoveries, "stops": stops, "ghost_series": self.ghost_series, "cm_log": self.cm_log, "gcm_meta": self.gcm_meta, "gcm_frames": self.gcm_frames, "ghost_cells": self.ghost if not chained else [None, self.ghost_cells()], "feedback": feedback, "n_plans": len(self.plans),
-               "plan_first": self.plans[0][1] if self.plans else [], "plan_last": self.plans[-1][1] if self.plans else [],
-               "plan_log": self.plan_log,
+        rec = {"id": trial["id"], "tag": tag, "start": trial["start"], "goal": trial["goal"], "via": via or [], "shortest": trial.get("shortest"), "init_err": init_err,
+               "status": status, "error_code": code, "error_msg": msg, "duration": round(t1 - t0, 3), "recoveries": recoveries, "stops": stops,
+               "ghost_series": self.ghost_series, "cm_log": self.cm_log, "gcm_meta": self.gcm_meta, "gcm_frames": self.gcm_frames,
+               "plan_first": self.plans[0][1] if self.plans else [],
                "plan_all": [[round(t, 3), xy[::10]] for t, xy in self.plans],   # every plan, thinned, to see which route the planner chose each time
-               "plan_times": [round(t, 3) for t, _ in self.plans],
                "cols": ["t", "gt_x", "gt_y", "gt_yaw", "est_x", "est_y", "est_yaw", "nav_vx", "nav_wz", "sm_vx", "sm_wz", "cmd_vx", "cmd_wz", "odom_x", "odom_y", "odom_yaw"], "rows": self.rows}
         json.dump(rec, open(os.path.join(self.out, f"trial_{tag}_{trial['id']}.json"), "w"))
         print(f"{tag} {trial['id']}: {status} t={t1 - t0:.1f}s init_err={init_err:.2f} recoveries={rec['recoveries']} code={code}", flush=True)
@@ -308,8 +262,6 @@ def main(scenario, out_dir, reps=1):
     for k in range(int(reps)):
         for t in trials:
             r.run_trial(t, f"r{k}")
-    if r.mover:
-        r.mover.close()
     rclpy.shutdown()
 
 

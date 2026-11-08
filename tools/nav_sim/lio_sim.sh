@@ -13,6 +13,7 @@ source /tools/nav_sim/sim_up.sh
 lio_nodes
 python3 /tools/nav_sim/lio_eval.py record "$out/lio.csv" 80 > "$out/rec.log" 2>&1 &
 rec=$!
-python3 /tools/nav_sim/lio_drive.py ${DRIVE:-5 0.4 0.5} > "$out/drive.log" 2>&1
+drive=("$@"); [ $# -gt 0 ] || drive=(${DRIVE:-5 0.4 0.5})   # the arguments after <out dir>, else the DRIVE env
+python3 /tools/nav_sim/lio_drive.py "${drive[@]}" > "$out/drive.log" 2>&1
 sleep 3; kill $rec 2>/dev/null || true; wait $rec 2>/dev/null || true
 python3 /tools/nav_sim/lio_eval.py report "$out/lio.csv" | tee "$out/report.txt"
