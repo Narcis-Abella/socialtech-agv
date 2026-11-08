@@ -1,0 +1,6 @@
+# Linker version script for liblivox_lidar_sdk_shared.so (docker/Dockerfile): keep the SDK's bundled spdlog 1.3 and fmt out of the dynamic symbol table, so they cannot
+# interpose, or be interposed by, the system libspdlog 1.12 that ROS loads into the same process. Everything else (the Livox API) stays exported.
+{
+  global: *;
+  local: *6spdlog*; *3fmt*;
+};
