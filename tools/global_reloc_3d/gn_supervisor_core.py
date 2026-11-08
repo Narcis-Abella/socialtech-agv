@@ -7,7 +7,7 @@ relocalizer results, an operator /initialpose, whether each Nav2 action has an a
 
 States: CONFIRMING (start-up, or after a pose: hold until GN fits the map) -> MONITOR -> RELOCALIZING (hold) -> CONFIRMING -> MONITOR; VERIFYING = a
 relocalization while parked that does not hold; FAILED holds until an operator pose is confirmed. Thresholds and their evidence: notes of SocialTech,
-notes/gn_reloc_supervisor_2026-10-31.md.
+SocialTech repo notes/gn_reloc_supervisor_2026-10-31.md.
 """
 import math
 from dataclasses import dataclass

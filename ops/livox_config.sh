@@ -1,5 +1,5 @@
 #!/bin/bash
-# Print the Livox Mid-360 driver config (MID360_config.json) for this robot's link to stdout. Sourced by ops/record_bag.sh and ops/nav_live.sh.
+# Print the Livox Mid-360 driver config (MID360_config.json) for this robot's link to stdout. Run by ops/record_bag.sh and ops/nav_live.sh.
 #   ops/livox_config.sh > MID360_config.json        env: LIVOX_HOST_IP (192.168.1.50)  LIVOX_LIDAR_IP (192.168.1.126)
 HOST_IP=${LIVOX_HOST_IP:-192.168.1.50}
 LIDAR_IP=${LIVOX_LIDAR_IP:-192.168.1.126}

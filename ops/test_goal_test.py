@@ -1,4 +1,4 @@
-"""Checks of the pure parts of goal_test.py (no ROS needed to run them; the module imports rclpy, so run them where ROS is sourced)."""
+"""Checks of the pure parts of goal_test.py (no node is started, but goal_test.py imports rclpy and nav2_msgs: run them in the robot image)."""
 import math
 
 from goal_test import phases, pick, wrap

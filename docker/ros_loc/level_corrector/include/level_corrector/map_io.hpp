@@ -1,5 +1,5 @@
 // Reads the levelled 3D map the live stack already has: <dir>/map.ply (binary little-endian, float x y z) moved into the map frame by the T_map_world rows that
-// make_map.sh writes as "# [a, b, c, d]" comments in <dir>/map.yaml (same as notes/orientacion_scripts/mapreg.py read_map).
+// make_map.sh writes as "# [a, b, c, d]" comments in <dir>/map.yaml (same as SocialTech repo notes/orientacion_scripts/mapreg.py read_map).
 #pragma once
 #include <Eigen/Dense>
 

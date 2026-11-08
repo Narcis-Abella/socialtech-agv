@@ -7,11 +7,12 @@ Models of what the real Tracer + Mid-360 do, calibrated on real bags, for the Na
 | `docker/ros_nav/socialtech_simreal` | built into the `sim` image with the other `ros_nav` packages | four nodes: `sim_base_model`, `sim_wheel_odom`, `sim_scan_model`, `sim_imu_model`; the models are in `models.hpp` (no ROS) with gtests |
 | `calibration.json` | here | every number with its source |
 | `scan_selfcheck.py` | here | check the running simulation's /scan against the calibration |
-| estimators from real bags (`lidar_noise_from_scan`, `base_response_from_bag`, `slip_structure`, `caster_kick`), `sim_selfcheck`, `livox_sim_check/geom/pattern_compare` | SocialTech `notes/sim_realism/` (removed here 2026-11-08, history before that commit) | one-off estimation and validation |
+| estimators from real bags (`lidar_noise_from_scan`, `base_response_from_bag`, `slip_structure`, `caster_kick`), `livox_sim_geom`, `livox_pattern_compare` | SocialTech `notes/sim_realism/` (removed here 2026-11-08) | one-off estimation and validation |
+| `sim_selfcheck.py`, `run_selfcheck.sh`, `livox_sim_check.py` | git history before 3bb72f1 | one-off validation of the 2D-era base model and of the Mid-360 simulator output |
 | simulator hooks (`SIM_REALISM=1`) | simulator repo, branch `sim-realism` | the patch was applied there |
 
-Use: `SIM_REALISM=1 SIM_ARGS="odom_source:=ground_truth" ...` (REALISM_SEED, REALISM_ARGS: `outlier_scale:=0 noise_scale:=1 kick:=0.05 deadband:=0.1`).
-With `SIM_REALISM=1`: `/cmd_vel` (Nav2) goes through the base model to Gazebo (`/cmd_vel_gz`); `/odom` is the wheel measurement; the LiDAR-inertial stand-in (`noisy_odom`, odom -> base_footprint TF) publishes `/odom_lio`; `/scan` and `/imu/data` come from the models.
+Use: `tools/nav_sim/sim_up.sh` starts the simulation with `SIM_REALISM=1 SIM_LIO=1` (hospital-agv-sim, branch `sim-realism`); see `tools/nav_sim/README.md`.
+With it, `/cmd_vel` (Nav2) goes through the base model to Gazebo (`/cmd_vel_gz`); `/odom` is the wheel measurement; `/scan` comes from the real chain (FAST-LIO2 on the simulated Mid-360), `/imu` from `sim_imu_model`.
 
 What the data says (see `calibration.json`):
 - `/scan`: gaussian core 10-25 mm (the legacy RPLiDAR model gave 25 cm at 10 m), 2-27 % dropout by range, and surface jumps on a persistent subset of the beams (the closest point of a 0.10-1.80 m band flips between surfaces).

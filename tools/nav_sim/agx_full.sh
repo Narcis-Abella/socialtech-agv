@@ -1,12 +1,12 @@
 #!/bin/bash
-# Laptop side: runs the full-chain simulation (simulated Mid-360 + real FAST-LIO2) on the AGX; same conventions as the removed agx_run.sh. No sudo; refuses when the board is busy.
+# Laptop side: runs the full-chain simulation (simulated Mid-360 + real FAST-LIO2) on the AGX; No sudo; refuses when the board is busy.
 #   agx_full.sh start <lio|fid|sup|lat|clock|nav> <name> [args of the script]   lio: lio_sim.sh [leg v w]   fid: fid_sim.sh [seconds]   clock: clock_sim.sh [seconds] (CPU of an idle sim-time node against a wall-time one)   lat: lat_sim.sh [reps] [idle_s] (does a search disturb FAST-LIO; needs ~/lat_input on the board)   sup: sup_sim.sh [cover_s] [--push-after S | --move-covered M]   nav: nav_full_sim.sh <scenario.json or auto[:N] (N pairs on the chain's own map)> [reps] (Nav2 + trials.py)
 #   agx_full.sh wait <remote dir>        blocks until it has ended and prints the last lines of its result
 #   agx_full.sh fetch <remote dir> <local dir>
 # Ships tools/, ops/ and docker/{ros_nav,ros_loc,ros/planar_odom} of this checkout and the committed sim repo (SIM_REPO, ~/Documents/GitHub/hospital-agv-sim). On the board: ~/livox_pat (ours.lvm, loyola.tris), ~/greloc/build (sup only).
 # env (all forwarded to the container when set): SUPERVISOR=1 (nav: also gn_supervisor), REC_GCM (nav: trials.py records the global costmap), LIDAR_Z (0.57), SIM_WAIT, NAV_TIMEOUT, GYR_COV, NAV2_OVERLAY (nav: a file of tools/nav_sim/params merged last), CLEARANCE (m, 0.6: start/goal clearance of auto scenarios), DIAG=1 (nav only: one look at the scan and the local costmap instead of trials), DEADBAND (rad/s, 0.08: the median of the three real sessions 0.06 / 0.08 / 0.18), RUN_TIMEOUT (1800 s), IMAGE (socialtech:sim-navtest: a `sim` image with socialtech_livox_sim and socialtech_simreal; the checkout's versions are built over it), SCAN_EXTRA=1 (add the calibrated dropout and jumps; on for fid), SEED, SPAWN, PROD=1 (sup, lat: the deployed configuration, viz:=false), CPUSET (cores of the container, e.g. 0-5), SETTLE (sup: s in MONITOR before the cover), PROCMON=1 (sup: per-process CPU/RAM, see procmon.py).
 set -eo pipefail
-KEY=~/.nvsdkm/.ssh/id_rsa_sdkm; HOST=jetson@socialtech-agx-1
+KEY=${AGX_KEY:-~/.nvsdkm/.ssh/id_rsa_sdkm}; HOST=${AGX_HOST:-jetson@socialtech-agx-1}   # the AGX is the only board with the sim image
 ssh_() { ssh -i "$KEY" -o ConnectTimeout=10 "$HOST" "$@"; }
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 case "$1" in

@@ -1,11 +1,11 @@
 #!/bin/bash
-# Build one stage of docker/Dockerfile as socialtech:<target> (robot | mapper). Long (10+ min, needs internet): run it detached,
+# Build one stage of docker/Dockerfile as socialtech:<target> (robot | mapper | sim). Long (10+ min, needs internet): run it detached,
 # the log is ~/build_<target>.log and its last line is "rc=<exit code>".
 #   ops/build_image.sh mapper
-#   ssh -f -n HOST 'setsid nohup ~/socialtech-agv-int/ops/build_image.sh mapper </dev/null >/dev/null 2>&1 &'
+#   ssh -f -n HOST 'setsid nohup <checkout>/ops/build_image.sh mapper </dev/null >/dev/null 2>&1 &'
 set -uo pipefail
-TARGET=${1:?usage: build_image.sh robot|mapper}
-[[ $TARGET =~ ^(robot|mapper)$ ]] || { echo "unknown target '$TARGET' (robot|mapper)" >&2; exit 2; }
+TARGET=${1:?usage: build_image.sh robot|mapper|sim}
+[[ $TARGET =~ ^(robot|mapper|sim)$ ]] || { echo "unknown target '$TARGET' (robot|mapper|sim)" >&2; exit 2; }
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 LOG=$HOME/build_$TARGET.log
 

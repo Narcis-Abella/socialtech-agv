@@ -212,5 +212,9 @@ if __name__ == "__main__":
         sys.exit(0)
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
-            fn()
+            try:
+                fn()
+            except unittest.SkipTest as e:
+                print("skip", name, "-", e)
+                continue
             print("ok", name)

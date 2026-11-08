@@ -7,8 +7,11 @@ Not deployment code: tooling run by hand on a laptop and a Jetson.
 |---|---|
 | `m3dgr_convert.py` | M3DGR ROS 1 bag -> ROS 2 mcap with the Mid-360 as `PointCloud2` + IMU; with `pc2_to_custom.py` it makes the `benchmarks/m3dgr_*_custom` bags that `agx/jetson_cost_queue.sh` and `jetson_cost_long.sh` run on |
 | `pc2_to_custom.py` | Mid-360 `PointCloud2` bag -> `livox_ros_driver2/CustomMsg` bag, for old bags recorded as `PointCloud2` (the robot records `CustomMsg` since `xfer_format 1`; FAST-LIO2 ignores per-point time in `PointCloud2`) |
+| `bag_check.py` | gaps in the LiDAR and IMU streams of a bag from its recording times (run by `ops/record_bag.sh` and `ops/make_map.sh`) |
+| `traj_compare.py` | run-against-run ATE of two Voxel-SLAM trajectories (the evidence that 1x and 2x replays give the same poses) |
+| `cost_summary.py` | tegrastats + docker stats of a `jetson_cost.sh` run into one table |
 | `voxelslam_run.sh` | run Voxel-SLAM on one bag inside an image (workspace at `/ws`, tools at `/tools`, output at `/out`) in `socialtech:mapper` |
-| `make_map.sh` | Bag -> map in one command, inside the `mapper` image: Voxel-SLAM replay at 2x (`degrade_bound` 100000; the end is the file `vs/edge.txt`) and then `make_map.py`. `--reuse-slam` redoes everything after the SLAM of an earlier run in seconds. Leaves `map.pgm` + `map.yaml` (with `T_map_world`), `map.ply` (the raw Voxel-SLAM cloud), `map_clean.ply` (ghost-free, whole height), `report.json` and `vs/run/alidarState.txt` (the reference for `pose_eval`) |
+| `make_map.sh` | Bag -> map in one command, inside the `mapper` image: Voxel-SLAM replay at 2x (`degrade_bound` 100000; the end is the file `vs/edge.txt`) and then `make_map.py`. `--reuse-slam` redoes everything after the SLAM of an earlier run in seconds. Leaves `map.pgm` + `map.yaml` (with `T_map_world`), `map.ply` (the raw Voxel-SLAM cloud), `map_clean.ply` (ghost-free, whole height), `report.json` and `vs/run/alidarState.txt` (the levelling reference of `nav_common/map_frame.py level`, read by `ops/nav_live.sh`) |
 | `make_map.py` | The whole post-SLAM pipeline in one process: world cloud of the run (or `map.ply` + poses) -> level the floor once -> remove ghosts -> `map_clean.ply` -> 2D map from its band 0.10-`CEIL` -> `report.json` |
 | `cloud_io.py` | PLY and pose I/O; the world cloud of a Voxel-SLAM run (one body-frame PCD per frame + `alidarState.txt`) in memory, float32 values like `map.ply` |
 | `floor_level.py` | Floor of a SLAM cloud -> levelled (floor z = 0) -> walls on the axes -> cross-check with the trajectory. XYZ only, any SLAM; refuses when the floor cannot be trusted. Needs scipy. Holds `fit_plane` (RANSAC floor plane) and `rot_to_z`. Choices and evidence: `notes/ply_to_map_suelo.md` in the SocialTech repo |
@@ -18,7 +21,7 @@ Not deployment code: tooling run by hand on a laptop and a Jetson.
 | `golden/` | sha256 of the pipeline as it was before the refactor, and `check.py` that proves the new one reproduces it (`golden/README.md`) |
 | `synth_room.py`, `synth_corridor.py`, `synth_bag.py`, `beams_oracle.py` | Test-only helpers: synthetic rooms and corridor, a rosbags writer, and the numpy beam counter the C++ engine is checked against |
 | `voxelslam_degrade.sed` | `degrade_bound: 100000` for `voxelslam_run.sh` (`VS_SED`): the port's default 10 resets on bags with featureless stretches and never finishes |
-| `agx/` | wrappers and queues as run on the AGX (`docker run` lines, DDS domain per method); see below for which still run |
+| `agx/` | wrappers and queues as run on the AGX (`docker run` lines, DDS domain 78); see below for which still run |
 
 ## `agx/` today
 
