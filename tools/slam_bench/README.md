@@ -25,7 +25,7 @@ The scripts run in `socialtech:mapper` (override with `IMAGE=`).
 
 | Scripts | Method | Status |
 |---|---|---|
-| `bench_voxelslam*.sh`, `vs_queue1.sh`, `jetson_*.sh` | Voxel-SLAM | Run in `socialtech:mapper`, the default (`IMAGE=` overrides). A port compiled in `~/bench_ws` overrides the image's. |
+| `bench_voxelslam.sh`, `jetson_*.sh` | Voxel-SLAM | Run in `socialtech:mapper`, the default (`IMAGE=` overrides). A port compiled in `~/bench_ws` overrides the image's. |
 
 ## Make a map
 
