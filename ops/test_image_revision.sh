@@ -46,12 +46,19 @@ run() { FAKE_LOG=$t/log PATH=$t/bin:$PATH HOME=$t/home "$@"; }
 
 # --- build_image.sh in a copy of ops/ + docker/Dockerfile stand-in made from a plain REVISION folder
 mkdir -p "$t/co/ops" "$t/co/docker"; cp "$here/ops/build_image.sh" "$here/ops/image_revision.sh" "$t/co/ops/"; : > "$t/co/docker/Dockerfile"; echo "$head" > "$t/co/REVISION"
-: > "$t/log"; FAKE_TAGS="robot-aaaaaaa robot-bbbbbbb robot-ccccccc robot-ddddddd robot-eeeeeee-dirty sim-1111111" run bash "$t/co/ops/build_image.sh" robot
-b=$(grep '^docker build' "$t/log")
-check "build tags <target>-<sha7> and moves the alias" '[[ $b == *"-t socialtech:robot-${head:0:7} -t socialtech:robot "* ]]'
-check "build labels the full commit" '[[ $b == *"--label org.opencontainers.image.revision=$head "* ]]'
+for sha in 1111111 2222222 3333333 4444444; do      # four builds of one target, KEEP=2
+  printf '%s%033d\n' "$sha" 0 > "$t/co/REVISION"; : > "$t/log"
+  KEEP=2 run bash "$t/co/ops/build_image.sh" robot
+  [[ $sha == 1111111 ]] && b=$(grep '^docker build' "$t/log") && cp "$t/log" "$t/log1"
+done
+check "build tags <target>-<sha7> and moves the alias" '[[ $b == *"-t socialtech:robot-1111111 -t socialtech:robot "* ]]'
+check "build labels the full commit" '[[ $b == *"--label org.opencontainers.image.revision=1111111$(printf %033d 0) "* ]]'
 check "build uses the repository root as the context and docker/Dockerfile" '[[ $b == *"-f $t/co/docker/Dockerfile $t/co" ]]'
-check "build keeps the newest 3 and removes the older robot tags only" '[[ $(grep -c "^docker rmi" "$t/log") == 2 ]] && grep -q "rmi socialtech:robot-ddddddd" "$t/log" && grep -q "rmi socialtech:robot-eeeeeee-dirty" "$t/log" && ! grep -q "rmi socialtech:sim" "$t/log"'
+check "build keeps the last KEEP builds: the third build removed the first, the fourth the second, nothing else" '[[ $(grep -c "^docker rmi" "$t/log1") == 0 ]] && ! grep -q "rmi socialtech:robot-4444444" "$t/log" && grep -q "rmi socialtech:robot-2222222" "$t/log" && ! grep -q "rmi socialtech:robot-3333333" "$t/log"'
+check "the history keeps the last two tags, newest last" '[[ $(cat "$t/home/.local/state/socialtech/images-robot" | tr "\n" " ") == "robot-3333333 robot-4444444 " ]]'
+mkdir -p "$t/home/.local/state/socialtech"; printf 'robot-9999999\n' > "$t/home/.local/state/socialtech/images-sim"
+printf '%s%033d\n' "5555555" 0 > "$t/co/REVISION"; : > "$t/log"; KEEP=3 run bash "$t/co/ops/build_image.sh" sim
+check "a tag the history does not know is never removed" '! grep -q "^docker rmi" "$t/log"'
 check "build log ends with rc=0" '[[ $(tail -1 "$t/home/build_robot.log") == rc=0 ]]'
 
 # --- ship_image.sh
