@@ -29,9 +29,15 @@ The scripts run in `socialtech:mapper` (override with `IMAGE=`).
 
 ## Make a map
 
+On a board, use the wrapper: `ops/make_map.sh BAG_NAME [MAP_NAME]` (bag in `~/rosbags/records`, map to `~/maps`). It runs `bag_check.py`, refuses a busy board or a low disk, runs the container as your user on a private DDS domain and records the commit in `report.json`.
+
+The raw form it wraps (what the wrapper adds is not optional: without `MAKE_MAP_COMMIT` the report says `unknown`, without `--user` the maps belong to root, and without a private `ROS_DOMAIN_ID` the replay publishes on the LAN):
+
 ```bash
 docker build --target mapper -t socialtech:mapper docker/
-docker run --rm --network host -v <bags>:/bags:ro -v <maps>:/out -v $PWD/tools/slam_bench:/tools:ro socialtech:mapper \
+docker run --rm --init --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/tmp/roslog \
+  -e ROS_DOMAIN_ID=78 -e ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST -e DDS_IFACE=lo -e MAKE_MAP_COMMIT="$(git rev-parse --short HEAD)" \
+  -v <bags>:/bags:ro -v <maps>:/out -v $PWD/tools/slam_bench:/tools:ro socialtech:mapper \
   /tools/make_map.sh [--reuse-slam] /bags/<bag_dir> /out/<name>
 ```
 
