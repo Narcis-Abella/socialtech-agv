@@ -44,7 +44,7 @@ docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image $IMAGE not found"
 fresh=0; why=$(image_freshness "$IMAGE" "$REPO") || fresh=$?
 case $fresh in
   1) if [[ -n ${OVERLAY:-} || -n ${STALE_IMAGE_OK:-} ]]; then echo "WARN: $why" >&2
-     else die "$why: build or ship the image (ops/build_image.sh robot, ops/ship_image.sh), or OVERLAY=1 (launch files, scripts and config from this checkout), or STALE_IMAGE_OK=1"; fi ;;
+     else die "$why: build or ship the image (ops/build_image.sh robot, ops/ship_image.sh), or OVERLAY=1 (launch files, scripts, config, Nav2 parameters and behavior trees from this checkout), or STALE_IMAGE_OK=1"; fi ;;
   2) echo "WARN: cannot compare the image with this checkout: $why" >&2 ;;
 esac
 [[ -z ${LEVEL_CORRECTOR:-} ]] || { [[ -f $MAP/map.ply ]] && grep -q '^# \[' "$MAP/map.yaml"; } || die "LEVEL_CORRECTOR needs $MAP/map.ply and the T_map_world rows of $MAP/map.yaml (both written by ops/make_map.sh): regenerate the map, or run with LEVEL_CORRECTOR=0"
@@ -79,16 +79,16 @@ if [[ -n ${NAV:-} && -z ${PROD:-} ]]; then   # the DEV recorder writes raw /livo
   free_gb=$(df --output=avail -BG "$RUN" | tail -1 | tr -dc 0-9)
   (( free_gb >= ${MIN_FREE_GB:-20} )) || die "only ${free_gb} GB free in $RUN (the bag needs MIN_FREE_GB=${MIN_FREE_GB:-20}); free space, or PROD=1 to run without recording"
 fi
-{   # what ran: the image (its tag moves; the label is its commit), this checkout, and with OVERLAY=1 the bringup package built from it
+{   # what ran: the image (its tag moves; the label is its commit), this checkout, and whether OVERLAY=1 built socialtech_bringup and socialtech_nav from it
   echo "checkout: $(git -C "$REPO" describe --always --dirty 2>/dev/null || echo unknown)"
   { git -C "$REPO" status --porcelain 2>/dev/null || true; } | sed 's/^/  /'   # the board's checkout is often a plain copy, not a repository: git fails and set -e/pipefail would end the script
   img_id=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
   echo "image: $IMAGE ${img_id:-unknown} revision $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE" 2>/dev/null || echo unknown)"
-  echo "supervisor: $([[ -n ${SUPERVISOR:-} ]] && echo on || echo off)"
+  echo "supervisor: $([[ -n ${SUPERVISOR:-} ]] && echo on || echo off); overlay: $([[ -n ${OVERLAY:-} ]] && echo "bringup+nav from this checkout" || echo none)"
 } > "$RUN/provenance.txt"
 echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} ]] && echo " and bag") in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
 run=(/opt/socialtech/lib/socialtech_bringup/run_live); ovl=()
-if [[ -n ${OVERLAY:-} ]]; then   # the bringup package of this checkout, built over the image's at start-up; /tmp/ov/install first on the ament path, so its run_live, launch files and config win
+if [[ -n ${OVERLAY:-} ]]; then   # socialtech_bringup and socialtech_nav of this checkout, built over the image's at start-up; /tmp/ov/install first on the ament path, so its run_live, launch files and config win
   ovl=(-v "$REPO/src:/src:ro")
   run=(bash -c 'mkdir -p /tmp/ov && cd /tmp/ov && colcon build --base-paths /src --packages-select socialtech_bringup socialtech_nav --merge-install --install-base /tmp/ov/install >/tmp/ov/build.log 2>&1 || { cat /tmp/ov/build.log >&2; exit 1; }
     source /tmp/ov/install/setup.bash && exec /tmp/ov/install/lib/socialtech_bringup/run_live')

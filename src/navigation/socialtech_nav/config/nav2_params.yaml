@@ -19,7 +19,7 @@ bt_navigator:
     wait_for_service_timeout: 1000
     action_server_result_timeout: 900.0
     navigators: [navigate_to_pose, navigate_through_poses]
-    # Replans at 2 Hz (the packaged BT: 1 Hz). Absolute path: the install base of socialtech_nav in the images is /opt/socialtech.
+    # Replans at 2 Hz (the packaged BT: 1 Hz). Absolute path: the install base of socialtech_nav in the images is /opt/socialtech. run_live and tools/nav_sim/nav_full_sim.sh rewrite exactly this prefix to the package they use (an overlay) and check the file exists: keep it (test_nav2_params guards it).
     default_nav_to_pose_bt_xml: /opt/socialtech/share/socialtech_nav/behavior_trees/navigate_to_pose_replan2.xml
     navigate_to_pose: {plugin: 'nav2_bt_navigator::NavigateToPoseNavigator'}
     navigate_through_poses: {plugin: 'nav2_bt_navigator::NavigateThroughPosesNavigator'}
