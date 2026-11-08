@@ -40,7 +40,3 @@ core.[0-9]*
 .idea/
 *.swp
 .DS_Store
-src/localization/gn_loc/test/shutdown_race/install_*/
-src/localization/gn_loc/test/shutdown_race/out_*
-src/localization/gn_loc/test/shutdown_race/*.run
-src/localization/gn_loc/test/shutdown_race/variants.done

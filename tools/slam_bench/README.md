@@ -18,7 +18,6 @@ Not deployment code: tooling run by hand on a laptop and a Jetson.
 | `ghosts.py` | Ghost removal: a 5 cm voxel the beams mostly pass through is not there. The beam test is `libsocialtech_mapping_beams.so` (C++, all cores) |
 | `grid2d.py` | Rasterize a levelled cloud (halo, islands), free the unknown cells the beams crossed, write the PGM + `map_server` YAML |
 | `map_report.py` | The `report.json` of a `make_map.sh` run (`pipeline: 2`, commit, replay rate, scans of the bag and the lost-scan warning, floor tilt, sensor height) |
-| `golden/` | sha256 of the pipeline as it was before the refactor, and `check.py` that proves the new one reproduces it (`golden/README.md`) |
 | `synth_room.py`, `synth_corridor.py`, `synth_bag.py`, `beams_oracle.py` | Test-only helpers: synthetic rooms and corridor, a rosbags writer, and the numpy beam counter the C++ engine is checked against |
 | `voxelslam_degrade.sed` | `degrade_bound: 100000` for `voxelslam_run.sh` (`VS_SED`): the port's default 10 resets on bags with featureless stretches and never finishes |
 | `agx/` | wrappers and queues as run on the AGX (`docker run` lines, DDS domain 78); see below for which still run |
