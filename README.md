@@ -75,6 +75,10 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 - `tools/slam_bench/bag_check.py`: gaps in the LiDAR and IMU streams of a bag, from the recording times; run it right after recording (a scan lost while recording is gone for good and nothing warns about it).
 - `tools/slam_bench/make_map.sh`: bag to map in one command inside the `mapper` image: Voxel-SLAM replay (2x) and then `make_map.py`, one process that levels the floor, removes the ghosts the beams go through, writes `map.ply` (raw SLAM cloud), `map_clean.ply` (ghost-free, whole height), `map.pgm` + `map.yaml` (2D, from the band 0.10-1.80 m of the clean cloud, unknown cells the beams crossed freed) and `report.json`. The modules are `cloud_io.py`, `floor_level.py`, `ghosts.py` (beam counting in C++, `docker/ros_mapper/socialtech_mapping`), `grid2d.py`; the relocalizer prior is built from `map_clean.ply` by `tools/global_reloc_3d/prepare_map.py`. See `tools/slam_bench/README.md`.
 
+## Tests
+
+`scripts/test.sh` runs everything that needs neither ROS 2 nor a board (pytest, the C++ gtests of the header-only cores, the shell tests of `docker/` and `ops/`); CI runs the same script on every pull request. Tests that need the robot image (rclpy, Nav2, FAST-LIO2, a running stack) are left out of the pytest collection by the `conftest.py` next to them and run inside the image; each package README says how.
+
 ## Where changes go
 
 | Change | Where |
