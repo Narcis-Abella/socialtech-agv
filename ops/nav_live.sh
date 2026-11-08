@@ -137,7 +137,7 @@ if [[ -n ${NAV:-} && -z ${PROD:-} ]]; then   # the DEV recorder writes raw /livo
 fi
 {   # what ran: the checkout is mounted live (any branch, uncommitted edits included), the supervisor tools are a staged copy, the image tag moves
   echo "checkout: $(git -C "$REPO" describe --always --dirty 2>/dev/null || echo unknown)"
-  git -C "$REPO" status --porcelain 2>/dev/null | sed 's/^/  /'
+  { git -C "$REPO" status --porcelain 2>/dev/null || true; } | sed 's/^/  /'   # the board's checkout is often a plain copy, not a repository: git fails and set -e/pipefail would end the script
   img_id=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
   echo "image: $IMAGE ${img_id:-unknown}"
   [[ -z ${SUPERVISOR:-} ]] || echo "staged supervisor tools: $(cat "${GRELOC:-$HOME/greloc}/tools/COMMIT" 2>/dev/null || echo unknown) (${GRELOC:-$HOME/greloc})"

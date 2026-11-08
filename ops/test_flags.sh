@@ -56,5 +56,12 @@ grep -qF 'if [ -n "${LEVEL_CORRECTOR:-}" ]; then' "$sim" || { echo "FAIL: nav_fu
 grep -q '^export SPAWN=\$(' "$sim" && { echo "FAIL: nav_full_sim.sh exports SPAWN=\$(python3 ...): a failing python is hidden by export"; fail=1; }
 # the corrector's map is validated with the node's own loader before anything starts
 grep -qF 'level_corrector_node --ros-args -p map_dir:=/map -p check_only:=true' "$nl" || { echo "FAIL: nav_live.sh does not dry-run the corrector's map loader"; fail=1; }
+# the provenance block of nav_live.sh runs under set -e/pipefail on checkouts that are not git repositories (the Nano's is a plain copy): it must not end the script
+d=$(mktemp -d /tmp/nogit.XXXXXX)
+sed -n '/^{   # what ran:/,/^} > "\$RUN\/provenance.txt"/p' "$nl" >"$d/block.sh"
+[[ -s $d/block.sh ]] || { echo "FAIL: the provenance block of nav_live.sh was not found"; fail=1; }
+RUN=$d REPO=$d IMAGE=none SUPERVISOR= bash -euo pipefail -c "source $d/block.sh" || { echo "FAIL: the provenance block ends the script outside a git repository"; fail=1; }
+grep -q '^checkout: unknown' "$d/provenance.txt" || { echo "FAIL: provenance.txt does not say unknown for a checkout without git"; fail=1; }
+rm -r "$d"
 ((fail == 0)) && echo "ok"
 exit $fail
