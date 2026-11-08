@@ -11,3 +11,4 @@ docker/test_cyclone_uri.sh
 docker/test_robot_stage.sh
 ops/test_flags.sh
 ops/test_fastlio_check.sh
+ops/test_image_revision.sh

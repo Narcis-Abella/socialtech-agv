@@ -140,7 +140,7 @@ fi
   echo "checkout: $(git -C "$REPO" describe --always --dirty 2>/dev/null || echo unknown)"
   { git -C "$REPO" status --porcelain 2>/dev/null || true; } | sed 's/^/  /'   # the board's checkout is often a plain copy, not a repository: git fails and set -e/pipefail would end the script
   img_id=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
-  echo "image: $IMAGE ${img_id:-unknown}"
+  echo "image: $IMAGE ${img_id:-unknown} revision $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE" 2>/dev/null || echo unknown)"
   [[ -z ${SUPERVISOR:-} ]] || echo "staged supervisor tools: $(cat "${GRELOC:-$HOME/greloc}/tools/COMMIT" 2>/dev/null || echo unknown) (${GRELOC:-$HOME/greloc})"
 } > "$RUN/provenance.txt"
 echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} ]] && echo " and bag") in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
