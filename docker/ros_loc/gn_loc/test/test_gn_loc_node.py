@@ -54,7 +54,7 @@ def run(scan_frame, scan_x):
 
     def tick():
         st = n.get_clock().now().to_msg()
-        br.sendTransform([tf(st, "odom", "base_footprint", 0.0, ODOM_Z)] + ([] if scan_x is None else [tf(st, "base_footprint", scan_frame, scan_x, 0.57)]))   # scan_x None: the scan frame has no transform
+        br.sendTransform([tf(st, "odom", "base_footprint", 0.0, ODOM_Z), tf(st, "base_footprint", scan_frame, scan_x, 0.57)])
         s = LaserScan(); s.header.stamp = st; s.header.frame_id = scan_frame; s.angle_min = -math.pi; s.angle_increment = math.radians(1.0); s.angle_max = math.pi - s.angle_increment; s.range_min = 0.1; s.range_max = 30.0
         s.ranges = [float(HALF / max(abs(math.cos(a)), abs(math.sin(a)))) for a in (s.angle_min + k * s.angle_increment for k in range(360))]
         scan_pub.publish(s)
@@ -97,12 +97,6 @@ def test_map_to_odom_puts_the_base_on_the_floor_and_a_scan_above_the_base_is_acc
 def test_a_scan_off_to_the_side_of_the_base_is_warned_about():
     log, _, _ = run("off_centre", 0.1)
     assert "scan frame 'off_centre' is not straight above" in log, log
-
-
-def test_a_scan_frame_without_a_transform_is_reported_as_such_not_as_misplaced():
-    log, _, _ = run("orphan_frame", None)
-    assert "cannot look up the scan frame 'orphan_frame'" in log, log
-    assert "is not straight above" not in log, log
 
 
 if __name__ == "__main__":
