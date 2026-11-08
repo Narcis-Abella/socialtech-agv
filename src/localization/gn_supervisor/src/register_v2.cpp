@@ -127,7 +127,6 @@ int main(int argc, char** argv) {
     return 2;
   }
   try {
-    auto target=load(argv[1]), source=load(argv[2]), check=load(argv[3]);
     const float resolution=std::stof(argv[4]);
     double gicp_dist=1.0;
     std::string init_path, init_list_path;
@@ -140,6 +139,7 @@ int main(int argc, char** argv) {
       else throw std::runtime_error("unknown option "+a);
     }
     if (init_path.empty() == init_list_path.empty()) throw std::runtime_error("exactly one of --init and --init-list is required");
+    auto target=load(argv[1]), source=load(argv[2]), check=load(argv[3]);      // after the options: a bad call fails at once, not after parsing the map
     small_gicp::RegistrationSetting setting;
     setting.type=small_gicp::RegistrationSetting::GICP;
     setting.downsampling_resolution=resolution;
@@ -170,6 +170,8 @@ int main(int argc, char** argv) {
     if (!f) throw std::runtime_error("cannot write result");
     write_report(f,r);
     f << "\n}\n";
+    f.flush();
+    if (!f) throw std::runtime_error("cannot write result");      // a full disk must not leave a truncated result.json behind a 0 exit
     std::cout << "GICP=" << r.refined.converged << " inliers=" << r.refined.num_inliers << "\n";
     return 0;
   } catch (const std::exception& e) {
