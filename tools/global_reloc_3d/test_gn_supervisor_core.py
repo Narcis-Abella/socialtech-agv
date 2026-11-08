@@ -39,6 +39,22 @@ class Fixture(unittest.TestCase):
         return s, t
 
 
+class GnCoreDefaultsTest(unittest.TestCase):
+    def test_the_thresholds_copied_from_gn_core_hpp_are_still_its_defaults(self):
+        """The supervisor judges a recovery candidate with the numbers gn_loc itself uses; they are copies, so this reads the C++ source."""
+        import os
+        import re
+        hpp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'docker', 'ros_loc', 'gn_loc', 'include', 'gn_loc', 'gn_core.hpp')
+        if not os.path.exists(hpp):
+            self.skipTest('gn_core.hpp is not next to this checkout (staged copy)')
+        text = open(hpp).read()
+        p = sc.Params()
+        for name in ('accept_tight', 'min_inliers', 'min_tight'):
+            m = re.search(r'double %s\s*=\s*([0-9.]+);' % name, text)
+            self.assertIsNotNone(m, name)
+            self.assertEqual(float(m.group(1)), getattr(p, name), name)
+
+
 class StartupTest(Fixture):
     def test_navigation_is_held_until_gn_confirms_a_pose(self):
         s = Supervisor(sc.Params(auto_init_s=0.))                      # a pose from elsewhere (the operator): the start-up localization is not what is tested
