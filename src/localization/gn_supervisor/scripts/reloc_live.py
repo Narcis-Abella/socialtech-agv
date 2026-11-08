@@ -56,7 +56,7 @@ def signal_by_comm(name, sig=signal.SIGTERM, proc='/proc', kill=os.kill):
 class Worker:
     """search_v2.py as a killable process group."""
     def __init__(self, binary, lib_dir, run_dir, out_dir, deadline_s, threads=2, z_band=None):
-        env = {**os.environ, 'LD_LIBRARY_PATH': f"{lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}", 'CORR_SEARCH_LIB': f'{lib_dir}/libcorr_search.so'}      # the library the node and nav_live.sh checked, not a stray cpp_search/*.so
+        env = {**os.environ, 'LD_LIBRARY_PATH': f"{lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}", 'CORR_SEARCH_LIB': f'{lib_dir}/libcorr_search.so'}      # the library the node checked (lib_dir), not a stray one
         cmd = [sys.executable, '-B', str(HERE / 'search_v2.py'), '--run', str(run_dir), '--out', str(out_dir), '--binary', binary,
                '--deadline-s', f'{deadline_s:.3f}', '--threads', str(threads)]
         if z_band:

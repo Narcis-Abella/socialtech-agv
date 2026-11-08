@@ -44,7 +44,7 @@ class GnCoreDefaultsTest(unittest.TestCase):
         """The supervisor judges a recovery candidate with the numbers gn_loc itself uses; they are copies, so this reads the C++ source."""
         import os
         import re
-        hpp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'localization', 'gn_loc', 'include', 'gn_loc', 'gn_core.hpp')
+        hpp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'gn_loc', 'include', 'gn_loc', 'gn_core.hpp')
         if not os.path.exists(hpp):
             self.skipTest('gn_core.hpp is not next to this checkout (staged copy)')
         text = open(hpp).read()

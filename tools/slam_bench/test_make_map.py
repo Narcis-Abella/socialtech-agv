@@ -12,6 +12,7 @@ SCRIPT = HERE / "make_map.sh"
 # every stand-in logs its arguments (and VS_SED's content) to $LOG, then does what the real tool does to the files make_map.sh reads
 STUBS = {
     "run.sh": 'echo "run $* | sed: $(cat "$VS_SED") | rate: $PLAY_RATE" >> "$LOG"\n[ -n "$NO_POSES" ] && exit 0\n[ -e "$4/vs/run" ] && { echo "Cannot create save directory: $4/vs/run/" >&2; exit 1; }\nmkdir -p "$4/vs/run"\necho "1 0 0 0 0 0 0 1" > "$4/vs/run/alidarState.txt"\necho "resetting system" > "$4/node.log"\necho edge > "$4/vs/edge.txt"\n',
+    "prepare_map.sh": 'echo "prepare_map $*" >> "$LOG"\n[ -n "$STUB_PRIOR_FAIL" ] && { echo "prepare_map: report.json has no pipeline 2" >&2; exit 1; }\nwhile [ $# -gt 0 ]; do [ "$1" = --out ] && out=$2; shift; done\nmkdir -p "$out"; echo xyz > "$out/map.xyz"\n',
     "engine.sh": 'echo "engine $*" >> "$LOG"\n[ -n "$STUB_CHECK_FAIL" ] && { echo "ghosts: the C++ beam engine is not available here" >&2; exit 1; }\nexit 0\n',
     "make_map_py.sh": ('echo "make_map $*" >> "$LOG"\n'
                        'while [ $# -gt 0 ]; do [ "$1" = --out ] && out=$2; shift; done\n'
@@ -30,7 +31,7 @@ def run(tmp, out, env_extra=None, args=()):
         (tools / name).write_text("#!/bin/bash\n" + body)
         (tools / name).chmod(0o755)
     env = {**{k: v for k, v in os.environ.items() if k != "PLAY_RATE"}, "LOG": str(Path(tmp) / "log.txt"), "VOXELSLAM_RUN": str(tools / "run.sh"), "ENGINE_CHECK": str(tools / "engine.sh"),
-           "MAKE_MAP_PY": str(tools / "make_map_py.sh"), **(env_extra or {})}
+           "MAKE_MAP_PY": str(tools / "make_map_py.sh"), "PREPARE_MAP": str(tools / "prepare_map.sh"), **(env_extra or {})}
     return subprocess.run(["bash", str(SCRIPT), *args, "bag dir", str(out)], env=env, capture_output=True, text=True)
 
 
@@ -49,11 +50,12 @@ def test_the_steps_run_in_order_with_the_arguments_each_tool_needs_and_the_outpu
         r = run(tmp, out)
         assert r.returncode == 0, r.stderr
         lines = log(tmp).splitlines()
-        assert [l.split()[0] for l in lines] == ["engine", "run", "make_map"], lines
+        assert [l.split()[0] for l in lines] == ["engine", "run", "make_map", "prepare_map"], lines
         assert lines[0].strip() == "engine"
         assert lines[1] == f"run bag dir /livox/lidar /livox/imu {out} | sed: s/^\\( *\\)degrade_bound:.*/\\1degrade_bound: 100000/ | rate: 2", lines[1]
         assert lines[2] == f"make_map --run {out}/vs/run --bag bag dir --out {out}/.build --node-log {out}/node.log --res 0.025 --voxel 0.025 --ceil 1.80 --topic /livox/lidar --play-rate 2", lines[2]
-        assert all((out / f).exists() for f in ("map.pgm", "map.yaml", "map.ply", "map_clean.ply", "report.json"))
+        assert lines[3] == f"prepare_map --map-dir {out} --out {out}/prior", lines[3]      # the prior of the relocalizer, from the finished map
+        assert all((out / f).exists() for f in ("map.pgm", "map.yaml", "map.ply", "map_clean.ply", "report.json", "prior/map.xyz"))
         assert "make_map: OK" in r.stdout
         assert not (out / ".build").exists() and (out / "play_rate").read_text().strip() == "2"      # the staging dir is gone; the rate of this replay is recorded
 
@@ -156,7 +158,7 @@ def test_reuse_slam_skips_the_replay_and_builds_from_map_ply_when_it_exists():
         (out / "node.log").write_text("resetting system\n")
         r = run(tmp, out, args=["--reuse-slam"])
         assert r.returncode == 0, r.stderr
-        assert tools_logged(tmp) == ["engine", "make_map"], log(tmp)            # no replay
+        assert tools_logged(tmp) == ["engine", "make_map", "prepare_map"], log(tmp)            # no replay
         assert f"make_map --cloud {out}/map.ply --poses {out}/vs/run/alidarState.txt --bag bag dir --out {out}/.build" in log(tmp), log(tmp)
         assert (out / "node.log").exists() and (out / "vs" / "run" / "alidarState.txt").exists()      # the SLAM output is kept
 
@@ -204,16 +206,17 @@ def test_the_default_engine_check_and_make_map_are_the_scripts_next_to_it():
         copy.mkdir()
         (copy / "make_map.sh").write_text(SCRIPT.read_text())
         (copy / "ghosts.py").write_text('import os, sys\nopen(os.environ["LOG"], "a").write("ghosts_py " + " ".join(sys.argv[1:]) + "\\n")\n')
+        (copy / "prepare_map.py").write_text('import os, sys\nopen(os.environ["LOG"], "a").write("prepare_map_py " + " ".join(sys.argv[1:]) + "\\n")\n')
         (copy / "make_map.py").write_text('import os, sys\nopen(os.environ["LOG"], "a").write("make_map_py " + " ".join(sys.argv[1:]) + "\\n")\nout = sys.argv[sys.argv.index("--out") + 1]\n'
                                           'for f in ("map.ply", "map_clean.ply", "map.pgm", "map.yaml"): open(os.path.join(out, f), "w").close()\nopen(os.path.join(out, "report.json"), "w").write("{}")\n')
         tools = Path(tmp) / "tools"
         tools.mkdir()
         (tools / "run.sh").write_text("#!/bin/bash\n" + STUBS["run.sh"])
         (tools / "run.sh").chmod(0o755)
-        env = {**{k: v for k, v in os.environ.items() if k not in ("ENGINE_CHECK", "MAKE_MAP_PY", "PLAY_RATE")}, "LOG": str(Path(tmp) / "log.txt"), "VOXELSLAM_RUN": str(tools / "run.sh")}
+        env = {**{k: v for k, v in os.environ.items() if k not in ("ENGINE_CHECK", "MAKE_MAP_PY", "PLAY_RATE")}, "LOG": str(Path(tmp) / "log.txt"), "VOXELSLAM_RUN": str(tools / "run.sh"), "PREPARE_MAP": f"python3 {copy / 'prepare_map.py'}"}
         r = subprocess.run(["bash", str(copy / "make_map.sh"), "bag dir", str(Path(tmp) / "o")], env=env, capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
-        assert [l.split()[0] for l in log(tmp).splitlines()] == ["ghosts_py", "run", "make_map_py"], log(tmp)
+        assert [l.split()[0] for l in log(tmp).splitlines()] == ["ghosts_py", "run", "make_map_py", "prepare_map_py"], log(tmp)
         assert log(tmp).splitlines()[0] == "ghosts_py --check-engine"
 
 
@@ -259,9 +262,17 @@ def test_reuse_slam_reports_the_rate_the_replay_used_not_the_default():
         out = Path(tmp) / "o"
         assert run(tmp, out, {"PLAY_RATE": "1"}).returncode == 0                      # the map is made at 1x
         assert run(tmp, out, args=["--reuse-slam"]).returncode == 0                    # and regenerated later with the default env (2)
-        assert log(tmp).splitlines()[-1].endswith("--play-rate 1"), log(tmp)
+        assert [l for l in log(tmp).splitlines() if l.startswith("make_map")][-1].endswith("--play-rate 1"), log(tmp)
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "o"
         finished_map(out)                                                             # an old folder: nobody recorded the rate
         assert run(tmp, out, args=["--reuse-slam"]).returncode == 0
         assert "--play-rate" not in log(tmp), log(tmp)
+
+
+def test_a_prior_that_cannot_be_built_fails_the_run_after_the_map_is_installed():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "o"
+        r = run(tmp, out, {"STUB_PRIOR_FAIL": "1"})
+        assert r.returncode == 1 and "step 'prior'" in r.stderr and "the map itself is done" in r.stderr, (r.returncode, r.stderr)
+        assert (out / "map.yaml").exists() and not (out / "prior" / "map.xyz").exists()      # the map is there; the missing prior is said, not hidden

@@ -35,7 +35,7 @@ def test_the_obstacle_band_is_the_same_for_the_scan_the_costmap_and_the_map():
 def test_the_lidar_offset_is_fast_lios_extrinsic_everywhere_it_is_copied():
     launch = ast.literal_eval(find("src/bringup/socialtech_bringup/launch/nav_live.launch.py", r"^LIDAR_IN_BODY = (\[[^\]]*\])", flags=re.M))
     ghosts = ast.literal_eval(find("tools/slam_bench/ghosts.py", r"^EXTR = (\([^)]*\))", flags=re.M))
-    frames = ast.literal_eval(find("tools/global_reloc_3d/livox_frames.py", r"extrinsic=(\([^)]*\))"))
+    frames = ast.literal_eval(find("src/localization/gn_supervisor/scripts/livox_frames.py", r"extrinsic=(\([^)]*\))"))
     assert list(ghosts) == launch and list(frames) == launch, (launch, ghosts, frames)
 
 

@@ -29,9 +29,9 @@ def main(argv=None):
     d = Path(a.map_dir)
     if pipeline_marker(d) != 2:
         sys.exit(f'{d}: report.json has no "pipeline": 2, so it was not made by the current make_map.sh and its map_clean.ply is not the whole-height clean cloud. '
-                 'Regenerate it: make_map.sh --reuse-slam')
+                 'Regenerate it: REUSE_SLAM=1 ops/make_map.sh BAG_NAME MAP_NAME (seconds, no replay)')
     out = Path(a.out)
-    out.mkdir(parents=True, exist_ok=False)
+    out.mkdir(parents=True, exist_ok=True)      # rerun over a half-made or an older prior: the files are overwritten
     raw = read_ply(d / 'map_clean.ply')
     keep = np.isfinite(raw).all(1) & (raw[:, 2] >= Z_LO) & (raw[:, 2] <= Z_HI)
     prior = voxel(raw[keep], a.voxel)

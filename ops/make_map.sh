@@ -1,5 +1,5 @@
 #!/bin/bash
-# Bag -> 2D map: checks the bag, then runs tools/slam_bench/make_map.sh in the `mapper` image (Voxel-SLAM -> PLY -> PGM + YAML).
+# Bag -> 2D map: checks the bag, then runs tools/slam_bench/make_map.sh in the `mapper` image (Voxel-SLAM -> PLY -> PGM + YAML, and the relocalizer's 3D prior in MAP_NAME/prior/).
 #   ops/make_map.sh BAG_NAME [MAP_NAME]     BAG_NAME is a folder in ~/rosbags/records; the map goes to ~/maps/MAP_NAME (default: BAG_NAME)
 # Variables set in the environment reach tools/slam_bench/make_map.sh, which owns the defaults: PLAY_RATE (2), CEIL (1.80), LIDAR, IMU, RES, VOXEL, DEGRADE_BOUND.
 # Replays the bag at PLAY_RATE (default 2): a 3-minute bag takes ~2 min plus the global stage; if the run warns that scans were lost, relaunch with PLAY_RATE=1. Keep the board otherwise idle.

@@ -2,8 +2,7 @@
 # Bag -> map, inside the `mapper` image: Voxel-SLAM replay (voxelslam_run.sh), then make_map.py does the rest in one process: levels the floor once (refusing a map whose floor does
 # not fit the trajectory), removes the ghosts the beams go through, writes the clouds, builds the 2D map from the cleaned cloud and writes report.json.
 # usage: make_map.sh [--reuse-slam] <bag_dir> <out_dir>
-# outputs in <out_dir>: map.pgm + map.yaml (2D, for Nav2 and gn_loc), map.ply (the raw Voxel-SLAM cloud), map_clean.ply (ghost-free, whole height, floor z = 0: the relocalizer prior
-#   is built from it), report.json (what the run and the map say about themselves; `pipeline: 2`, the commit and the parameters of the run).
+# outputs in <out_dir>: map.pgm + map.yaml (2D, for Nav2 and gn_loc), map.ply (the raw Voxel-SLAM cloud), map_clean.ply (ghost-free, whole height, floor z = 0), prior/map.xyz (the relocalizer's 3D prior, built from it by gn_supervisor's prepare_map.py), report.json (what the run and the map say about themselves; `pipeline: 2`, the commit and the parameters of the run).
 # --reuse-slam: do not replay the bag; redo everything after the SLAM from <out_dir>/vs/run (and map.ply when it exists, else the frames of vs/run). Regenerates a map in seconds.
 # env:   LIDAR (/livox/lidar)  IMU (/livox/imu)  PLAY_RATE (2: the replay speed, poses were identical to 1x on the 366 s bag; if the run warns that scans were lost, relaunch with 1)
 #        CEIL (1.80, metres above the floor; 30 for outdoor maps)  RES (0.025, m: cell size of the map and, unless VOXEL is set, the thinning of the cloud)  VOXEL (= RES)  DEGRADE_BOUND (100000)
@@ -17,6 +16,7 @@ bag=$1; out=$2
 here=$(dirname "$(readlink -f "$0")")
 : "${LIDAR:=/livox/lidar}" "${IMU:=/livox/imu}" "${PLAY_RATE:=2}" "${CEIL:=1.80}" "${RES:=0.025}" "${VOXEL:=$RES}" "${DEGRADE_BOUND:=100000}"
 : "${VOXELSLAM_RUN:=$here/voxelslam_run.sh}" "${ENGINE_CHECK:=python3 $here/ghosts.py --check-engine}" "${MAKE_MAP_PY:=python3 $here/make_map.py}"
+: "${PREPARE_MAP:=python3 /opt/socialtech/lib/gn_supervisor/prepare_map.py}"   # the relocalizer's 3D prior of the map (the gn_supervisor package of the image)
 export PLAY_RATE
 fail() { echo "make_map: FAILED at step '$1': $2" >&2; exit 1; }
 
@@ -50,5 +50,6 @@ $MAKE_MAP_PY "${src[@]}" --bag "$bag" --out "$stage" --node-log "$out/node.log" 
   || { msg=$(tail -n 1 "$out/make_map.log"); rm -r "$stage"; fail make_map "$msg"; }
 for f in map.ply map_clean.ply report.json map.pgm map.yaml; do mv -f "$stage/$f" "$out/$f" || fail install "cannot move $stage/$f"; done      # the map itself last
 rm -r "$stage"
+$PREPARE_MAP --map-dir "$out" --out "$out/prior" > "$out/prepare_map.log" 2>&1 || fail prior "the 3D prior (prior/map.xyz) of the relocalizer could not be built, see $out/prepare_map.log; the map itself is done"
 grep '^WARNING' "$out/make_map.log" >&2 || true
 echo "make_map: OK -> $out/map.yaml ($(python3 -c "import json,sys; r=json.load(open(sys.argv[1])); print('resets', r.get('resets'), '| end-to-start', r.get('end_to_start_m'), 'm | sensor height', r.get('sensor_height_m'), 'm')" "$out/report.json" 2>/dev/null))"

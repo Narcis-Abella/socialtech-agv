@@ -102,8 +102,9 @@ class RclpyTest(unittest.TestCase):
             stamp, valid, xyz = lf.parse(serialize_message(m), blind=.1, decimate=1, extrinsic=(0., 0., 0.))
             keep = [q for q in m.points if q.line < 4 and (q.tag & 0x30) in (0, 0x10) and q.x * q.x + q.y * q.y + q.z * q.z > .01]
             self.assertAlmostEqual(stamp, 1793574000 + 5e-9, 6)
-            self.assertEqual(valid, len(keep))
-            np.testing.assert_allclose(xyz, np.array([[q.x, q.y, q.z] for q in keep]), atol=1e-6)
+            self.assertEqual(valid, len(keep))                  # `valid` counts every return that passes the tests, the first one included
+            expected = [q for i, q in enumerate(m.points) if i > 0 and q in keep]       # FAST-LIO2's loop starts at index 1: with decimate=1 the cloud is `keep` without point 0
+            np.testing.assert_allclose(xyz, np.array([[q.x, q.y, q.z] for q in expected]).reshape(-1, 3), atol=1e-6)
 
 
 class ImuTest(unittest.TestCase):

@@ -300,7 +300,7 @@ class SignalByCommTest(unittest.TestCase):
 
 class WorkerTest(unittest.TestCase):
     def test_the_library_of_lib_dir_is_the_one_loaded(self):
-        # the one gn_supervisor_node and nav_live.sh checked: not a stray cpp_search/*.so shipped with the tools (another board's build)
+        # the one gn_supervisor_node checked (lib_dir): not a stray libcorr_search.so lying around (another build)
         seen = {}
         real, rl.subprocess.Popen = rl.subprocess.Popen, lambda cmd, **k: seen.update(k['env']) or SimpleNamespace(pid=0)
         self.addCleanup(setattr, rl.subprocess, 'Popen', real)

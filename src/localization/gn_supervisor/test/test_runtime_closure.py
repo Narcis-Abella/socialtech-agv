@@ -2,7 +2,8 @@
 import ast
 import os
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'scripts')       # the modules under test
+PKG = os.path.dirname(HERE)
 ROOTS = ('gn_supervisor_node', 'search_v2')            # the node the launch starts and the worker it spawns
 RUNTIME = {'corr_cpp', 'correlative_search', 'gn_supervisor_core', 'gn_supervisor_node', 'imu_ready', 'lio_submap', 'livox_frames', 'pointcloud', 'reloc_core', 'reloc_live',
            'search_v2', 'verify'}
@@ -42,6 +43,13 @@ def test_every_module_of_the_directory_is_runtime_or_setup():
 
 
 def test_the_readme_lists_every_runtime_module():
-    text = open(os.path.join(HERE, 'README.md')).read()
+    text = open(os.path.join(PKG, 'README.md')).read()
     missing = [m for m in RUNTIME if m + '.py' not in text and m not in text]
     assert not missing, missing
+
+
+def test_the_node_the_launch_starts_is_an_executable_with_a_shebang():
+    """The launch starts it as a node of the package (executable='gn_supervisor_node.py'): without the execute bit it is 'not found on the libexec directory', and no test that runs it through python3 notices."""
+    node = os.path.join(HERE, 'gn_supervisor_node.py')
+    assert os.access(node, os.X_OK), f"{node} is not executable (git update-index --chmod=+x)"
+    assert open(node).readline().startswith('#!/usr/bin/env python3')

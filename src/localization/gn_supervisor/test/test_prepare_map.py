@@ -40,5 +40,5 @@ def test_prepare_map_refuses_a_folder_without_pipeline_2(tmp_path, report):
     d = map_dir(tmp_path, [[0, 0, 0.5]], report)       # an old folder: its map_clean.ply is the band over occupied cells, no ceiling and no floor
     with pytest.raises(SystemExit) as e:
         prepare_map.main(["--map-dir", str(d), "--out", str(tmp_path / "prior")])
-    assert "make_map.sh --reuse-slam" in str(e.value)
+    assert "REUSE_SLAM=1 ops/make_map.sh" in str(e.value)
     assert not (tmp_path / "prior").exists()

@@ -114,9 +114,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan \
       ros-jazzy-bondcpp \
       python3-scipy
-# python3-scipy: the global relocalizer that gn_supervisor starts (tools/global_reloc_3d/search_v2.py: FFT, KD-tree); ops/nav_live.sh SUPERVISOR=1 refuses an image without it.
+# python3-scipy: the global relocalizer that gn_supervisor starts (src/localization/gn_supervisor/scripts/search_v2.py: FFT, KD-tree); run_live refuses to start the supervisor without it.
 
-# src/localization: planar_odom, gn_loc (Gauss-Newton scan-to-map localizer, the robot's localizer) and level_corrector (small_gicp is built above). Its own colcon build: gn_loc needs
+# The same small_gicp commit with TBB, for gn_supervisor's register_v2 (GICP of the relocalizer's candidates, num_threads = 2; the binary the team staged by hand before was TBB too).
+# A second prefix on purpose: /usr/local is the single-threaded build, which is what level_corrector must link. Here, after the third-party workspace, so that it does not invalidate those layers.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=tmpfs,target=/tmp/src \
+    apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libtbb-dev \
+ && git clone https://github.com/koide3/small_gicp.git /tmp/src/small_gicp \
+ && git -C /tmp/src/small_gicp checkout "${SMALL_GICP_COMMIT}" \
+ && cmake -S /tmp/src/small_gicp -B /tmp/src/small_gicp/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/small_gicp_tbb -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_WITH_TBB=ON -DBUILD_WITH_OPENMP=OFF \
+ && cmake --build /tmp/src/small_gicp/build -j"$(nproc)" \
+ && cmake --install /tmp/src/small_gicp/build
+
+# src/localization: planar_odom, gn_loc (Gauss-Newton scan-to-map localizer, the robot's localizer), level_corrector (small_gicp is built above) and gn_supervisor (its register_v2 links the TBB small_gicp). Its own colcon build: gn_loc needs
 # the Nav2 packages installed just above, which the first build does not have. Tests and the gn_offline study tool are not built in the image (BUILD_TESTING=OFF, GN_LOC_OFFLINE=OFF); see src/localization/gn_loc/README.md.
 COPY src/localization/ /ws/src_loc/
 # The cache ids are new on purpose (src-loc-*): the build directory of the previous layout was configured with CMAKE_INSTALL_PREFIX=/opt/socialtech_loc, colcon does not reconfigure when only
@@ -125,7 +138,7 @@ RUN --mount=type=cache,id=src-loc-build,target=/tmp/build_loc \
     --mount=type=cache,id=src-loc-log,target=/tmp/log_loc \
     . /opt/ros/jazzy/setup.sh \
  && cd /ws && colcon --log-base /tmp/log_loc build --base-paths src_loc --merge-install --install-base /opt/socialtech --build-base /tmp/build_loc --cmake-force-configure \
-      --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DGN_LOC_OFFLINE=OFF
+      --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DGN_LOC_OFFLINE=OFF -DGN_SUPERVISOR_SMALL_GICP_DIR=/opt/small_gicp_tbb/lib/cmake/small_gicp
 
 # Nav2 on the real robot (ops/nav_live.sh NAV=1) and in the simulator, whose stage adds Gazebo on top.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \

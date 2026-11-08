@@ -18,6 +18,15 @@ LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, relia
 BEST_EFFORT = QoSProfile(depth=50, reliability=ReliabilityPolicy.BEST_EFFORT)
 
 
+def supervisor_dir(*files):
+    """lib/gn_supervisor of the first prefix on the ament path that has all of `files` (the image's, or an overlay of the Python in front of it)."""
+    for prefix in os.environ.get('AMENT_PREFIX_PATH', '').split(os.pathsep):
+        d = os.path.join(prefix, 'lib', 'gn_supervisor')
+        if all(os.path.exists(os.path.join(d, f)) for f in files):
+            return d
+    sys.exit(f'lat_ab: no lib/gn_supervisor with {files} on the ament path')
+
+
 def pct(xs, q):
     xs = sorted(xs)
     return xs[min(int(q * len(xs)), len(xs) - 1)] if xs else float('nan')
@@ -80,11 +89,12 @@ def main():
         wins, wall, states = [], [], set()
         for k in range(reps):
             cmd = ['nice', '-n', '10'] if mode == 'nice' else []
-            cmd += [sys.executable, '-B', '/greloc/tools/global_reloc_3d/search_v2.py', '--run', inp, '--out', f'{out}.{mode}{k}', '--binary', '/greloc/build/register_v2',
+            py, lib = supervisor_dir('search_v2.py'), supervisor_dir('register_v2', 'libcorr_search.so')
+            cmd += [sys.executable, '-B', f'{py}/search_v2.py', '--run', inp, '--out', f'{out}.{mode}{k}', '--binary', f'{lib}/register_v2',
                     '--deadline-s', '60', '--threads', '2'] + zb
             w0, s0 = time.monotonic(), n.sim()
             with open(f'{out}.{mode}{k}.log', 'w') as log:
-                p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env={**os.environ, 'LD_LIBRARY_PATH': f"/greloc/build:{os.environ.get('LD_LIBRARY_PATH', '')}", 'CORR_SEARCH_LIB': '/greloc/build/libcorr_search.so'})
+                p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env={**os.environ, 'LD_LIBRARY_PATH': f"{lib}:{os.environ.get('LD_LIBRARY_PATH', '')}", 'CORR_SEARCH_LIB': f'{lib}/libcorr_search.so'})
                 while p.poll() is None:
                     rclpy.spin_once(n, timeout_sec=.05)
                     states.add(n.state)
