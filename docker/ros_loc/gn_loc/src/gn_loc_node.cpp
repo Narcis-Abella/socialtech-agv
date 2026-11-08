@@ -1,7 +1,7 @@
 // gn_loc: a lifecycle node (as nav2_amcl) that computes map->odom by Gauss-Newton scan-to-map tracking, standing where nav2_amcl stands.
 // configure: parameters, TF, subscriptions (map, initialpose, scan through the MessageFilter). activate: publishers and the status timer. Scans are ignored while not active.
 // In: scan (LaserScan, in the base frame), map (OccupancyGrid, latched), initialpose (PoseWithCovarianceStamped; its covariance is the prior), TF odom->base.
-// Out: TF map->odom (scan stamp + tf_tolerance), amcl_pose (so listeners of AMCL's pose keep working), gn_loc/status (String, 1 Hz),
+// Out: TF map->odom (scan stamp + tf_tolerance), amcl_pose (so listeners of AMCL's pose keep working), gn_loc/status (String, 1 Hz), gn_loc/scan_fit (String, one per scan, same text),
 //      gn_loc/need_reloc (Bool, latched, on change): true after reloc_after_s in LOST, for whoever starts the global relocalizer; its /initialpose ends LOST.
 // Scans wait in a tf2_ros::MessageFilter until odom->base exists at their stamp (as in nav2_amcl); nothing is dropped for being ahead of the odometry.
 #include <atomic>
@@ -14,6 +14,7 @@
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "gn_loc/gn_core.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
 #include "message_filters/subscriber.h"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -78,6 +79,16 @@ public:
     declare_parameter("still_yaw_deg", 1.0);
     declare_parameter("scan_topic", "scan");
     declare_parameter("bond_heartbeat_period", 0.1);   // s; 0 = no bond (as nav2_util::LifecycleNode)
+    // As nav2_util::LifecycleNode::register_rcl_preshutdown_callback: the bond is destroyed BEFORE the context turns invalid. Left to the destructor, its thread
+    // can create a timer in that window and rclcpp::exceptions::RCLError ends the process in std::terminate (12 of 20 stops with the CPU squeezed, 0 with this).
+    preshutdown_ = std::make_unique<rclcpp::PreShutdownCallbackHandle>(
+      get_node_base_interface()->get_context()->add_pre_shutdown_callback([this]() {runCleanups();}));
+  }
+
+  ~GnLocNode() override
+  {
+    // the handle only holds a weak reference: the context owns the callback, which would keep a dangling this (nav2_util::LifecycleNode does the same)
+    if (preshutdown_) {get_node_base_interface()->get_context()->remove_pre_shutdown_callback(*preshutdown_);}
   }
 
 protected:
@@ -123,6 +134,7 @@ protected:
 
     pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("amcl_pose", rclcpp::QoS(1).transient_local().reliable());
     status_pub_ = create_publisher<std_msgs::msg::String>("gn_loc/status", 1);
+    fit_pub_ = create_publisher<std_msgs::msg::String>("gn_loc/scan_fit", 10);
     reloc_pub_ = create_publisher<std_msgs::msg::Bool>("gn_loc/need_reloc", rclcpp::QoS(1).transient_local().reliable());
     map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
       "map", rclcpp::QoS(1).transient_local().reliable(), [this](nav_msgs::msg::OccupancyGrid::ConstSharedPtr m) {onMap(*m);});
@@ -141,6 +153,7 @@ protected:
   {
     pose_pub_->on_activate();
     status_pub_->on_activate();
+    fit_pub_->on_activate();
     reloc_pub_->on_activate();
     publishReloc(false);
     timer_ = create_wall_timer(1s, [this]() {status();});
@@ -156,15 +169,17 @@ protected:
     timer_.reset();
     pose_pub_->on_deactivate();
     status_pub_->on_deactivate();
+    fit_pub_->on_deactivate();
     reloc_pub_->on_deactivate();
     return CallbackReturn::SUCCESS;
   }
 
   CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override
   {
-    scan_filter_.reset(); scan_sub_.reset(); init_sub_.reset(); map_sub_.reset();
-    pose_pub_.reset(); status_pub_.reset(); reloc_pub_.reset(); br_.reset(); tf_listener_.reset(); tf_buffer_.reset();
-    std::lock_guard<std::mutex> lk(mtx_);
+    tf_listener_.reset();   // first: joins the TF thread, which can be delivering an onScan from inside the filter, whose destructor does not wait for it. Never under mtx_, or that onScan deadlocks the join
+    scan_filter_.reset(); scan_sub_.reset(); init_sub_.reset(); map_sub_.reset();   // no new callbacks after this (the filter's disconnect waits for a delivery on the executor); not under mtx_, which that delivery needs to end
+    std::lock_guard<std::mutex> lk(mtx_);   // from the pre-shutdown hook the executor still spins: a scan in flight there may be using the TF buffer, the broadcaster and the publishers
+    pose_pub_.reset(); status_pub_.reset(); fit_pub_.reset(); reloc_pub_.reset(); br_.reset(); tf_buffer_.reset();
     core_.reset(); pending_init_.reset(); ratio_ = tight_ = 0; n_ = 0;
     return CallbackReturn::SUCCESS;
   }
@@ -172,6 +187,18 @@ protected:
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State & s) override {return on_cleanup(s);}
 
 private:
+  void runCleanups()   // pre-shutdown: deactivate (drops the bond) and clean up, as Nav2's own nodes do on SIGINT
+  {
+    RCLCPP_INFO(get_logger(), "Running gn_loc rcl preshutdown");
+    try {   // an exception out of a pre-shutdown callback ends in std::terminate, the very symptom this hook removes
+      if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {deactivate();}
+      if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE) {cleanup();}
+      bond_.reset();   // whatever the state, as nav2_util's destroyBond(): ACTIVE -> FINALIZED (on_shutdown) keeps the bond
+    } catch (const std::exception & e) {
+      RCLCPP_WARN(get_logger(), "preshutdown cleanup failed: %s", e.what());
+    }
+  }
+
   void createBond()   // the lifecycle_manager of Nav2 holds a bond with every managed node and takes the node as dead without it
   {
     const double period = get_parameter("bond_heartbeat_period").as_double();
@@ -228,6 +255,7 @@ private:
     const double t = rclcpp::Time(m->header.stamp).seconds();
     const auto r = core_->update(t, o, m->ranges, m->angle_min, m->angle_increment);
     ratio_ = r.ratio; tight_ = r.tight;
+    publishFit(r.state);
     if (r.need_reloc != reloc_sent_) {publishReloc(r.need_reloc);}
     if (!r.Tmo) {return;}
     geometry_msgs::msg::TransformStamped out;
@@ -257,15 +285,28 @@ private:
     if (v) {RCLCPP_WARN(get_logger(), "LOST for %.0f s: asking for the global relocalizer (gn_loc/need_reloc)", prm_.reloc_after_s);}
   }
 
+  void publishFit(gn_loc::State state)   // the fit of this scan, in the status text: what the supervisor confirms a pose with (the 1 Hz status is too slow for it)
+  {
+    if (!fit_pub_ || !fit_pub_->is_activated()) {return;}
+    std_msgs::msg::String s;
+    s.data = statusText(gn_loc::name(state));
+    fit_pub_->publish(s);
+  }
+
+  std::string statusText(const char * state) const
+  {
+    char buf[128];
+    std::snprintf(buf, sizeof buf, "%s inliers %.2f tight %.2f scans %d", state, ratio_, tight_, n_);
+    return buf;
+  }
+
   void status()
   {
     // the bond heartbeat shares this executor: never wait for a scan being processed (the initial search can take a while), skip the tick instead
     std::unique_lock<std::mutex> lk(mtx_, std::try_to_lock);
     if (!lk.owns_lock() || !status_pub_ || !status_pub_->is_activated()) {return;}
     std_msgs::msg::String s;
-    char buf[128];
-    std::snprintf(buf, sizeof buf, "%s inliers %.2f tight %.2f scans %d", core_ ? gn_loc::name(core_->state()) : "WAITING_MAP", ratio_, tight_, n_);
-    s.data = buf;
+    s.data = statusText(core_ ? gn_loc::name(core_->state()) : "WAITING_MAP");
     status_pub_->publish(s);
   }
 
@@ -289,8 +330,10 @@ private:
   std::unique_ptr<tf2_ros::MessageFilter<LaserScan>> scan_filter_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr status_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr fit_pub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr reloc_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  std::unique_ptr<rclcpp::PreShutdownCallbackHandle> preshutdown_;   // removed in the destructor
 };
 
 int main(int argc, char ** argv)
