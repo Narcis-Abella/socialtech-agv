@@ -88,6 +88,7 @@ def supervisor_nodes():
     lib = supervisor_lib_dir()
     return [Node(package="gn_supervisor", executable="gn_supervisor_node.py", name="gn_supervisor", output="screen", respawn=True, respawn_delay=2.0, parameters=[{
         "map_xyz": prior, "register_binary": os.path.join(lib, "register_v2"), "lib_dir": lib,
+        "use_sim_time": False,      # as the ExecuteProcess it replaces: the stamps of /initialpose and /diagnostics stay wall time under sim_time:=true
         "wheel_topic": "/odom", "work_dir": "/runs/gn_supervisor", "base_from_body_xyyaw": [LIDAR_IN_BODY[0], LIDAR_IN_BODY[1], 0.0],
         "sensor_z": ParameterValue(LC("sensor_height"), value_type=float),      # the mounting height over the floor of the map
         "lidar_decimate": int(os.environ.get("POINT_FILTER_NUM") or 2)}])]       # the density FAST-LIO2 runs with (run_live point_filter_num); the search was validated with 2, so another value is a change to re-validate

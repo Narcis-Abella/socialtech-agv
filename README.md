@@ -25,7 +25,7 @@ scripts/ the one command that runs every test that needs neither ROS nor a board
 | `src/navigation/` | `socialtech_nav` (Nav2 parameters, behavior trees), `socialtech_costmap` (`DecayObstacleLayer`, height-band clearing) |
 | `src/simulation/` | `socialtech_livox_sim`, `socialtech_simreal`: built only into the `sim` image |
 | `src/mapping/` | `socialtech_mapping`: the beam counting of `tools/slam_bench/ghosts.py` in C++, built only into the `mapper` image |
-| `ops/` | `nav_live.sh` (starts the stack), `record_bag.sh`, `make_map.sh`, `rviz_live.sh` + `laptop/`, `build_image.sh` / `ship_image.sh` / `image_revision.sh`, `nav_exec.sh`, the base-layer checks (`tracer_test.sh` + `can_latency.py`: wheels in the air; `send_goal.py`: one recorded goal to Nav2) and their tests |
+| `ops/` | `nav_live.sh` (starts the stack), `record_bag.sh`, `make_map.sh`, `rviz_live.sh` + `laptop/`, `build_image.sh` / `ship_image.sh` / `image_revision.sh`, `nav_exec.sh`, the base-layer checks (`tracer_test.sh` + `can_latency.py`: wheels in the air; `send_goal.py` (in `socialtech_bringup`, run with `ops/nav_exec.sh`): one recorded goal to Nav2) and their tests |
 | `tools/nav_sim/`, `tools/sim_realism/` | Full-chain simulation (simulated Mid-360 + real FAST-LIO2 + Nav2) on the AGX and its runners |
 | `tools/slam_bench/` | Offline: bag to map with Voxel-SLAM (`make_map.sh`), bag checks, Voxel-SLAM cost on the Jetsons |
 

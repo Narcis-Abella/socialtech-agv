@@ -21,10 +21,11 @@ DOCKER_BUILDKIT=1 docker build --progress=plain --target "$TARGET" -t "socialtec
   --label "org.opencontainers.image.revision=${rev}${dirty}" -f "$REPO/docker/Dockerfile" "$REPO" >>"$LOG" 2>&1
 rc=$?
 if ((rc == 0)); then   # the older tags of this target beyond KEEP go. Docker's own order is no use: cached layers give every image the same Created, so the history of THIS script's builds is kept
-  state=${XDG_STATE_HOME:-$HOME/.local/state}/socialtech; mkdir -p "$state"; hist=$state/images-$TARGET      # one tag per line, the newest last; a tag it does not know (built by hand, earlier) is never removed
+  state=${XDG_STATE_HOME:-$HOME/.local/state}/socialtech; mkdir -p "$state"; hist=$state/images-$TARGET$dirty; keep=${KEEP:-3}; [[ -z $dirty ]] || keep=1      # dirty builds have a history of their own, one long: a few dev iterations must not evict the last clean tag (the rollback target)
+  # one tag per line, the newest last; a tag it does not know (built by hand, earlier) is never removed
   { grep -vxF "$tag" "$hist" 2>/dev/null || true; echo "$tag"; } >"$hist.new" && mv "$hist.new" "$hist"
-  head -n -"${KEEP:-3}" "$hist" | while read -r t; do docker rmi "socialtech:$t" >>"$LOG" 2>&1 || true; done      # one in use, or the alias's, only loses its name
-  tail -n "${KEEP:-3}" "$hist" >"$hist.new" && mv "$hist.new" "$hist"
+  head -n -"$keep" "$hist" | while read -r t; do docker rmi "socialtech:$t" >>"$LOG" 2>&1 || true; done      # one in use, or the alias's, only loses its name
+  tail -n "$keep" "$hist" >"$hist.new" && mv "$hist.new" "$hist"
 fi
 echo "rc=$rc" >>"$LOG"
 exit $rc

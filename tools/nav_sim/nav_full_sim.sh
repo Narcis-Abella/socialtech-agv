@@ -21,7 +21,7 @@ fi
 SPAWN=$(python3 -c "import json,sys; print(*json.load(open(sys.argv[1]))['trials'][0]['start'])" "$scenario")   # assigned first: export would hide a failing python
 export SPAWN
 source /tools/nav_sim/sim_up.sh
-if [ -d /src ]; then src_overlay loc gn_loc; fi
+if [ -d /src ]; then src_overlay loc gn_loc || { echo "gn_loc build failed: see $out/build_loc.log" >&2; exit 1; }; fi
 chain_map
 fastlio_yaml "$out/fastlio.yaml"
 # LEVEL_CORRECTOR=1: level_corrector (registers the cloud against the world's own 3D points, written here) built over the image's packages (small_gicp prebuilt in /sg); planar_odom
@@ -30,6 +30,7 @@ LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default, as ops/nav_live.sh: the 
 SUPERVISOR=${SUPERVISOR-1}               # on by default, as ops/nav_live.sh (SUPERVISOR=0 for the stack without it)
 normalize_flags LEVEL_CORRECTOR SUPERVISOR   # 0/off/false/no mean off, as in ops/nav_live.sh
 LC_ARG=
+if [ -d /src ]; then src_overlay nav socialtech_nav; fi   # only this run reads the Nav2 parameters of the package
 if [ -n "${LEVEL_CORRECTOR:-}" ]; then
   grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" || { echo "planar_odom that would run ($(ros2 pkg prefix planar_odom)) predates correction_topic: the corrector would run and level nothing (mount src/ at /src, agx_full.sh does)" >&2; exit 1; }
   python3 /tools/sim_realism/tris_to_ply.py /pat/loyola.tris "$out/map3d" 0.1 0.05 > "$out/map3d.log"
@@ -40,6 +41,8 @@ fi
 nav=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav; params=$nav/config/nav2_params.yaml   # the image's, or the overlay of /src: the robot reads the package's too (run_live)
 python3 "$BRINGUP/merge_params.py" "$params" "$BRINGUP_SHARE/config/nav2_robot_overrides.yaml" ${NAV2_OVERLAY:+/tools/nav_sim/params/$NAV2_OVERLAY} > "$out/nav2_params.yaml"
 sed -i "s#/opt/socialtech/share/socialtech_nav/#$nav/#" "$out/nav2_params.yaml"   # the behavior tree path is absolute in the file: follow the package that was used (the overlay's)
+bt=$(sed -n 's/^ *default_nav_to_pose_bt_xml: *//p' "$out/nav2_params.yaml")
+[ -f "$bt" ] && [ "${bt#"$nav"/behavior_trees/}" != "$bt" ] || { echo "the behavior tree '$bt' is not a file of $nav/behavior_trees: the prefix rewrite did not apply (a NAV2_OVERLAY with its own absolute path?)" >&2; exit 1; }
 if [ -n "${SUPERVISOR:-}" ]; then
   python3 /tools/sim_realism/tris_to_prior.py /pat/loyola.tris "$out/prior.xyz" 0.2 0.1 > "$out/prior.log"; mkdir -p "$out/runs"; export SUP_PRIOR="$out/prior.xyz"
 fi

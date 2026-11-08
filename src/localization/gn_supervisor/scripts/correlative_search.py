@@ -1,6 +1,6 @@
 """Truth-free exhaustive correlative search over yaw, x, y, z on gravity-levelled clouds.
 
-Descriptor-free alternative to KISS candidate generation. Both clouds must be
+The global candidate generator of the relocalizer (descriptor-free; the KISS-Matcher registration it replaced is gone). Both clouds must be
 levelled (map: T_map_world; source: IMU gravity), so only yaw is unknown in the
 rotation. For each yaw the levelled source is voxelized and cross-correlated
 with a likelihood field of the whole map via FFT; every translation in the map

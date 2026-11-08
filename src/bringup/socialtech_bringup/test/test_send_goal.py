@@ -1,6 +1,9 @@
 """Checks of the pure parts of send_goal.py (no node is started, but send_goal.py imports rclpy and nav2_msgs: run them in the robot image)."""
 import math
+import os
+import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))   # the module under test: run by path (pytest gets it from conftest.py)
 try:
     from send_goal import phases, pick, wrap
 except ModuleNotFoundError as e:      # rclpy / nav2_msgs: only in the robot image. A missing NAME (ImportError) is a real failure and must not skip

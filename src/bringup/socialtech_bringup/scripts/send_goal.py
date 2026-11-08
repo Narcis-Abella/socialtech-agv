@@ -1,4 +1,4 @@
-"""Send one recorded goal to Nav2 and measure how the robot sets off. THE ROBOT MOVES. Runs where ROS and the stack are (docker exec into the nav container).
+"""Send one recorded goal to Nav2 and measure how the robot sets off. THE ROBOT MOVES. Runs where ROS and the stack are, installed in the image: ops/nav_exec.sh python3 /opt/socialtech/lib/socialtech_bringup/send_goal.py [INDEX|auto].
   send_goal.py [INDEX|auto] [--timeout 60]      INDEX = 0-based position in goals_lab.yaml; auto = the goal that needs the biggest turn from the current gn_loc pose (1.2-5 m away)
 The goal is oriented along the line robot -> goal, so no final turn adds to the measure. Reported: time to the first translation, and while turning in place before it
 (commanded |w| > 0.05 rad/s, |vx| < 0.02): duration, mean and peak commanded |w|, and the angle the base itself reports (integral of /odom w).
@@ -73,7 +73,9 @@ def main():
     ap.add_argument("goal", nargs="?", default="auto")
     ap.add_argument("--timeout", type=float, default=60)
     args = ap.parse_args()
-    goals = yaml.safe_load(open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "goals_lab.yaml")))
+    here = os.path.dirname(os.path.realpath(__file__))
+    goals_file = next(f for f in (os.path.join(here, "..", "..", "share", "socialtech_bringup", "config", "goals_lab.yaml"), os.path.join(here, "..", "config", "goals_lab.yaml")) if os.path.isfile(f))   # installed, or the source tree
+    goals = yaml.safe_load(open(goals_file))
 
     rclpy.init()
     node = Probe()

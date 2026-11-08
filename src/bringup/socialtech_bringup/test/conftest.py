@@ -10,7 +10,7 @@ collect_ignore = []
 if importlib.util.find_spec("rclpy") is None:
     collect_ignore += ["test_live_paths.py", "test_planar_odom_node.py"]
 if importlib.util.find_spec("nav2_msgs") is None:
-    collect_ignore += ["test_local_frame_aligner.py"]
+    collect_ignore += ["test_local_frame_aligner.py", "test_send_goal.py"]
 if importlib.util.find_spec("launch") is None:
     collect_ignore += ["test_supervisor_launch.py"]
 try:
