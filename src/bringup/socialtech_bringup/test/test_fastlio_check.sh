@@ -1,8 +1,8 @@
 #!/bin/bash
-# Run: bash ops/test_fastlio_check.sh
+# Run: bash src/bringup/socialtech_bringup/test/test_fastlio_check.sh
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
-source "$here/fastlio_check.sh"
+source "$here/../scripts/fastlio_check.sh"
 d=$(mktemp -d); trap 'rm -f "$d"/*.yaml; rmdir "$d"' EXIT
 fail=0
 expect() {   # expect ok|bad NAME FILE key=value ...

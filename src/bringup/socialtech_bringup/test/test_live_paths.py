@@ -2,7 +2,7 @@
 Needs ROS 2 (run inside the robot image): python3 test_live_paths.py"""
 import os, sys
 
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "scripts"))
 import rclpy
 import live_paths
 

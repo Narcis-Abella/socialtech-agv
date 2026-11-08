@@ -15,6 +15,7 @@ from launch_ros.actions import SetParameter
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 LIVE_ARGS = ("livox_config", "fastlio_params", "map", "overrides", "sensor_height", "level_qx", "level_qy", "level_qz", "level_qw")
+LIVE_OVERRIDES = os.path.join(os.path.dirname(HERE), "config", "live_overrides.yaml")   # the default of `overrides` (see nav_live.launch.py)
 
 
 def include(path, condition=None, **args):
@@ -24,7 +25,7 @@ def include(path, condition=None, **args):
 def generate_launch_description():
     nav2 = get_package_share_directory("nav2_bringup")
     tracer = get_package_share_directory("tracer_base")
-    return LaunchDescription([DeclareLaunchArgument(n) for n in LIVE_ARGS + ("nav2_params",)] + [DeclareLaunchArgument("base", default_value="false"), DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false"), DeclareLaunchArgument("viz", default_value="true"), DeclareLaunchArgument("level_corrector", default_value="false")] + [
+    return LaunchDescription([DeclareLaunchArgument(n) for n in LIVE_ARGS + ("nav2_params",) if n != "overrides"] + [DeclareLaunchArgument("overrides", default_value=LIVE_OVERRIDES), DeclareLaunchArgument("base", default_value="false"), DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false"), DeclareLaunchArgument("viz", default_value="true"), DeclareLaunchArgument("level_corrector", default_value="false")] + [
         include(os.path.join(HERE, "nav_live.launch.py"), driver=LC("driver"), sim_time=LC("sim_time"), viz=LC("viz"), level_corrector=LC("level_corrector"), **{n: LC(n) for n in LIVE_ARGS}),
         include(os.path.join(nav2, "launch", "navigation_launch.py"), params_file=LC("nav2_params"), use_sim_time=LC("sim_time"), autostart="false", use_composition="False"),   # started by nav_start_when_localized.py
         GroupAction([SetParameter(name="publish_odom_tf", value=False),

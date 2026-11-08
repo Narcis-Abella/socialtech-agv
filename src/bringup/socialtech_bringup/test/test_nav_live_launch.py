@@ -1,4 +1,4 @@
-"""nav_live.launch.py wiring that the supervisor relies on (needs the ROS 2 python packages, so inside the image): python3 ops/test_nav_live_launch.py"""
+"""nav_live.launch.py wiring that the supervisor relies on (needs the ROS 2 python packages, so inside the image): python3 src/bringup/socialtech_bringup/test/test_nav_live_launch.py"""
 import importlib.util
 import os
 
@@ -18,7 +18,7 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterFile
 
 here = os.path.dirname(os.path.abspath(__file__))
-spec = importlib.util.spec_from_file_location("nav_live_launch", os.path.join(here, "nav_live.launch.py"))
+spec = importlib.util.spec_from_file_location("nav_live_launch", os.path.join(here, "..", "launch", "nav_live.launch.py"))
 launch = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(launch)
 
@@ -149,7 +149,7 @@ from ament_index_python.packages import get_package_share_directory
 fl = yaml.safe_load(open(os.path.join(get_package_share_directory("fast_lio"), "config", "mid360.yaml")))
 ext = list(fl["/**"]["ros__parameters"]["mapping"]["extrinsic_T"])
 assert ext == launch.LIDAR_IN_BODY, f"launch LIDAR_IN_BODY {launch.LIDAR_IN_BODY} != FAST-LIO2 extrinsic_T {ext}"
-sim_up = open(os.path.join(here, "..", "tools", "nav_sim", "sim_up.sh")).read()
+sim_up = open(os.path.join(here, "..", "..", "..", "..", "tools", "nav_sim", "sim_up.sh")).read()
 m = re.search(r"lidar_in_body:=\"\[([^\]]*)\]\"", sim_up)
 assert m and [float(x) for x in m.group(1).split(",")] == ext, f"sim_up.sh lidar_in_body {m and m.group(1)} != extrinsic_T {ext}"
 print("ok extrinsic")

@@ -1,4 +1,8 @@
-"""Checks of merge_params.merge (no ROS needed): python3 ops/test_merge_params.py"""
+"""Checks of merge_params.merge (no ROS needed): python3 src/bringup/socialtech_bringup/test/test_merge_params.py"""
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "scripts"))   # the module under test: run by path, not installed as a package
+
 import copy
 import os
 import subprocess
@@ -24,6 +28,6 @@ with tempfile.TemporaryDirectory() as d:
     b, e = os.path.join(d, "base.yaml"), os.path.join(d, "empty.yaml")
     open(b, "w").write("a:\n  x: 1\n")
     open(e, "w").write("# nothing to override\n")
-    r = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "merge_params.py"), b, e], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "merge_params.py"), b, e], capture_output=True, text=True)
     assert r.returncode == 0 and "x: 1" in r.stdout, (r.returncode, r.stderr)
 print("ok")

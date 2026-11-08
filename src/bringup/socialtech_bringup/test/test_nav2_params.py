@@ -1,4 +1,8 @@
 """Checks of the merged Nav2 parameters (no ROS needed): python3 ops/test_nav2_params.py"""
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "scripts"))   # the module under test: run by path, not installed as a package
+
 import os
 
 import yaml
@@ -7,7 +11,7 @@ from merge_params import merge
 
 here = os.path.dirname(os.path.abspath(__file__))
 merged = {}
-for path in (os.path.join(here, "..", "src", "navigation", "socialtech_nav", "config", "nav2_params.yaml"), os.path.join(here, "nav2_robot_overrides.yaml")):
+for path in (os.path.join(here, "..", "..", "..", "navigation", "socialtech_nav", "config", "nav2_params.yaml"), os.path.join(here, "..", "config", "nav2_robot_overrides.yaml")):
     with open(path) as f:
         merge(merged, yaml.safe_load(f))
 local = merged["local_costmap"]["local_costmap"]["ros__parameters"]

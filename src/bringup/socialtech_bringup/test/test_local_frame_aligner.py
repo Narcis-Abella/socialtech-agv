@@ -1,5 +1,5 @@
 """The real local_frame_aligner.py against a fake localizer and a fake clear service: it aligns at the first map -> odom, leaves drift for the next stop, realigns at once only on a jump that stays, and clears the local costmap
-after realigning. python3 ops/test_local_frame_aligner.py (needs ROS 2 and nav2_msgs); runs on its own domain."""
+after realigning. python3 src/bringup/socialtech_bringup/test/test_local_frame_aligner.py (needs ROS 2 and nav2_msgs); runs on its own domain."""
 import math
 import os
 import subprocess
@@ -23,7 +23,7 @@ except ModuleNotFoundError as e:      # nav2_msgs: only in the robot image
 from tf2_ros import TransformBroadcaster  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-proc = subprocess.Popen([sys.executable, "-B", os.path.join(HERE, "local_frame_aligner.py"), "--ros-args", "-p", "clear_delay_s:=0.1", "-p", "still_s:=0.5", "-p", "persist_s:=0.3"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+proc = subprocess.Popen([sys.executable, "-B", os.path.join(HERE, "..", "scripts", "local_frame_aligner.py"), "--ros-args", "-p", "clear_delay_s:=0.1", "-p", "still_s:=0.5", "-p", "persist_s:=0.3"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 rclpy.init()
 n = rclpy.create_node("aligner_test")
 br = TransformBroadcaster(n)

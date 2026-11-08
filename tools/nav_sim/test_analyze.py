@@ -213,7 +213,7 @@ def test_a_run_is_scored_on_its_own_chain_map_and_the_old_map_only_with_a_notice
         with contextlib.redirect_stderr(err):
             assert a.default_map(d) == os.path.join(d, a.CHAIN_MAP)
         assert err.getvalue() == ""
-    assert a.FOOTPRINT == (0.66, 0.54)       # ops/nav2_robot_overrides.yaml
+    assert a.FOOTPRINT == (0.66, 0.54)       # socialtech_bringup/config/nav2_robot_overrides.yaml
 
 
 def test_each_run_of_a_comparison_is_scored_on_its_own_map_unless_one_is_given():

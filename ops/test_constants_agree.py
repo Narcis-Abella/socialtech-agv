@@ -21,7 +21,7 @@ def find(path, pattern, group=1, flags=0):
 
 
 def test_the_obstacle_band_is_the_same_for_the_scan_the_costmap_and_the_map():
-    scan = yaml.safe_load(text("tools/nav_common/config/scan.yaml"))
+    scan = yaml.safe_load(text("src/bringup/socialtech_bringup/config/scan.yaml"))
     p = next(v for k, v in scan.items() if isinstance(v, dict)).get("ros__parameters", scan)
     lo, hi = p["min_height"], p["max_height"]
     assert (lo, hi) == (0.10, 1.80), (lo, hi)
@@ -33,14 +33,14 @@ def test_the_obstacle_band_is_the_same_for_the_scan_the_costmap_and_the_map():
 
 
 def test_the_lidar_offset_is_fast_lios_extrinsic_everywhere_it_is_copied():
-    launch = ast.literal_eval(find("ops/nav_live.launch.py", r"^LIDAR_IN_BODY = (\[[^\]]*\])", flags=re.M))
+    launch = ast.literal_eval(find("src/bringup/socialtech_bringup/launch/nav_live.launch.py", r"^LIDAR_IN_BODY = (\[[^\]]*\])", flags=re.M))
     ghosts = ast.literal_eval(find("tools/slam_bench/ghosts.py", r"^EXTR = (\([^)]*\))", flags=re.M))
     frames = ast.literal_eval(find("tools/global_reloc_3d/livox_frames.py", r"extrinsic=(\([^)]*\))"))
     assert list(ghosts) == launch and list(frames) == launch, (launch, ghosts, frames)
 
 
 def test_the_livox_addresses_and_the_receive_buffer_have_one_value():
-    for path in ("ops/livox_config.sh", "ops/nav_live.sh", "ops/record_bag.sh"):
+    for path in ("src/bringup/socialtech_bringup/scripts/livox_config.sh", "ops/nav_live.sh", "ops/record_bag.sh"):
         assert find(path, r"^HOST_IP=\$\{LIVOX_HOST_IP:-([\d.]+)\}", flags=re.M) == "192.168.1.50", path
         assert find(path, r"^LIDAR_IP=\$\{LIVOX_LIDAR_IP:-([\d.]+)\}", flags=re.M) == "192.168.1.126", path
     assert find("host/robot.conf.example", r"^LIVOX_HOST_IP=([\d.]+)", flags=re.M) == "192.168.1.50"

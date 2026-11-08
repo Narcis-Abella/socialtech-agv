@@ -1,4 +1,8 @@
 """Checks map_frame.py on synthetic trajectories with known answers. Run: python3 test_map_frame.py"""
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "scripts"))   # the module under test: run by path, not installed as a package
+
 import os
 import subprocess
 import sys
@@ -67,7 +71,7 @@ def test_the_level_command_prints_what_nav_live_reads():
         q0 = np.array([0, np.sin(pitch / 2), 0, np.cos(pitch / 2)])
         np.savetxt(f"{d}/ref.txt", [[0.0, 0, 0, 0, *q0], [0.1, 0, 0, 0, *q0]])
         open(f"{d}/map.yaml", "w").write(YAML)
-        out = subprocess.run([sys.executable, os.path.join(here, "map_frame.py"), "level", "--ref", f"{d}/ref.txt", "--map", f"{d}/map.yaml"],
+        out = subprocess.run([sys.executable, os.path.join(here, "..", "scripts", "map_frame.py"), "level", "--ref", f"{d}/ref.txt", "--map", f"{d}/map.yaml"],
                              capture_output=True, text=True, check=True).stdout.split()
         assert len(out) == 4  # "qx qy qz qw", the four numbers `read -r qx qy qz qw` takes in ops/nav_live.sh
         assert np.allclose([float(v) for v in out], pe.level_quat(f"{d}/ref.txt", RZ90), atol=1e-6)

@@ -1,4 +1,4 @@
-// FAST-LIO2 /Odometry (camera_init -> body) -> odom -> base_footprint TF, in the floor-levelled odom frame. reference: tools/nav_common/planar_odom.py, checked by test_planar_odom_node.py
+// FAST-LIO2 /Odometry (camera_init -> body) -> odom -> base_footprint TF, in the floor-levelled odom frame. reference: src/bringup/socialtech_bringup/test/planar_odom.py, checked by test_planar_odom_node.py
 // (same maths: planar_odom.footprint); also publishes the static odom -> camera_init level transform, so no static_transform_publisher is needed.
 // Also the static base_footprint -> lidar_level: levelled, at the height of the lidar, what /scan is published in (a scan on the floor sits on the costmaps' height filter).
 // params: sensor_height (m, of the body), level ([qx, qy, qz, qw] of odom <- camera_init), lidar_in_body ([x, y, z] m: FAST-LIO2's extrinsic_T; the body is the IMU, and base_footprint goes under the lidar,

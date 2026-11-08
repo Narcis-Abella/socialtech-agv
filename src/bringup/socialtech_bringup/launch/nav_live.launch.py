@@ -1,5 +1,5 @@
 """Live localization on the robot: Livox driver + FAST-LIO2 + levelled planar odom + /scan + map_server + gn_loc, on wall time. gn_loc gets no initial pose here: from the supervisor, or click 2D Pose Estimate in rviz2.
-ros2 launch nav_live.launch.py livox_config:=C.json fastlio_params:=F map:=M.yaml sensor_height:=H level_qx:=.. level_qy:=.. level_qz:=.. level_qw:=.. overrides:=O.yaml
+ros2 launch socialtech_bringup nav_live.launch.py livox_config:=C.json fastlio_params:=F map:=M.yaml sensor_height:=H level_qx:=.. level_qy:=.. level_qz:=.. level_qw:=.. overrides:=O.yaml
 driver:=false sim_time:=true: the simulation (tools/nav_sim/sup_sim.sh) publishes /livox/lidar and /livox/imu itself and runs on /clock; everything else is this same launch."""
 import os
 from typing import List
@@ -13,10 +13,20 @@ from launch.substitutions import LaunchConfiguration as LC, PythonExpression
 from launch_ros.actions import Node, SetParameter
 from launch_ros.parameter_descriptions import ParameterValue
 
-NAV_COMMON = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "tools/nav_common")
+PKG = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))   # share/socialtech_bringup when installed; the package folder in the source tree (and through a symlink install)
 
 
-SCAN = os.path.join(NAV_COMMON, "config/scan.yaml")
+def scripts_dir():
+    """Where the package's scripts are: lib/socialtech_bringup when installed, scripts/ in the source tree."""
+    for d in (os.path.join(PKG, "scripts"), os.path.join(PKG, "..", "..", "lib", "socialtech_bringup")):
+        if os.path.isdir(d):
+            return os.path.realpath(d)
+    raise RuntimeError(f"socialtech_bringup: no scripts directory next to {PKG}")
+
+
+SCRIPTS = scripts_dir()
+SCAN = os.path.join(PKG, "config", "scan.yaml")
+LIVE_OVERRIDES = os.path.join(PKG, "config", "live_overrides.yaml")
 CLOUD = [("cloud_in", "/cloud_registered_body")]
 LEVEL_MAP_DIR = os.environ.get("LEVEL_MAP_DIR", "/map")   # where map.ply + map.yaml are: the live stack mounts the map at /map, the sim writes its own
 LEVEL = ParameterValue(["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])   # odom <- camera_init
@@ -59,7 +69,7 @@ def heavy_env():
 def supervisor_nodes():
     """SUPERVISOR=1 (ops/nav_live.sh): gn_supervisor_node.py staged in /greloc. Respawned: a restarted supervisor comes up in CONFIRMING and holds Nav2 until
     gn_loc confirms its pose. It reads the robot's own FAST-LIO2 (/Odometry for "is the restarted filter publishing", plus the raw /livox/lidar and /livox/imu): no second FAST-LIO, unlike the AMCL-era reloc_node (PR #14, removed 2026-11-08)."""
-    if os.environ.get("SUPERVISOR", "").lower() in ("", "0", "false", "no", "off"):    # the rule of ops/flags.sh
+    if os.environ.get("SUPERVISOR", "").lower() in ("", "0", "false", "no", "off"):    # the rule of socialtech_bringup/scripts/flags.sh
         return []
     prior = os.environ.get("SUP_PRIOR")
     if not prior:
@@ -73,7 +83,8 @@ def supervisor_nodes():
 
 
 def generate_launch_description():
-    args = [DeclareLaunchArgument(n) for n in ("livox_config", "fastlio_params", "map", "overrides", "sensor_height", "level_qx", "level_qy", "level_qz", "level_qw")]
+    args = [DeclareLaunchArgument(n) for n in ("livox_config", "fastlio_params", "map", "sensor_height", "level_qx", "level_qy", "level_qz", "level_qw")]
+    args += [DeclareLaunchArgument("overrides", default_value=LIVE_OVERRIDES)]
     args += [DeclareLaunchArgument("driver", default_value="true"), DeclareLaunchArgument("sim_time", default_value="false"), DeclareLaunchArgument("viz", default_value="true"), DeclareLaunchArgument("level_corrector", default_value="false")]
     return LaunchDescription(args + [
         SetParameter(name="use_sim_time", value=True, condition=IfCondition(LC("sim_time"))),
@@ -94,7 +105,7 @@ def generate_launch_description():
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}, LC("overrides")]),
         *localizer_nodes(LC("overrides")),
         # gn_loc's trail (/gn_path); "-" = no reference path. A rviz aid: viz:=false (PROD=1) leaves it out
-        ExecuteProcess(cmd=["python3", os.path.join(NAV_COMMON, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen", condition=IfCondition(LC("viz"))),
-        ExecuteProcess(name="local_frame_aligner", output="screen", respawn=True, respawn_delay=2.0, cmd=["python3", "-B", os.path.join(os.path.dirname(os.path.realpath(__file__)), "local_frame_aligner.py"), "--ros-args", "-p", ["use_sim_time:=", LC("sim_time")]]),
+        ExecuteProcess(cmd=["python3", os.path.join(SCRIPTS, "live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen", condition=IfCondition(LC("viz"))),
+        ExecuteProcess(name="local_frame_aligner", output="screen", respawn=True, respawn_delay=2.0, cmd=["python3", "-B", os.path.join(SCRIPTS, "local_frame_aligner.py"), "--ros-args", "-p", ["use_sim_time:=", LC("sim_time")]]),
         *supervisor_nodes(),
     ])
