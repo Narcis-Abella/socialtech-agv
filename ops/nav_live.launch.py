@@ -13,10 +13,10 @@ from launch.substitutions import LaunchConfiguration as LC, PythonExpression
 from launch_ros.actions import Node, SetParameter
 from launch_ros.parameter_descriptions import ParameterValue
 
-NAV_BENCH = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "tools/nav_bench")
+NAV_COMMON = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "tools/nav_common")
 
 
-SCAN = os.path.join(NAV_BENCH, "config/scan.yaml")
+SCAN = os.path.join(NAV_COMMON, "config/scan.yaml")
 CLOUD = [("cloud_in", "/cloud_registered_body")]
 LEVEL_MAP_DIR = os.environ.get("LEVEL_MAP_DIR", "/map")   # where map.ply + map.yaml are: the live stack mounts the map at /map, the sim writes its own
 LEVEL = ParameterValue(["[", LC("level_qx"), ",", LC("level_qy"), ",", LC("level_qz"), ",", LC("level_qw"), "]"], value_type=List[float])   # odom <- camera_init
@@ -94,7 +94,7 @@ def generate_launch_description():
         Node(package="nav2_map_server", executable="map_server", parameters=[{"yaml_filename": LC("map")}, LC("overrides")]),
         *localizer_nodes(LC("overrides")),
         # gn_loc's trail (/gn_path); "-" = no reference path. A rviz aid: viz:=false (PROD=1) leaves it out
-        ExecuteProcess(cmd=["python3", os.path.join(NAV_BENCH, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen", condition=IfCondition(LC("viz"))),
+        ExecuteProcess(cmd=["python3", os.path.join(NAV_COMMON, "live/live_paths.py"), "-", LC("map"), "--ros-args", "-p", "use_sim_time:=false"], output="screen", condition=IfCondition(LC("viz"))),
         ExecuteProcess(name="local_frame_aligner", output="screen", respawn=True, respawn_delay=2.0, cmd=["python3", "-B", os.path.join(os.path.dirname(os.path.realpath(__file__)), "local_frame_aligner.py"), "--ros-args", "-p", ["use_sim_time:=", LC("sim_time")]]),
         *supervisor_nodes(),
     ])

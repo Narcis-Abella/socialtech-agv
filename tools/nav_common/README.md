@@ -1,4 +1,4 @@
-# nav_bench
+# nav_common
 
 Shared pieces of the localization/navigation stack that outlived the AMCL bench (stage A: FAST-LIO2 + Nav2 AMCL replayed over a bag and scored against the Voxel-SLAM trajectory; removed on 2026-11-08, with its AMCL tuning table and scripts, in the git history before that commit).
 
@@ -15,5 +15,5 @@ FAST-LIO2's world frame is the IMU frame at start, **not** gravity-aligned. `odo
 
 ## Tests
 ```bash
-cd tools/nav_bench && for t in test_*.py live/test_*.py; do python3 -B $t || break; done   # needs numpy and, for live_paths, ROS sourced
+cd tools/nav_common && for t in test_*.py live/test_*.py; do python3 -B $t || break; done   # needs numpy and, for live_paths, ROS sourced
 ```

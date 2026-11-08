@@ -69,8 +69,8 @@ python3 /ops/nav_start_when_localized.py > "$out/start.log" 2>&1
 timeout "${NAV_TIMEOUT:-180}" bash -c 'until [ "$(ros2 lifecycle get /bt_navigator 2>/dev/null | tail -1)" = "active [3]" ]; do sleep 2; done' || { echo "bt_navigator not active: see $out/launch.log" >&2; exit 1; }
 sleep 5
 if [ "${DIAG:-0}" != 0 ]; then sleep 20; python3 /tools/nav_sim/nav_diag.py | tee "$out/diag.txt"; exit 0; fi
-python3 /tools/nav_bench/procmon.py sample "$out/cost.csv" 1 &
+python3 /tools/nav_common/procmon.py sample "$out/cost.csv" 1 &
 sampler=$!
 python3 /tools/nav_sim/trials.py "$scenario" "$out" "$reps" --ros-args -p use_sim_time:=true 2>&1 | tee "$out/trials.log"
 kill $sampler 2>/dev/null || true
-python3 /tools/nav_bench/procmon.py report "$out/cost.csv" > "$out/cost_summary.txt" 2>&1 || true
+python3 /tools/nav_common/procmon.py report "$out/cost.csv" > "$out/cost_summary.txt" 2>&1 || true

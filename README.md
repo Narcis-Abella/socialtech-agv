@@ -18,7 +18,7 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | `ops/` | Running the robot: `nav_live.sh` (localization + Nav2; flags `NAV`, `BASE`, `SUPERVISOR`, `PROD`, `LEVEL_CORRECTOR`), the launch files, the map helpers (`make_map.sh`), base-layer checks run by hand (`tracer_test.sh` + `can_latency.py`: wheels in the air; `nav_exec.sh`: a command in the nav container), and the tests of all that (`test_*.py`, `test_flags.sh`) |
 | `tools/global_reloc_3d/` | The global relocalizer and the supervisor that calls it (everything in it runs on the robot; the AMCL-era pipeline was removed on 2026-11-08) |
 | `tools/nav_sim/`, `tools/sim_realism/` | Full-chain simulation (simulated Mid-360 + real FAST-LIO2 + Nav2) on the AGX and its runners |
-| `tools/nav_bench/` | Shared pieces: the floor-levelling rotation (`map_frame.py`, called by `ops/nav_live.sh`), the Python reference of `planar_odom`, `procmon.py`, the `/scan` cut |
+| `tools/nav_common/` | Shared pieces: the floor-levelling rotation (`map_frame.py`, called by `ops/nav_live.sh`), the Python reference of `planar_odom`, `procmon.py`, the `/scan` cut |
 | `tools/slam_bench/` | Offline: bag to map with Voxel-SLAM (`make_map.sh`), bag checks, Voxel-SLAM cost on the Jetsons (see Tools) |
 
 ## Jetson setup (once per board)
@@ -80,7 +80,7 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 |---|---|
 | Fix so upstream code builds/runs | `docker/patches/<repo>/*.patch` |
 | Our configuration (params, launch args) | `ops/` (launch files and overrides, merged over `docker/ros_nav/socialtech_nav/config/nav2_params.yaml`), never upstream configs |
-| Our own nodes | an ament package under `docker/ros`, `docker/ros_loc`, `docker/ros_nav` or `docker/ros_mapper` (by role, see Layout); a Python reference + test in `tools/nav_bench` if it replaces one |
+| Our own nodes | an ament package under `docker/ros`, `docker/ros_loc`, `docker/ros_nav` or `docker/ros_mapper` (by role, see Layout); a Python reference + test in `tools/nav_common` if it replaces one |
 | New logic in upstream code | a fork, pinned in `docker/robot.repos` |
 
 ## License

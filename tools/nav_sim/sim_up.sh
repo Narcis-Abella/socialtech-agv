@@ -49,7 +49,7 @@ lio_nodes() {
     scan_out=/scan_chain
     ros2 run socialtech_simreal sim_scan_model $SIM -p seed:=${SEED:-1} -p noise_scale:=0.0 -p in_topic:=/scan_chain -p out_topic:=/scan > "$out/scan_extra.log" 2>&1 &
   fi
-  ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node --ros-args --params-file /tools/nav_bench/config/scan.yaml -p use_sim_time:=true -p target_frame:=lidar_level -p min_height:=$(python3 -c "print(0.10 - $LIDAR_Z)") -p max_height:=$(python3 -c "print(1.80 - $LIDAR_Z)") -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
+  ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node --ros-args --params-file /tools/nav_common/config/scan.yaml -p use_sim_time:=true -p target_frame:=lidar_level -p min_height:=$(python3 -c "print(0.10 - $LIDAR_Z)") -p max_height:=$(python3 -c "print(1.80 - $LIDAR_Z)") -r cloud_in:=/cloud_registered_body -r scan:=$scan_out > "$out/scan.log" 2>&1 &
   sleep 8
 }
 

@@ -14,7 +14,7 @@
 # env: DDS_IFACE (interface towards PEER)  ROS_DOMAIN_ID (53, as the laptop scripts)  LIVOX_HOST_IP / LIVOX_LIDAR_IP  IMAGE (socialtech:robot)  MAP_DIR (~/maps)
 set -eo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-NB=$REPO/tools/nav_bench
+NB=$REPO/tools/nav_common
 source "$REPO/ops/flags.sh"
 LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default: only an explicit LEVEL_CORRECTOR=0 (or off/false/no) turns it off
 normalize_flags NAV BASE SUPERVISOR PROD LEVEL_CORRECTOR   # NAV=0 / BASE=0 / SUPERVISOR=0 / PROD=0 / LEVEL_CORRECTOR=0 mean off (a non-empty test used to arm Nav2, the Tracer base and the supervisor)

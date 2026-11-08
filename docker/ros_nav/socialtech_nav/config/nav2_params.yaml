@@ -83,7 +83,7 @@ global_costmap:
         observation_expiry: 60.0   # what the lidar cannot see any more is remembered for 60 s, then freed (Narcis, 2026-11-04)
         enabled: true
         observation_sources: cloud
-        min_obstacle_height: 0.10   # marking cut: the floor cut of tools/nav_bench/config/scan.yaml
+        min_obstacle_height: 0.10   # marking cut: the floor cut of tools/nav_common/config/scan.yaml
         max_obstacle_height: 1.8
         cloud: {topic: /cloud_registered_body, data_type: PointCloud2, sensor_frame: lidar_level, min_obstacle_height: -0.5, max_obstacle_height: 1.8, clearing: true, marking: true,   # -0.5: the floor stays in the source, the rays that end on it free low objects
           raytrace_max_range: 10.0, raytrace_min_range: 0.0, obstacle_max_range: 10.0, obstacle_min_range: 0.0}

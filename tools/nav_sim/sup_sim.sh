@@ -12,6 +12,6 @@ set_cyclone_uri   # this export replaced the URI of ros_env.sh: ask again for th
 source /ops/flags.sh; normalize_flags PROD PROCMON   # =0 means off, as in ops/nav_live.sh
 source /tools/nav_sim/sim_up.sh
 stack_up
-if [ -n "$PROCMON" ]; then python3 /tools/nav_bench/procmon.py sample "$out/procmon.csv" 1 & mon=$!; fi
+if [ -n "$PROCMON" ]; then python3 /tools/nav_common/procmon.py sample "$out/procmon.csv" 1 & mon=$!; fi
 python3 /tools/nav_sim/sup_cover.py "$out/scenario.json" "$cover_s" "$settle_s" "$@" | tee "$out/scenario.txt"
-[ -z "$mon" ] || { kill $mon; wait $mon 2> /dev/null || true; python3 /tools/nav_bench/procmon.py report "$out/procmon.csv" -s "$out/scenario.json" | tee "$out/procmon.txt"; }
+[ -z "$mon" ] || { kill $mon; wait $mon 2> /dev/null || true; python3 /tools/nav_common/procmon.py report "$out/procmon.csv" -s "$out/scenario.json" | tee "$out/procmon.txt"; }
