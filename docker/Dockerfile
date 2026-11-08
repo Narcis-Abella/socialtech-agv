@@ -101,7 +101,7 @@ RUN --mount=type=cache,target=/ws/build \
       --parallel-workers "${COLCON_WORKERS}" \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy
 
-# Nav2 map server and lifecycle manager, scan conversion (pointcloud_to_laserscan), scipy for the relocalizer. After the colcon build so a change here does not rebuild the workspace.
+# Nav2 map server and lifecycle manager, scan conversion (pointcloud_to_laserscan), bondcpp (lifecycle bonds), scipy for the relocalizer. After the colcon build so a change here does not rebuild the workspace.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \

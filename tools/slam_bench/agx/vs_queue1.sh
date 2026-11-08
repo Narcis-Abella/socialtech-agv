@@ -10,7 +10,7 @@ for v in "$@"; do
   tegrastats --interval 1000 > ~/bench_out/mon_$name.log & tp=$!
   ( while true; do echo "$(date +%T) $(docker stats --no-stream --format '{{.CPUPerc}} {{.MemUsage}}' 2>/dev/null)" >> ~/bench_out/dstats_$name.log; sleep 5; done ) & dp=$!
   echo "$(date -Is) start voxelslam $name" >> $log
-  VS_SED=${VS_SED:-} PLAY_RATE=1.0 ~/bench_voxelslam.sh $name custom/mapping_eco_-1_01_custom /livox/lidar /livox/imu > ~/bench_out/voxelslam_$name.log 2>&1
+  PLAY_RATE=1.0 ~/bench_voxelslam.sh $name custom/mapping_eco_-1_01_custom /livox/lidar /livox/imu > ~/bench_out/voxelslam_$name.log 2>&1
   echo "$(date -Is) end voxelslam $name rc=$? poses=$(wc -l < ~/bench_out/voxelslam_$name/vs/run/alidarState.txt 2>/dev/null)" >> $log
   kill $tp $dp 2>/dev/null; wait $tp $dp 2>/dev/null
 done
