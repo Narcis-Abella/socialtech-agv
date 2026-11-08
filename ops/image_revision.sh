@@ -17,7 +17,8 @@ checkout_dirty() {
   local repo top
   repo=$(cd "$1" && pwd -P)
   top=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)
-  [[ -n $top && $(cd "$top" && pwd -P) == "$repo" && -n $(git -C "$repo" status --porcelain 2>/dev/null) ]]
+  # shortcut: only what the image is built from counts (untracked runs/ or out/ must not mark every build dirty); a plain copy (no .git) edited by hand after git archive is not seen, when to upgrade: hash the context
+  [[ -n $top && $(cd "$top" && pwd -P) == "$repo" && -n $(git -C "$repo" status --porcelain -- docker deps src 2>/dev/null) ]]
 }
 
 # image_freshness IMAGE REPO: is the image built from what this checkout holds? Replaces a guard per feature ("an older image runs without /scan and without an error").
