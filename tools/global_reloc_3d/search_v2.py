@@ -1,6 +1,6 @@
 """Truth-free global search v2: correlative (x, y, z, yaw) candidates, GICP, same gate.
 
-Requires a gravity-levelled source (lio_submap.py --imu-bag). The acceptance rule
+Requires a gravity-levelled source (lio_submap.assemble with an IMU). The acceptance rule
 is verify.decide() unchanged: converged refinement, check support >= 0.70 with
 matched RMSE <= 0.10 m, support lead >= 0.10 over a distinct runner-up, and an
 independent global search of the later batch agreeing within 0.20 m / 5 deg,
@@ -80,18 +80,6 @@ def run_register(binary, args, timeout_s, threads):
         return {'exit_code': proc.returncode, 'stdout': proc.stdout[-500:], 'stderr': proc.stderr[-500:]}, False
     except subprocess.TimeoutExpired:
         return {'exit_code': 124, 'stderr': 'matcher_deadline_exceeded'}, True
-
-
-def refine(binary, map_path, source_path, check_path, T_init, out_dir, voxel, timeout_s, threads=2):
-    out_dir.mkdir()
-    init = out_dir / 'init.txt'
-    np.savetxt(init, np.asarray(T_init))
-    log, timed_out = run_register(binary, [map_path, source_path, check_path, voxel, out_dir / 'result.json', '--init', init],
-                                  timeout_s, threads)
-    if timed_out:
-        return log, None        # the lone run writes result.json in place: a killed one may leave half a file
-    path = out_dir / 'result.json'
-    return log, (json.loads(path.read_text()) if path.exists() else None)
 
 
 def refine_all(binary, map_path, source_path, check_path, T_inits, out, prefix, voxel, timeout_s, threads=2):
@@ -180,7 +168,7 @@ def in_band(row, z_band, margin=.25):
 
 def rank(rows, z_band=None):
     valid = [r for r in rows if 'geometry' in r and r['geometry']['valid'] and in_band(r, z_band)]
-    valid.sort(key=lambda r: (-r['geometry']['support_015'], r['geometry']['matched_rmse_m'] or 9.))
+    valid.sort(key=lambda r: (-r['geometry']['support_015'], 9. if r['geometry']['matched_rmse_m'] is None else r['geometry']['matched_rmse_m']))
     top = []
     for r in valid:
         T = np.asarray(r['result']['T_map_lidar_refined'])
@@ -221,7 +209,7 @@ def main():
     t0 = time.monotonic()
     manifest = json.loads((run / 'manifest.json').read_text())
     if manifest['frame_fit'] != 'local_first_imu_levelled':
-        raise ValueError('search_v2 needs a gravity-levelled source (lio_submap.py --imu-bag)')
+        raise ValueError('search_v2 needs a gravity-levelled source (built by lio_submap.assemble from an IMU)')
     fit = np.loadtxt(run / 'fit.xyz').reshape(-1, 3)      # reshape: one point or none load as 1-D
     check = np.loadtxt(run / 'check.xyz').reshape(-1, 3)
     if min(len(crop_source(s, a.radius)) for s in (fit, check)) < MIN_SOURCE_POINTS:      # before the map and the field: this exit is retried, on a shared board

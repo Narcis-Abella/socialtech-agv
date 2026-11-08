@@ -1,5 +1,5 @@
-// The estimator without ROS: Gauss-Newton scan-to-map tracking with a Kalman prior. Port of notes/nav_real_scripts/amcl_replay/gn_localizer.py + gn_loc/gn_loc_node.py (GNCore);
-// the Python files are the reference the port is checked against (same bag, same numbers).
+// The estimator without ROS: Gauss-Newton scan-to-map tracking with a Kalman prior. Originally ported from notes/nav_real_scripts/amcl_replay/gn_localizer.py + gn_loc/gn_loc_node.py (GNCore)
+// of the SocialTech workspace repo; this code has diverged since (robust loss, still window, coarse-to-fine search), so the C++ tests are the reference now.
 #pragma once
 #include <Eigen/Dense>
 

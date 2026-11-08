@@ -2,7 +2,7 @@
 <package format="3">
   <name>level_corrector</name>
   <version>0.1.0</version>
-  <description>Slow roll/pitch correction of FAST-LIO's odom frame against the levelled 3D map (shadow mode first).</description>
+  <description>Slow roll/pitch correction of FAST-LIO's odom frame against the levelled 3D map (consumed by planar_odom through correction_topic).</description>
   <maintainer email="narcis.abellallos@gmail.com">Narcis</maintainer>
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>

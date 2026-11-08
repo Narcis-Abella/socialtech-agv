@@ -12,7 +12,7 @@ namespace
 constexpr int N = 200;
 constexpr double RES = 0.025;
 
-// a 4 m square room with a wall segment inside, 2.5 cm cells (same as the Python selftest); blob: a 1.4 m checkerboard of occupied cells at x 1.6-3.0, y 2.9-4.3
+// a 4 m square room with a wall segment inside, 2.5 cm cells (the room of the original Python selftest); blob: a 1.4 m checkerboard of occupied cells at x 1.6-3.0, y 2.9-4.3
 // (cluttered furniture as the 2D map shows it: every point inside is within 2 cm of an occupied cell)
 std::vector<int8_t> room(bool blob = false)
 {

@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from scipy.spatial.transform import Rotation
-from lio_submap import interpolate, rebase, level_rotation, gravity_up, s3_limit
+from lio_submap import interpolate, rebase, level_rotation, gravity_up
 
 
 class LioJoinTest(unittest.TestCase):
@@ -41,20 +41,6 @@ class LioJoinTest(unittest.TestCase):
         up,n,spread,skipped=gravity_up(imu,gap,first,0.,2.)
         self.assertGreater(skipped,0)
         self.assertTrue(np.allclose(up,up_world,atol=1e-6))
-
-    def test_s3_limit_uses_own_odometry(self):
-        poses=[]
-        for x in np.arange(0,4,.5):
-            T=np.eye(4); T[0,3]=x; poses.append(T)
-        n,reason,path,radius=s3_limit(list(range(len(poses))),poses,2.8,6.)
-        self.assertEqual((n,reason),(6,'radius'))
-        self.assertAlmostEqual(radius,2.5)
-        back=[]
-        for x in [0,2,0,2,0,2,0,2]:
-            T=np.eye(4); T[0,3]=x; back.append(T)
-        self.assertEqual(s3_limit(list(range(8)),back,2.8,6.)[:2],(4,'path'))
-        self.assertEqual(s3_limit([0,1],back[:1]*2,2.8,6.)[:2],(2,'duration'))
-
 
 if __name__=='__main__':
     unittest.main()

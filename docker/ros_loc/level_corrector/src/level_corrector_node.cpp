@@ -1,6 +1,6 @@
-// level_corrector, shadow mode: every 1/rate_hz s it registers the latest FAST-LIO body cloud against the levelled 3D map, seeded with gn_loc's map->odom and FAST-LIO's pose,
-// and publishes the roll/pitch correction C that odom <- camera_init would need (L' = C * L, L = the static level planar_odom publishes). It publishes only: no TF, planar_odom does
-// not read it. Out: ~/correction (QuaternionStamped, C), ~/status (String, every tick: state, fit, measured tilt, C, CPU ms). When a gate fails C stays where it was.
+// level_corrector: every 1/rate_hz s it registers the latest FAST-LIO body cloud against the levelled 3D map, seeded with gn_loc's map->odom and FAST-LIO's pose,
+// and publishes the roll/pitch correction C that odom <- camera_init would need (L' = C * L, L = the static level planar_odom publishes). It publishes only (no TF): planar_odom reads it when launched with correction_topic (the default of
+// ops/nav_live.sh; LEVEL_CORRECTOR=0 turns it off). Out: ~/correction (QuaternionStamped, C), ~/status (String, every tick: state, fit, measured tilt, C, CPU ms). When a gate fails C stays where it was.
 #include <time.h>
 
 #include <deque>

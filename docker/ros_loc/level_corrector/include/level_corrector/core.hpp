@@ -1,4 +1,4 @@
-// Pure core of level_corrector (no ROS, no registration): the roll/pitch correction C that planar_odom would apply on top of the static level L (odom <- camera_init:
+// Pure core of level_corrector (no ROS, no registration): the roll/pitch correction C that planar_odom applies on top of the static level L (odom <- camera_init:
 // L' = C * L), and the gates and filter that decide how it follows the map-registered measurements. Maths mirror notes/orientacion_scripts/maptrack.py.
 #pragma once
 #include <Eigen/Geometry>

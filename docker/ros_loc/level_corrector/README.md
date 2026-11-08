@@ -10,9 +10,9 @@ Why: FAST-LIO2 starts with `camera_init` = the IMU frame at start and finds grav
 | Out | `~/correction` (QuaternionStamped, frame `odom`: C, so that L' = C * L), `~/status` (String, every tick) |
 | Cycle | every `1/rate_hz` s (0.5 Hz): point-to-plane ICP of the latest cloud (voxel 0.25 m) against the map (voxel 0.1 m), seeded with gn_loc's planar pose and FAST-LIO2's attitude; two passes (0.5 m, 0.15 m) |
 | Gates | `min_inliers` 300, `min_ratio` 0.9 (inliers / scan points), `max_rms` 0.03 m, `max_dxy` 0.3 m and `max_dyaw_deg` 3 against the seed. A scan that fails any is dropped (`state=<gate>` in the status) |
-| Filter | first valid measurement (or first after a FAST-LIO2 restart: a gap > 1.5 s or a jump > 1 m in `/Odometry`) is taken whole; later ones move C with time constant `tau_s` (10 s) and at most `slew_deg_s` (0.05 deg/s); one further than `max_jump_deg` (2) from C is dropped (`state=jump`); `jump_limit` (15) of them in a row mean C is the wrong one (a restart nobody saw) and the next is taken whole. With no valid measurement C stays where it was: today's behaviour |
+| Filter | first valid measurement (or first after a FAST-LIO2 restart, `restarted()` in `core.hpp`: the `/Odometry` clock went back, or a jump > 1 m + 1.5 m/s x gap, or a landing near the origin from away, or a > 1.5 s gap with both poses near the origin) is taken whole; later ones move C with time constant `tau_s` (10 s) and at most `slew_deg_s` (0.05 deg/s); one further than `max_jump_deg` (2) from C is dropped (`state=jump`); `jump_limit` (15) of them in a row mean C is the wrong one (a restart nobody saw) and the next is taken whole. With no valid measurement C stays where it was: today's behaviour |
 
-`status` fields: `state n src rms dxy dyaw conv meas_pitch meas_roll C_pitch C_roll primed restart npts cpu_ms` (angles in deg; `meas` = this cycle's registration, `C` = the filtered correction).
+`status` fields: `state t n src rms dxy dyaw conv meas_pitch meas_roll C_pitch C_roll primed restart npts cpu_ms` (angles in deg; `meas` = this cycle's registration, `C` = the filtered correction).
 
 Parameters: `map_dir` (/map), `level` ([qx,qy,qz,qw] of the static odom <- camera_init that `planar_odom` publishes: pass the same), `rate_hz`, `tau_s`, `slew_deg_s`, `max_jump_deg`, `scan_voxel`, `map_voxel`, the gates above.
 
@@ -38,4 +38,4 @@ colcon build --packages-select level_corrector --cmake-args -DBUILD_TESTING=ON
 python3 test/test_level_corrector_node.py        # the real node on a synthetic room, own DDS domain
 ```
 
-16 gtests (the maths mirror `notes/orientacion_scripts/maptrack.py`; golden matrices come from it) and the node test (a floor tilted 1.22 deg comes back to 0.015 deg).
+20 gtests (the maths mirror `notes/orientacion_scripts/maptrack.py`; golden matrices come from it) and the node test (a floor tilted 1.22 deg comes back to 0.015 deg).

@@ -7,11 +7,8 @@ with a likelihood field of the whole map via FFT; every translation in the map
 box is scored. Score = mean field value at the source voxels, in [0, 1].
 No pose prior: the whole map box and all yaws are searched.
 """
-import argparse
-import json
 import math
 import time
-from pathlib import Path
 
 import numpy as np
 from scipy import fft, ndimage
@@ -160,10 +157,6 @@ class MapField:
         lo, hi = self.valid_lo, self.valid_hi
         return np.moveaxis(c[:, lo[0]:hi[0] + 1, lo[1]:hi[1] + 1], 0, 2) / len(cells), len(cells)
 
-    def position(self, index):
-        return self.origin + np.asarray(index) * self.res
-
-
 def yaw_distance_deg(a, b):
     d = math.degrees(a - b)
     return abs((d + 180.) % 360. - 180.)
@@ -239,21 +232,3 @@ def search(map_points, source_points, res=.5, sigma=.5, yaw_step_deg=2.5, radius
             'field_seconds': t_field, 'seconds': time.monotonic() - t0, 'yaws_skipped': skipped,
             'score_quantiles_unskipped_peaks': np.percentile(scores, [50, 90, 99, 100]).tolist(),   # only the peaks of the yaws that were not skipped: biased high, a diagnostic
             'truth_used': False}
-
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument('--map', required=True)
-    p.add_argument('--source', required=True)
-    p.add_argument('--out', required=True)
-    p.add_argument('--res', type=float, default=.5)
-    p.add_argument('--yaw-step', type=float, default=2.5)
-    p.add_argument('--radius', type=float, default=15.)
-    a = p.parse_args()
-    r = search(np.loadtxt(a.map), np.loadtxt(a.source), a.res, yaw_step_deg=a.yaw_step, radius=a.radius)
-    Path(a.out).write_text(json.dumps(r, indent=2) + '\n')
-    print(json.dumps({k: v for k, v in r.items() if k != 'candidates'}, indent=2))
-
-
-if __name__ == '__main__':
-    main()
