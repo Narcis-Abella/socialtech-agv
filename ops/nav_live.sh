@@ -78,7 +78,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   ros2 launch "${args[@]}" &
   lp=$!
   rc=0
-  trap 'kill -INT "$lp" 2>/dev/null || true' INT TERM
+  trap 'kill -INT "$lp" 2>/dev/null || true' INT TERM HUP   # HUP: the ssh session died; without it the script (and tini) died at once and every node was SIGKILLed with the bag unfinished
   while kill -0 "$lp" 2>/dev/null; do wait "$lp" || rc=$?; done
   kill -INT "$rec" 2>/dev/null || true
   wait "$rec" || true
@@ -94,8 +94,8 @@ RMEM_WANT=67108864
 die() { echo "FAIL: $*" >&2; exit 1; }
 
 : "${PEER:?set PEER to the laptop IP on the shared network (laptop: ip -br addr)}"
-DDS_IFACE=${DDS_IFACE:-$(ip -o route get "$PEER" | sed -n 's/.* dev \([^ ]*\).*/\1/p')}
-[[ -n $DDS_IFACE ]] || die "no route to $PEER"
+DDS_IFACE=${DDS_IFACE:-$(ip -o route get "$PEER" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' || true)}
+[[ -n $DDS_IFACE ]] || die "no route to PEER='$PEER' (it must be the laptop's IP address, not a host name; or set DDS_IFACE)"
 for f in map.yaml report.json vs/run/alidarState.txt; do [[ -f $MAP/$f ]] || die "$MAP/$f missing: is $MAP_NAME a ops/make_map.sh output?"; done
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image $IMAGE not found"
 docker run --rm "$IMAGE" ros2 pkg prefix planar_odom >/dev/null 2>&1 || die "$IMAGE has no planar_odom/nav2: rebuild it from this branch (ops/build_image.sh robot)"
@@ -131,6 +131,17 @@ if [[ -n ${NAV:-} ]]; then
 fi
 RUN=${NAV_RUNS:-$HOME/nav_runs}/$(date +%Y%m%d_%H%M%S)   # persists after the container is gone: ROS node logs (log/) and, with NAV and not PROD, the bag (bag/)
 mkdir -p "$RUN/log"
+if [[ -n ${NAV:-} && -z ${PROD:-} ]]; then   # the DEV recorder writes raw /livox/lidar (~14 GB/h): a full disk breaks the node logs and the supervisor's work directory too
+  free_gb=$(df --output=avail -BG "$RUN" | tail -1 | tr -dc 0-9)
+  (( free_gb >= ${MIN_FREE_GB:-20} )) || die "only ${free_gb} GB free in $RUN (the bag needs MIN_FREE_GB=${MIN_FREE_GB:-20}); free space, or PROD=1 to run without recording"
+fi
+{   # what ran: the checkout is mounted live (any branch, uncommitted edits included), the supervisor tools are a staged copy, the image tag moves
+  echo "checkout: $(git -C "$REPO" describe --always --dirty 2>/dev/null || echo unknown)"
+  git -C "$REPO" status --porcelain 2>/dev/null | sed 's/^/  /'
+  img_id=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
+  echo "image: $IMAGE ${img_id:-unknown}"
+  [[ -z ${SUPERVISOR:-} ]] || echo "staged supervisor tools: $(cat "${GRELOC:-$HOME/greloc}/tools/COMMIT" 2>/dev/null || echo unknown) (${GRELOC:-$HOME/greloc})"
+} > "$RUN/provenance.txt"
 echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} ]] && echo " and bag") in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
 exec docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e PROD="${PROD:-}" -e LEVEL_CORRECTOR="${LEVEL_CORRECTOR:-}" -e BASE="${BASE:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" \
   -e DDS_IFACE="$DDS_IFACE" -e PEER="$PEER" -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e LIVOX_HOST_IP="$HOST_IP" -e LIVOX_LIDAR_IP="$LIDAR_IP" \

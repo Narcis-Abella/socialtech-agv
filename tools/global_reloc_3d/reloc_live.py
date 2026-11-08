@@ -72,7 +72,10 @@ class Worker:
             os.killpg(self.p.pid, signal.SIGKILL)      # also with search_v2 dead (the OOM killer): a register_v2 it forked may live on in the group, beside the next attempt's
         except (ProcessLookupError, PermissionError):  # nobody left in the group, or its number already belongs to another user's
             pass
-        self.p.wait()
+        try:
+            self.p.wait(timeout=2.0)       # SIGKILLed, so normally immediate; in uninterruptible disk wait (the Orin NVMe stalls of 30 s) it would block the supervisor's only thread
+        except subprocess.TimeoutExpired:
+            pass                           # reaped by the next poll(); the attempt is over either way
 
 
 class StillWindow:
