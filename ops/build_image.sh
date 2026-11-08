@@ -10,7 +10,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 LOG=$HOME/build_$TARGET.log
 
 echo "start $(date -Is) $(git -C "$REPO" rev-parse --short HEAD) target=$TARGET" >"$LOG"
-DOCKER_BUILDKIT=1 docker build --progress=plain --target "$TARGET" -t "socialtech:$TARGET" "$REPO/docker" >>"$LOG" 2>&1
+DOCKER_BUILDKIT=1 docker build --progress=plain --target "$TARGET" -t "socialtech:$TARGET" -f "$REPO/docker/Dockerfile" "$REPO" >>"$LOG" 2>&1
 rc=$?
 echo "rc=$rc" >>"$LOG"
 exit $rc

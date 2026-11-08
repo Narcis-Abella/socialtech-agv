@@ -2,7 +2,7 @@
 (planner, controller, smoothers, behaviors, collision monitor) + the Tracer base only with base:=true (without it a goal moves nothing). Same arguments as
 nav_live.launch.py plus nav2_params:=P.yaml. driver:=false sim_time:=true: the full-chain simulation (tools/nav_sim/nav_full_sim.sh).
 The base's /odom topic gives Nav2 the real speed; its wheel odometry TF (50 Hz, frames renamed so they never collide with planar_odom's odom -> base_footprint)
-is switched off with publish_odom_tf:=false (docker/patches/tracer_ros2; nothing reads it; an image without the patch ignores the parameter and keeps publishing)."""
+is switched off with publish_odom_tf:=false (deps/robot/patches/tracer_ros2; nothing reads it; an image without the patch ignores the parameter and keeps publishing)."""
 import os
 
 from ament_index_python.packages import get_package_share_directory

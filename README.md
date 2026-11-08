@@ -9,13 +9,12 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 |---|---|
 | `host/` | One-time Jetson host setup: everything that cannot live in a container (kernel modules, udev, networking, power) |
 | `docker/` | Layered images built from one `Dockerfile` (`base` → `robot` → `sim` or `mapper`) |
-| `docker/robot.repos`, `docker/mapper.repos` | Third-party ROS sources, pinned by commit (`robot`, and `mapper` on top) |
-| `docker/patches/` | Build/run fixes to third-party sources (see its README) |
+| `deps/` | Third-party sources, pinned by commit, and the fixes we apply to them: `robot/` (`robot.repos` + `patches/<repo>/*.patch`, see its README), `nav2/` (the Nav2 source the patched controller is built from + its patch), `mapper/` (`mapper.repos`), `fetch_repos.py` (the shallow fetch all three use) |
 | `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
 | `docker/run_cpp_tests.sh` | Runs the C++ gtests that need only Eigen and GoogleTest (gn_core, level_corrector core and map_io); the image builds without tests |
 | `docker/ros_mapper/` | Our packages built only into the `mapper` image (`socialtech_mapping`: the beam counting of `tools/slam_bench/ghosts.py` in C++) |
 | `docker/ros_loc/` | The localizer and what levels it: `gn_loc` (scan-to-map Gauss-Newton, `map -> odom`) and `level_corrector` (slow roll/pitch correction of FAST-LIO2's odom frame against the map's 3D points; on by default in `ops/nav_live.sh`, `LEVEL_CORRECTOR=0` turns it off; small_gicp is built in the `robot` stage); each has its README |
-| `docker/ros_nav/`, `docker/nav2/` | Nav2 on top of the localizer: `socialtech_nav` (parameters, behavior trees), `socialtech_costmap` (`DecayObstacleLayer`, height-band clearing), the patched controller; the sim-only packages |
+| `docker/ros_nav/` | Nav2 on top of the localizer: `socialtech_nav` (parameters, behavior trees), `socialtech_costmap` (`DecayObstacleLayer`, height-band clearing), the patched controller; the sim-only packages |
 | `ops/` | Running the robot: `nav_live.sh` (localization + Nav2; flags `NAV`, `BASE`, `SUPERVISOR`, `PROD`, `LEVEL_CORRECTOR`), `record_bag.sh` (the operator's recorder), `rviz_live.sh` (rviz on the laptop against the board), the launch files, the map helpers (`make_map.sh`), `send_goal.py` (one recorded goal to Nav2, measures how the robot sets off), base-layer checks run by hand (`tracer_test.sh` + `can_latency.py`: wheels in the air; `nav_exec.sh`: a command in the nav container), and the tests of all that (`test_*.py`, `test_flags.sh`) |
 | `tools/global_reloc_3d/` | The global relocalizer and the supervisor that calls it (everything in it runs on the robot; the AMCL-era pipeline was removed on 2026-11-08) |
 | `tools/nav_sim/`, `tools/sim_realism/` | Full-chain simulation (simulated Mid-360 + real FAST-LIO2 + Nav2) on the AGX and its runners |
@@ -43,8 +42,8 @@ stall a process for 30 s; `--check` fails if it is not running on every online C
 ## Images
 
 ```bash
-cd docker
-docker build --target robot -t socialtech:robot .
+# from the repository root: the build context is the whole repo (the .dockerignore lets only docker/ and deps/ through)
+docker build -f docker/Dockerfile --target robot -t socialtech:robot .
 # DDS_IFACE: the robot's interface to talk DDS on (differs per board).
 # /dev/bus/usb + cgroup rule: USB devices (Orbbec camera).
 docker run --rm -it --network host \
@@ -83,14 +82,14 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 
 | Change | Where |
 |---|---|
-| Fix so upstream code builds/runs | `docker/patches/<repo>/*.patch` |
+| Fix so upstream code builds/runs | `deps/robot/patches/<repo>/*.patch` |
 | Our configuration (params, launch args) | `ops/` (launch files and overrides, merged over `docker/ros_nav/socialtech_nav/config/nav2_params.yaml`), never upstream configs |
 | Our own nodes | an ament package under `docker/ros`, `docker/ros_loc`, `docker/ros_nav` or `docker/ros_mapper` (by role, see Layout); a Python reference + test in `tools/nav_common` if it replaces one |
-| New logic in upstream code | a fork, pinned in `docker/robot.repos` |
+| New logic in upstream code | a fork, pinned in `deps/robot/robot.repos` |
 
 ## License
 
-GNU General Public License, version 2 only (`GPL-2.0-only`): see `LICENSE`. The patches in `docker/patches/` modify GPL-2.0 code (FAST-LIO2, ikd-Tree) and are covered by it. The sources `robot.repos` fetches at build time keep their own licenses.
+GNU General Public License, version 2 only (`GPL-2.0-only`): see `LICENSE`. The patches in `deps/robot/patches/` modify GPL-2.0 code (FAST-LIO2, ikd-Tree) and are covered by it. The sources `robot.repos` fetches at build time keep their own licenses.
 
 ## Contributing
 
