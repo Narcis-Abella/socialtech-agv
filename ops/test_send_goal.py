@@ -3,7 +3,9 @@ import math
 
 try:
     from send_goal import phases, pick, wrap
-except ImportError as e:      # rclpy / nav2_msgs: only in the robot image
+except ModuleNotFoundError as e:      # rclpy / nav2_msgs: only in the robot image. A missing NAME (ImportError) is a real failure and must not skip
+    if __name__ != "__main__":
+        raise      # under pytest, conftest.py leaves these files out when the image is missing; getting here is a real failure
     print(f"skip: needs the robot image ({e})")
     raise SystemExit(0)
 

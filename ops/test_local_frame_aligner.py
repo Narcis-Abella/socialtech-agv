@@ -15,7 +15,9 @@ try:
     from nav2_msgs.srv import ClearEntireCostmap  # noqa: E402
     from rclpy.qos import DurabilityPolicy, QoSProfile  # noqa: E402
     from tf2_msgs.msg import TFMessage  # noqa: E402
-except ImportError as e:      # nav2_msgs: only in the robot image
+except ModuleNotFoundError as e:      # nav2_msgs: only in the robot image
+    if __name__ != "__main__":
+        raise      # under pytest, conftest.py leaves these files out when the image is missing; getting here is a real failure
     print(f"skip: needs the robot image ({e})")
     raise SystemExit(0)
 from tf2_ros import TransformBroadcaster  # noqa: E402

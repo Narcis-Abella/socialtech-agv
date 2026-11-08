@@ -224,6 +224,9 @@ def test_each_run_of_a_comparison_is_scored_on_its_own_map_unless_one_is_given()
         assert a.maps_for(["compare", d1, d2], None) == [os.path.join(d1, a.CHAIN_MAP), os.path.join(d2, a.CHAIN_MAP)]
         assert a.maps_for(["compare", d1, d2], "m.yaml") == ["m.yaml", "m.yaml"]
         assert a.maps_for(["summarize", d1], None) == [os.path.join(d1, a.CHAIN_MAP)]
+        assert a.same_map(os.path.join(d1, a.CHAIN_MAP), os.path.join(d2, a.CHAIN_MAP))              # two copies of the same map: no notice
+        open(os.path.join(d2, a.CHAIN_MAP), "w").write("image: y.pgm\n")
+        assert not a.same_map(os.path.join(d1, a.CHAIN_MAP), os.path.join(d2, a.CHAIN_MAP))
 
 
 if __name__ == "__main__":

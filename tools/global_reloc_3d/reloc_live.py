@@ -75,7 +75,7 @@ class Worker:
         try:
             self.p.wait(timeout=2.0)       # SIGKILLed, so normally immediate; in uninterruptible disk wait (the Orin NVMe stalls of 30 s) it would block the supervisor's only thread
         except subprocess.TimeoutExpired:
-            pass                           # reaped by the next poll(); the attempt is over either way
+            pass                           # the attempt is over either way; the zombie is reaped by subprocess at the next Popen (callers drop the worker right after kill)
 
 
 class StillWindow:

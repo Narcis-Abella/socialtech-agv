@@ -3,10 +3,12 @@ import importlib.util
 import os
 
 try:
-    from ament_index_python.packages import get_package_share_directory
+    from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
     get_package_share_directory("fast_lio")      # the extrinsic is checked against its config
     import launch_ros  # noqa: F401
-except Exception as e:      # fast_lio, launch_ros: only in the robot image
+except (ModuleNotFoundError, PackageNotFoundError) as e:      # fast_lio, launch_ros: only in the robot image
+    if __name__ != "__main__":
+        raise      # under pytest, conftest.py leaves these files out when the image is missing; getting here is a real failure
     print(f"skip: needs the robot image ({e})")
     raise SystemExit(0)
 

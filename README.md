@@ -9,10 +9,10 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 |---|---|
 | `host/` | One-time Jetson host setup: everything that cannot live in a container (kernel modules, udev, networking, power) |
 | `docker/` | Layered images built from one `Dockerfile` (`base` → `robot` → `sim` or `mapper`) |
-| `docker/run_cpp_tests.sh` | Runs the C++ gtests that need only Eigen and GoogleTest (gn_core, level_corrector core and map_io); the image builds without tests |
 | `docker/robot.repos`, `docker/mapper.repos` | Third-party ROS sources, pinned by commit (`robot`, and `mapper` on top) |
 | `docker/patches/` | Build/run fixes to third-party sources (see its README) |
 | `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
+| `docker/run_cpp_tests.sh` | Runs the C++ gtests that need only Eigen and GoogleTest (gn_core, level_corrector core and map_io); the image builds without tests |
 | `docker/ros_mapper/` | Our packages built only into the `mapper` image (`socialtech_mapping`: the beam counting of `tools/slam_bench/ghosts.py` in C++) |
 | `docker/ros_loc/` | The localizer and what levels it: `gn_loc` (scan-to-map Gauss-Newton, `map -> odom`) and `level_corrector` (slow roll/pitch correction of FAST-LIO2's odom frame against the map's 3D points; on by default in `ops/nav_live.sh`, `LEVEL_CORRECTOR=0` turns it off; small_gicp is built in the `robot` stage); each has its README |
 | `docker/ros_nav/`, `docker/nav2/` | Nav2 on top of the localizer: `socialtech_nav` (parameters, behavior trees), `socialtech_costmap` (`DecayObstacleLayer`, height-band clearing), the patched controller; the sim-only packages |

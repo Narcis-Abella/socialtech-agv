@@ -24,7 +24,7 @@ Simulated Mid-360 (`socialtech_livox_sim`, non-repetitive) + ICM-40609 IMU 200 H
 `nav_full_sim.sh OUT auto:N [reps]` (or `agx_full.sh start nav NAME auto:N`; instead of `auto:N`, a `scenarios.py` json made by `make_scenario.py` / `make_mission.py`) runs start/goal pairs against Nav2 with the robot's own configuration, the level corrector included (`LEVEL_CORRECTOR`, default on as on the robot; `LEVEL_CORRECTOR=0` turns it off); `trials.py` records raw series, `analyze.py` / `stats.py` / `metrics.py` summarise and compare paired runs. Clearance and collisions are scored on the run's own `loyola_chain.yaml` (the map the chain localized on) with the Nav2 footprint 0.66 x 0.54; results scored before 2026-11-08 used the old 2D-sim map and a 0.70 x 0.58 body, so their clearance reads higher (p95 +45 cm on free cells near obstacles) and is not comparable. `NAV2_OVERLAY=<file in tools/nav_sim/params/>` merges one extra parameter file over the robot's (no overlay is kept; write one for an experiment and delete it after).
 
 ## Tests
-with the laptop's ROS sourced: `python3 -m pytest tools/nav_sim --ignore=tools/nav_sim/test_trials.py` (72 pass); `test_trials.py` needs `nav2_msgs`, so run it in the `sim` image.
+with the laptop's ROS sourced: `python3 -m pytest tools/nav_sim --ignore=tools/nav_sim/test_trials.py` (73 pass); `test_trials.py` needs `nav2_msgs`, so run it in the `sim` image.
 
 ## Results (AGX, 2026-11-02)
 `nav_full_sim.sh auto:4` (4 start/goal pairs on the chain's own map, clearance 0.6 m): 4 of 4 reached, 25-52 s each, 0 recoveries, localization error 2-3 cm at the start. With `SCAN_EXTRA=1`: 0 of 4. Start/goal pairs 0.45 m from a wall fail instead: the footprint's corners (0.43 m) cannot turn in place there.

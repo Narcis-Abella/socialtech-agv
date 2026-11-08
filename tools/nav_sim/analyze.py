@@ -50,6 +50,11 @@ def maps_for(pos, explicit):
     return [explicit or default_map(run) for run in pos[1:3]]
 
 
+def same_map(a, b):
+    """The same file, or two copies (each run folder has its own loyola_chain.yaml): compared by content, so the notice is for real differences only."""
+    return os.path.abspath(a) == os.path.abspath(b) or open(a, "rb").read() == open(b, "rb").read()
+
+
 def wrap(a):
     return (a + math.pi) % (2 * math.pi) - math.pi
 
@@ -206,7 +211,7 @@ def main(argv):
     tol = float(opts["--tol"])
     maps = maps_for(pos, opts["--map"])
     ctx, ctx_cand = context(maps[0], tol), context(maps[-1], tol)
-    if pos[0] == "compare" and maps[0] != maps[1]:
+    if pos[0] == "compare" and not same_map(maps[0], maps[1]):
         print(f"analyze: base and candidate are scored on different maps ({maps[0]} / {maps[1]}): clearance and collisions are not paired on the same walls", file=sys.stderr)
     first = int(opts["--first"]) if opts["--first"] else None
     excl = opts["--exclude"].split(",") if opts["--exclude"] else None

@@ -66,8 +66,8 @@ set_cyclone_uri
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 for script in "$repo"/ops/nav_live.sh "$repo"/tools/nav_sim/*.sh "$repo"/docker/ros_loc/gn_loc/test/shutdown_race/*.sh; do
   grep -q 'export.*CYCLONEDDS_URI=' "$script" || continue
-  # the last export must be followed, later in the file, by a set_cyclone_uri call
-  awk '/export.*CYCLONEDDS_URI=/ {pending = NR} /^[[:space:]]*set_cyclone_uri/ {pending = 0} END {exit pending != 0}' "$script" || fail "$script replaces the URI without asking for the receive buffer again"
+  # every export of the URI is followed (comments and blank lines aside; consecutive exports count as one) by set_cyclone_uri before any other statement
+  awk -v f="$script" '/^[[:space:]]*#/ || /^[[:space:]]*$/ {next} /export.*CYCLONEDDS_URI=/ {pending = 1; next} /^[[:space:]]*set_cyclone_uri/ {pending = 0; next} pending {print f ": an export of CYCLONEDDS_URI is followed by: " $0; bad = 1; pending = 0} END {if (pending) bad = 1; exit bad}' "$script" || fail "$script replaces the URI without asking for the receive buffer again"
 done
 unset CYCLONEDDS_URI
 echo ok

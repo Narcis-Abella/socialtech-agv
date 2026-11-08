@@ -5,7 +5,8 @@ export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-97}; export ROS_AUTOMATIC_DISCOVERY_RANGE=
 mode=$1
 if [ "$mode" = band ]; then band="height_band_clearing: true"; exp=1; else band=""; exp=0; fi
 sed -e "s|@BAND@|$band|" "$here/costmap_params.yaml.tpl" > /tmp/costmap_$mode.yaml
-ros2 run nav2_costmap_2d nav2_costmap_2d --ros-args --params-file /tmp/costmap_$mode.yaml > /tmp/costmap_$mode.log 2>&1 & node=$!
+# the executable itself: `ros2 run` is a wrapper, a SIGTERM to it left the node of the previous mode alive on the same domain and topics (band failed right after stock)
+"$(ros2 pkg prefix nav2_costmap_2d)/lib/nav2_costmap_2d/nav2_costmap_2d" --ros-args --params-file /tmp/costmap_$mode.yaml > /tmp/costmap_$mode.log 2>&1 & node=$!
 sleep 3
 echo "=== $mode"
 python3 "$here/band_test.py" $exp; rc=$?

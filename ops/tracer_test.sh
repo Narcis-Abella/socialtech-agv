@@ -26,7 +26,7 @@ docker run --rm --init -t --network host --user "$(id -u):$(id -g)" -e HOME=/tmp
   -v "$REPO:$REPO:ro" -e REPO="$REPO" -e LIFT_SECS="${LIFT_SECS:-5}" -e SPEED="${SPEED:-0.1}" -e RUN_SECS="${RUN_SECS:-3}" -e WATCH_SECS="${WATCH_SECS:-10}" "$IMAGE" bash -c '
     set -m
     zero() { timeout 1.5 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{}" >/dev/null 2>&1 || true; }
-    trap '"'"'kill ${pub:-} 2>/dev/null; exit'"'"' INT TERM   # Ctrl-C stops the command publisher, then leaves through the EXIT trap: the final zero is sent once and always
+    trap '"'"'kill ${pub:-} 2>/dev/null; wait ${pub:-} 2>/dev/null; exit'"'"' INT TERM   # Ctrl-C stops the command publisher, then leaves through the EXIT trap: the final zero is sent once and always
     trap zero EXIT
     ros2 launch tracer_base tracer_base.launch.py port_name:=can_tracer odom_frame:=wheel_odom base_frame:=wheel_base_link >/tmp/base.log 2>&1 &
     sleep 3
