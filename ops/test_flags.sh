@@ -13,6 +13,8 @@ check "" off; check 0 off; check false off; check False off; check NO off; check
 check 1 on=1; check yes on=1; check true on=1; check on on=1; check anything on=1
 unset FLAG; got=$(bash -c 'source "$0/flags.sh"; normalize_flags FLAG; [ -z "${FLAG:-}" ] && echo off || echo on' "$here")
 [[ $got == off ]] || { echo "FAIL: unset FLAG -> $got"; fail=1; }
+# HEAVY_DDS (a loopback-only URI for the driver) is untested with the supervisor, which reads the raw lidar and IMU on the default URI: refused together
+grep -q '^normalize_flags .*HEAVY_DDS' "$here/nav_live.sh" && grep -qF '[[ -z ${HEAVY_DDS:-} ]] || die "HEAVY_DDS=1' "$here/nav_live.sh" || { echo "FAIL: nav_live.sh does not refuse HEAVY_DDS together with SUPERVISOR"; fail=1; }
 # nav_live.sh must run SUPERVISOR through the same normalisation as NAV and BASE: SUPERVISOR=0 used to start the supervisor on a real robot
 grep -q '^normalize_flags NAV BASE SUPERVISOR' "$here/nav_live.sh" || { echo "FAIL: nav_live.sh does not normalise SUPERVISOR"; fail=1; }
 # PROD=1 (no recorder, no rviz aid): normalised like the other flags, forwarded into the container; viz:=false, the recorder guard and the plain exec hang on it (exact lines: a loose grep let

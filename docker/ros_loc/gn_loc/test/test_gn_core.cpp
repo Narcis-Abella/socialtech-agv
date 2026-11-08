@@ -113,6 +113,19 @@ TEST(Core, ExhaustiveSearchCapturesLargeOffsetsQuickly)
   }
 }
 
+TEST(Core, AnInitialPoseWithoutANumberOrWithAHugeCovarianceDoesNotSizeTheSearch)
+{
+  const auto g = room();
+  std::mt19937 rng(0);
+  Core core(std::make_shared<Field>(g, N, N, RES, 0.0, 0.0), Params{});
+  core.setInitial({2.0, 1.5, 0.0}, std::nan(""), 0.1);       // an uninitialised covariance: ignored, the node keeps waiting for a pose
+  EXPECT_EQ(core.state(), State::WaitingPose);
+  core.setInitial({2.0, 1.5, 0.0}, 1e6, 1e6);                // 3 sigma = 3000 km: capped, the search ends
+  const auto t0 = std::chrono::steady_clock::now();
+  core.update(0.0, {0, 0, 0}, scan(g, {2.0, 1.5, 0.0}, rng), -M_PI, 2 * M_PI / 720);
+  EXPECT_LT(std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), 30.0);
+}
+
 namespace
 {
 // the robot shuttles along y = `y` (1.4: clear of the walls) between x = 1.0 and 3.4 m at 0.4 m/s (12 s period); odom frame = map frame at the start; scans every 0.1 s

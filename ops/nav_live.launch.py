@@ -51,7 +51,7 @@ HEAVY_URI = ('<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="l
 
 def heavy_env():
     """HEAVY_DDS=1: the driver and FAST-LIO2 (the two ends of the 400 kB x 10 Hz lidar topic) talk on loopback with 64 kB datagrams instead of 1344 B fragments: ~45 % less transport CPU on
-    that hop and 73 % fewer sendmsg (laptop microbenchmark, notes/optimizacion_localizacion_2026-11-02.md; NOT measured on the Nano, hence off by default). Readers on the default URI (gn_supervisor reads the raw lidar and IMU) should still receive them, but that crossing is NOT tested: check `ros2 topic hz /livox/lidar` from a default-URI node before relying on it.
+    that hop and 73 % fewer sendmsg (laptop microbenchmark, notes/optimizacion_localizacion_2026-11-02.md; NOT measured on the Nano, hence off by default). A reader on the default URI would have to receive them across that crossing, which is NOT tested: nav_live.sh refuses HEAVY_DDS with SUPERVISOR (the supervisor reads the raw lidar and IMU); check `ros2 topic hz /livox/lidar` from a default-URI node before lifting that.
     Their topics and FAST-LIO2's TF are then not visible from the laptop's rviz2 (the configs in tools/ do not use them). The rcvbuf line is explicit: the entrypoint never sees a per-node env."""
     return {"additional_env": {"CYCLONEDDS_URI": HEAVY_URI}} if os.environ.get("HEAVY_DDS", "").lower() not in ("", "0", "false", "no", "off") else {}
 

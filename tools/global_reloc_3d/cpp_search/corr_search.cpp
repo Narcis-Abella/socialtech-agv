@@ -99,6 +99,7 @@ int correlate(const Field & F, Workspace & W, const double * src, i64 m, double 
   const double c = std::cos(yaw), s = std::sin(yaw);
   std::vector<i64> cx(m), cy(m), cz(m);
   for (i64 i = 0; i < m; ++i) {
+    // the `+ z * 0.0` terms are numpy's matmul with a 3x3 rotation about z, kept so the C++ cells equal the numpy ones bit for bit (test_corr_cpp): do not simplify
     const double x = src[3 * i] * c + src[3 * i + 1] * (-s) + src[3 * i + 2] * 0.0;
     const double y = src[3 * i] * s + src[3 * i + 1] * c + src[3 * i + 2] * 0.0;
     const double zz = src[3 * i] * 0.0 + src[3 * i + 1] * 0.0 + src[3 * i + 2] * 1.0;

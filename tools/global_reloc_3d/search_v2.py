@@ -229,7 +229,8 @@ def main():
         # independent global search of the later batch; its best is chosen on the fit batch. It does not depend on the primary search, so both run at the same time
         t_c = time.monotonic()
         r = global_hypotheses(field, full, check, run / 'check.xyz', fit, run / 'fit.xyz', run / 'map.xyz', a, out, 'confirm', t0)
-        STAGE_S['confirm_total'] = time.monotonic() - t_c
+        with STAGE_LOCK:
+            STAGE_S['confirm_total'] = time.monotonic() - t_c
         return r
     (found, rows, timed_out), (c_found, c_rows, c_timed_out) = run_concurrently(
         lambda: global_hypotheses(field, full, fit, run / 'fit.xyz', check, run / 'check.xyz', run / 'map.xyz', a, out, 'cand', t0), confirmation_search)

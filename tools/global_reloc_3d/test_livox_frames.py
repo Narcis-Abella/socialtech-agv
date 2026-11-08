@@ -22,10 +22,11 @@ class ParseTest(unittest.TestCase):
         stamp, valid, xyz = lf.parse(cdr(pts), decimate=1, extrinsic=(1., 2., 3.))
         self.assertAlmostEqual(stamp, 1793574000.123456789, 3)
         self.assertEqual(valid, 10)
-        np.testing.assert_allclose(xyz[0], [2., 2., 4.])
+        np.testing.assert_allclose(xyz[0], [3., 2., 4.])      # the point at index 0 is not exposed (upstream's loop starts at 1)
 
     def test_fast_lio_filters(self):
-        pts = [(0, 5., 0., 0., 1, 0, 0),         # kept
+        pts = [(0, 1., 0., 0., 1, 0x30, 0),      # index 0: never exposed
+               (0, 5., 0., 0., 1, 0, 0),         # kept
                (0, 0., 0., 0., 0, 0, 0),         # no return (zero): inside the blind distance
                (0, .05, 0., 0., 1, 0, 0),        # nearer than blind
                (0, 6., 0., 0., 1, 0x20, 0),      # tag: noise
@@ -35,6 +36,12 @@ class ParseTest(unittest.TestCase):
         _, valid, xyz = lf.parse(cdr(pts), blind=.1, decimate=1, extrinsic=(0., 0., 0.))
         self.assertEqual(valid, 2)
         self.assertEqual(xyz[:, 0].tolist(), [5., 7.])
+
+    def test_decimation_counts_the_blind_returns_and_skips_the_first_point_like_upstream(self):
+        # FAST-LIO2 avia_handler: loop from index 1; valid_num++ for every normal return (blind not applied); every 2nd is kept, then cut by the blind radius
+        pts = [(0, 9., 0., 0., 1, 0, 0), (0, .05, 0., 0., 1, 0, 0), (0, 2., 0., 0., 1, 0, 0), (0, .05, 0., 0., 1, 0, 0), (0, 4., 0., 0., 1, 0, 0), (0, 5., 0., 0., 1, 0, 0)]
+        _, _, xyz = lf.parse(cdr(pts), blind=.1, decimate=2, extrinsic=(0., 0., 0.))
+        self.assertEqual(xyz[:, 0].tolist(), [2., 4.])     # counts 1: .05, 2: 2., 3: .05, 4: 4., 5: 5. -> 2nd and 4th (the 5. is the 5th)
 
     def test_the_count_only_path_counts_the_same_without_building_the_cloud(self):
         rng = np.random.default_rng(3)
@@ -48,7 +55,7 @@ class ParseTest(unittest.TestCase):
         pts = [(0, float(i + 1), 0., 0., 1, 0, 0) for i in range(10)]
         _, valid, xyz = lf.parse(cdr(pts), decimate=2, extrinsic=(0., 0., 0.))
         self.assertEqual(valid, 10)
-        self.assertEqual(xyz[:, 0].tolist(), [1., 3., 5., 7., 9.])
+        self.assertEqual(xyz[:, 0].tolist(), [3., 5., 7., 9.])   # upstream: counts from index 1, keeps the 2nd, 4th... normal return
 
     def test_the_padding_byte_after_the_last_element_is_optional(self):
         pts = [(0, 3. + i, 0., 0., 1, 0, 0) for i in range(7)]

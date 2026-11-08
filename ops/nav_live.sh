@@ -17,7 +17,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 NB=$REPO/tools/nav_common
 source "$REPO/ops/flags.sh"
 LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default: only an explicit LEVEL_CORRECTOR=0 (or off/false/no) turns it off
-normalize_flags NAV BASE SUPERVISOR PROD LEVEL_CORRECTOR   # NAV=0 / BASE=0 / SUPERVISOR=0 / PROD=0 / LEVEL_CORRECTOR=0 mean off (a non-empty test used to arm Nav2, the Tracer base and the supervisor)
+normalize_flags NAV BASE SUPERVISOR PROD LEVEL_CORRECTOR HEAVY_DDS   # NAV=0 / BASE=0 / SUPERVISOR=0 / PROD=0 / LEVEL_CORRECTOR=0 mean off (a non-empty test used to arm Nav2, the Tracer base and the supervisor)
 
 if [[ ${1:-} == --inside ]]; then   # runs in the container
   source /ros_env.sh
@@ -110,6 +110,7 @@ ping -c1 -W2 "$PEER" >/dev/null 2>&1 || echo "WARN: $PEER does not answer ping (
 SUP=()
 if [[ -n ${SUPERVISOR:-} ]]; then   # validated first: an error must not come after the "a goal MOVES THE ROBOT" banner
   [[ -n ${NAV:-} ]] || die "SUPERVISOR=1 holds Nav2 goals: it needs NAV=1 (alone it would only relocalize beside a manual 2D Pose Estimate)"
+  [[ -z ${HEAVY_DDS:-} ]] || die "HEAVY_DDS=1 puts the driver on a loopback-only DDS URI that the supervisor (default URI) is not known to receive the raw lidar and IMU on: untested together, use one or the other"
   G=${GRELOC:-$HOME/greloc}
   for f in tools/global_reloc_3d/gn_supervisor_node.py build/register_v2 build/libsmall_gicp.so build/libcorr_search.so prior/$MAP_NAME/prior/map.xyz; do
     [[ -f $G/$f ]] || die "$G/$f missing: stage the supervisor tools, register_v2 and the 3D prior of the map into GRELOC (stage_supervisor.sh, in the team's SocialTech workspace repo)"
