@@ -1,5 +1,5 @@
 """On-demand global relocalization from the LIVE sensors (for gn_supervisor_node.py), with the frozen pieces of this directory unchanged:
-sliding IMU stillness (the test of rc.ImuGate, 2 s) and a flowing lidar -> S2 exposure of rc.S2_EXPOSURE_S of the RAW Mid-360 frames (livox_frames.py: FAST-LIO2's own preprocessing,
+sliding IMU stillness (imu_ready.window_ok over 2 s) and a flowing lidar -> S2 exposure of rc.S2_EXPOSURE_S of the RAW Mid-360 frames (livox_frames.py: FAST-LIO2's own preprocessing,
 body frame) -> lio_submap.assemble (IMU-levelled fit/check submap) -> search_v2.py worker (FFT search, small_gicp, verify.decide) -> base pose in map.
 
 The robot is held still, so the exposure needs no odometry: a still body is its own odometry (identity), and the robot's FAST-LIO2 is restarted in PARALLEL with the exposure and
@@ -7,7 +7,7 @@ the search (a long blind period leaves it with metres of z drift and degrees of 
 is not an input: only whether the new filter publishes again, because gn_loc needs its odom -> base_footprint when it receives the pose. A robot that moves between the start of the
 exposure and the result is refused (the IMU in the exposure, the wheels after it): nothing carries a pose along a push when the odometry has just been restarted.
 
-Why not reloc_node.py: it starts its own cold FAST-LIO2, which publishes /Odometry and /cloud_registered_body next to the robot's, and broadcasts odom -> base_footprint; on the live
+Why not the previous online node (reloc_node.py, removed 2026-11-08): it starts its own cold FAST-LIO2, which publishes /Odometry and /cloud_registered_body next to the robot's, and broadcasts odom -> base_footprint; on the live
 stack that would corrupt the odometry chain. Here only the sensors are read and nothing is published. Difference from the evidence of PR #14 (cold FAST-LIO2 body clouds started at rest):
 the raw frames carry no undistortion (nothing moves), the density is FAST-LIO2's (point_filter_num) and assemble() levels the submap from the IMU of the exposure, as before. NV on the robot.
 """
@@ -76,7 +76,7 @@ class Worker:
 
 
 class StillWindow:
-    """Stillness of the last rc-ImuGate window (2 s), re-evaluated every 0.1 s with the unchanged test. ImuGate latches the first time it passes; this one follows the robot,
+    """Stillness of the last 2 s window, re-evaluated every 0.1 s with imu_ready.window_ok; it does not latch: it follows the robot,
     so a start waits for the stillness of *now*, not of some moment in the past."""
     def __init__(self, step=.1):
         self.t, self.g, self.a, self.step, self.next_eval, self.ok, self.calm, self.stale = collections.deque(), collections.deque(), collections.deque(), step, None, False, False, False

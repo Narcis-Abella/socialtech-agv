@@ -58,7 +58,7 @@ def heavy_env():
 
 def supervisor_nodes():
     """SUPERVISOR=1 (ops/nav_live.sh): gn_supervisor_node.py staged in /greloc. Respawned: a restarted supervisor comes up in CONFIRMING and holds Nav2 until
-    gn_loc confirms its pose. It reads the robot's own FAST-LIO2 (/Odometry for "is the restarted filter publishing", plus the raw /livox/lidar and /livox/imu): no second FAST-LIO (PR #14's reloc_node.py is not used)."""
+    gn_loc confirms its pose. It reads the robot's own FAST-LIO2 (/Odometry for "is the restarted filter publishing", plus the raw /livox/lidar and /livox/imu): no second FAST-LIO, unlike the AMCL-era reloc_node (PR #14, removed 2026-11-08)."""
     if os.environ.get("SUPERVISOR", "").lower() in ("", "0", "false", "no", "off"):    # the rule of ops/flags.sh
         return []
     prior = os.environ.get("SUP_PRIOR")

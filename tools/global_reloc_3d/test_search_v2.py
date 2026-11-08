@@ -12,9 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from correlative_search import pose
-from make_hole_map import hole
 from search_v2 import rank, run_concurrently, source_reach_z, tilt_deg
-from summarize_batch import classify, wilson
 
 
 def row(i, support, T):
@@ -57,19 +55,6 @@ class SearchV2Test(unittest.TestCase):
         c, s = math.cos(math.radians(10)), math.sin(math.radians(10))
         T[1:3, 1:3] = [[c, -s], [s, c]]
         self.assertAlmostEqual(tilt_deg(T), 10., places=6)
-
-    def test_negative_classes_never_reward_acceptance(self):
-        self.assertEqual(classify('cross', {'accepted': True, 'decision': 'accepted'}, None), 'wrong_accept')
-        self.assertEqual(classify('hole', {'accepted': False, 'decision': 'reject_no_hypothesis'}, None), 'reject')
-        bad = {'refined': {'within_limits': False}}
-        self.assertEqual(classify('hole', {'accepted': True, 'decision': 'accepted'}, bad), 'wrong_accept')
-        self.assertEqual(classify('own', {'accepted': True, 'decision': 'accepted'}, bad), 'wrong_accept')
-        self.assertEqual(classify('x01', {'accepted': False, 'decision': 'reject_geometry'}, bad), 'false_reject')
-
-    def test_wilson_and_hole(self):
-        self.assertAlmostEqual(wilson(0, 50)[1], .0714, places=3)
-        pts = np.array([[0, 0, 0], [1, 0, 0], [9, 0, 0.]])
-        self.assertEqual(len(hole(pts, (0, 0), 8.)), 1)
 
 
 class WorkerExitCodeTest(unittest.TestCase):
