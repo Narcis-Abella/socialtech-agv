@@ -41,14 +41,17 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 FROM base AS robot
 
 # Livox-SDK2: plain CMake library (not a ROS package), needed by livox_ros_driver2.
+# Its bundled spdlog/fmt symbols are hidden by a linker version script (why: docker/livox_sdk_hide_spdlog.map); the check runs here, right after the install.
+COPY livox_sdk_hide_spdlog.map test_livox_sdk_symbols.sh /opt/livox-sdk-build/
 ARG LIVOX_SDK2_COMMIT=c0796f04c143143899c87a773d9f6b7136453c0b
 RUN --mount=type=tmpfs,target=/tmp/src \
     git clone https://github.com/Livox-SDK/Livox-SDK2.git /tmp/src/livox-sdk2 \
  && git -C /tmp/src/livox-sdk2 checkout "${LIVOX_SDK2_COMMIT}" \
- && cmake -S /tmp/src/livox-sdk2 -B /tmp/src/livox-sdk2/build -DCMAKE_BUILD_TYPE=Release \
+ && cmake -S /tmp/src/livox-sdk2 -B /tmp/src/livox-sdk2/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--version-script=/opt/livox-sdk-build/livox_sdk_hide_spdlog.map \
  && cmake --build /tmp/src/livox-sdk2/build -j"$(nproc)" \
  && cmake --install /tmp/src/livox-sdk2/build \
- && ldconfig
+ && ldconfig \
+ && bash /opt/livox-sdk-build/test_livox_sdk_symbols.sh
 
 # small_gicp (Koide): point-to-plane ICP of level_corrector (docker/ros_loc). Same commit register_v2 is built with. Single-threaded (no TBB/OpenMP): the corrector must stay a small share of one core.
 ARG SMALL_GICP_COMMIT=fa0cfc983417c044b6036f71dfa448038bb9c820
