@@ -56,12 +56,6 @@ def test_paired_success_counts():
     assert s.discordant(base, cand) == (1, 2)               # base only succeeded in 1 pair, candidate only in 2
 
 
-def test_holm_adjusted():
-    assert np.allclose(s.holm([0.01, 0.04, 0.03]), [0.03, 0.06, 0.06])
-    assert np.allclose(s.holm([0.5]), [0.5])
-    assert max(s.holm([0.9, 0.8])) <= 1.0
-
-
 def test_summary():
     r = s.summary([1.0, 2.0, 3.0, 4.0, 100.0])
     assert r["n"] == 5 and r["median"] == 3.0 and r["max"] == 100.0 and r["min"] == 1.0

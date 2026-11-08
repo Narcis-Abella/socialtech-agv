@@ -71,10 +71,6 @@ def footprint_clearance(dist, origin, res, x, y, yaw, length, width):
     return float(dist[row[inside], col[inside]].min()) if inside.any() else float("inf")
 
 
-def collides(dist, origin, res, x, y, yaw, length, width):
-    return footprint_clearance(dist, origin, res, x, y, yaw, length, width) <= 0.0
-
-
 def rms(x):
     x = np.asarray(x, float)
     return float(np.sqrt(np.mean(x * x))) if x.size else float("nan")
