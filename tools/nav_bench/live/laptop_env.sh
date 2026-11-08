@@ -1,4 +1,4 @@
-# Sourced by rviz_laptop.sh and control.sh. PEER = the board IP (required); IFACE (optional) = this machine interface, by default the one the kernel uses to reach PEER.
+# Sourced by ops/rviz_live.sh. PEER = the board IP (required); IFACE (optional) = this machine interface, by default the one the kernel uses to reach PEER.
 : "${PEER:?set PEER to the board IP (its IP on the LAN shared with the laptop)}"
 export IFACE=${IFACE:-$(ip -o route get "$PEER" | sed -n 's/.* dev \([^ ]*\).*/\1/p')}   # the interface the kernel uses to reach the board
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-53}

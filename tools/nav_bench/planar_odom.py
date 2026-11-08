@@ -1,11 +1,11 @@
 """Python reference of the C++ node docker/ros/planar_odom: the odom -> base_footprint TF from FAST-LIO2's /Odometry (camera_init -> body), in the floor-levelled odom frame.
-odom = camera_init rotated by `level` (static TF from the launch file; pose_eval.py level): z is the floor normal and the axes follow the walls, as in
+odom = camera_init rotated by `level` (static TF from the launch file; map_frame.py level): z is the floor normal and the axes follow the walls, as in
 the PGM. base_footprint sits under the point lidar_xy of the body (default: the body itself): same yaw (in odom), z = body z - sensor_height (the floor is z = 0 there), no roll/pitch.
 A cloud transformed into base_footprint is therefore levelled and its z means 'height above the floor' (the frame make_map cuts in).
 """
 import numpy as np
 
-import pose_eval as pe
+import map_frame as pe
 
 
 def footprint(p, q, level, sensor_height, lidar_xy=(0.0, 0.0)):

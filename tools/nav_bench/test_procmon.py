@@ -77,7 +77,7 @@ class ProcmonTest(unittest.TestCase):
         self.assertEqual(row['procs'], 2)
 
     def test_sampling_period_does_not_change_the_numbers(self):
-        # AMCL at a constant 50 % and 100 MB: the same figures at 1 s and at 0.5 s (run_amcl_only.sh samples every 0.5 s)
+        # AMCL at a constant 50 % and 100 MB: the same figures at 1 s and at 0.5 s (the old AMCL bench sampled every 0.5 s)
         tk = procmon.TICK
         for period in (1., .5):
             rows = [[i * period, 7, 0, int(i * period * tk / 2), 0, 102400, 102400, '/opt/ros/jazzy/lib/nav2_amcl/amcl'] for i in range(9)]

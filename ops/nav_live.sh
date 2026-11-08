@@ -40,7 +40,7 @@ if [[ ${1:-} == --inside ]]; then   # runs in the container
   ifs="<NetworkInterface name=\"lo\"/>"; [[ $DDS_IFACE == lo ]] || ifs+="<NetworkInterface name=\"$DDS_IFACE\"/>"
   export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces>$ifs</Interfaces></General><Discovery><Peers><Peer address=\"$PEER\"/><Peer address=\"localhost\"/></Peers><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>"
   h=$(python3 -c "import json; print(json.load(open('/map/report.json'))['sensor_height_m'])")
-  read -r qx qy qz qw < <(python3 "$NB/pose_eval.py" level --ref /map/vs/run/alidarState.txt --map /map/map.yaml)
+  read -r qx qy qz qw < <(python3 "$NB/map_frame.py" level --ref /map/vs/run/alidarState.txt --map /map/map.yaml)
   "$REPO/ops/livox_config.sh" >/tmp/MID360_config.json
   FSM=${FILTER_SIZE_MAP:-0.25}; PFN=${POINT_FILTER_NUM:-2}   # empty (not passed) = default   # env, like GYR_COV: FILTER_SIZE_MAP=0.5 POINT_FILTER_NUM=3 are the upstream values
   [[ $FSM =~ ^[0-9]+(\.[0-9]+)?$ && $FSM != 0 && $PFN =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: FILTER_SIZE_MAP='$FSM' must be a positive number and POINT_FILTER_NUM='$PFN' a positive integer" >&2; exit 1; }
