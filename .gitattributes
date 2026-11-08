@@ -1,0 +1,2 @@
+# git archive writes the commit sha into REVISION (ops/image_revision.sh reads it where the checkout has no .git, e.g. a copy on a board)
+/REVISION export-subst

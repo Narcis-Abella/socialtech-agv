@@ -52,6 +52,8 @@ docker run --rm -it --network host \
   socialtech:robot
 ```
 
+`ops/build_image.sh <stage>` builds from the repository root and tags the image `socialtech:<stage>-<7 hex of the commit>[-dirty]`, moves the alias `socialtech:<stage>` to it, labels it `org.opencontainers.image.revision` and keeps the newest three tags per stage. A board that cannot build (the 8 GB Nano) gets the image from another one: `ops/ship_image.sh robot jetson@HOST` (`docker save | ssh | docker load`, then the alias moves there). Rollback on a board: `docker tag socialtech:robot-<old sha> socialtech:robot`. A checkout without `.git` (a copy made with `git archive`) still knows its commit: `REVISION` is filled in by `git archive` (`.gitattributes`).
+
 On an 8 GB Orin Nano, if the build runs out of RAM: `--build-arg COLCON_WORKERS=1`.
 
 | Stage | Contents |
