@@ -1,5 +1,9 @@
-# Linker version script for liblivox_lidar_sdk_shared.so (docker/Dockerfile): keep the SDK's bundled spdlog 1.3 and fmt out of the dynamic symbol table, so they cannot
-# interpose, or be interposed by, the system libspdlog 1.12 that ROS loads into the same process. Everything else (the Livox API) stays exported.
+# Linker version script for liblivox_lidar_sdk_shared.so (docker/Dockerfile, checked by docker/test_livox_sdk_symbols.sh).
+# The SDK is built with its bundled spdlog 1.3 + fmt; the driver process also loads the system libspdlog 1.12 (ROS logging). With default interposition the dynamic linker bound the SDK's
+# `vtable for spdlog::logger`, `typeinfo for spdlog::formatter` ... to the 1.12 copies, so the SDK's global logger (1.3 layout) was destroyed at exit() through the 1.12 vtable and
+# livox_ros_driver2_node died with SIGSEGV (-11) in about 1 of 10 shutdowns. Keeping every spdlog/fmt symbol local stops interposition in both directions; the Livox API stays exported.
+# The globs are infix on purpose: the symbols to hide include `guard variable for spdlog::...` and std templates carrying spdlog types, which a prefix such as _ZN6spdlog would miss
+# (at the pinned SDK commit all 502 hidden symbols mention spdlog or fmt). Only the shared library is covered: the static one still has them, and nothing here links it.
 {
   global: *;
   local: *6spdlog*; *3fmt*;

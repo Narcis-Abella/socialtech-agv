@@ -39,7 +39,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 FROM base AS robot
 
 # Livox-SDK2: plain CMake library (not a ROS package), needed by livox_ros_driver2.
-# Its bundled spdlog 1.3 symbols are hidden (version script): with the system libspdlog 1.12 in the same process the dynamic linker mixed the two, and the SDK's global logger crashed at exit (SIGSEGV in ~1 of 10 shutdowns).
+# Its bundled spdlog/fmt symbols are hidden by a linker version script (why: docker/livox_sdk_hide_spdlog.map); the check runs here, right after the install.
 COPY livox_sdk_hide_spdlog.map test_livox_sdk_symbols.sh /opt/livox-sdk-build/
 ARG LIVOX_SDK2_COMMIT=c0796f04c143143899c87a773d9f6b7136453c0b
 RUN --mount=type=tmpfs,target=/tmp/src \
