@@ -41,7 +41,9 @@ fastlio_yaml /tmp/fastlio.yaml
 echo "sensor height $h m; level quaternion $qx $qy $qz $qw; DDS ${DDS_IFACE:-lo} -> ${PEER:-no peer} (domain $ROS_DOMAIN_ID)"
 launch=nav_live; extra=()
 if [[ -n ${NAV:-} ]]; then   # navigation: Nav2 params of the sim + the real robot's differences
-  python3 "$HERE/merge_params.py" "$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml" "$SHARE/config/nav2_robot_overrides.yaml" >/tmp/nav2_params.yaml
+  nav=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav   # the image's, or the overlay's with OVERLAY=1: the simulation reads the package's too
+  python3 "$HERE/merge_params.py" "$nav/config/nav2_params.yaml" "$SHARE/config/nav2_robot_overrides.yaml" >/tmp/nav2_params.yaml
+  sed -i "s#/opt/socialtech/share/socialtech_nav/#$nav/#" /tmp/nav2_params.yaml   # the behavior tree path is absolute in the file: follow the package that was used
   lc_topics=(); [[ -z ${LEVEL_CORRECTOR:-} ]] || lc_topics=(/level_corrector/status /level_corrector/correction)   # its state per cycle (gate reasons, measured tilt, C) and the correction planar_odom applies
   sup_topics=(); [[ -z ${SUPERVISOR:-} ]] || sup_topics=(/gn_loc/status /gn_loc/scan_fit /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status)   # only where they exist
   set -m   # job control: a background job of a non-interactive shell ignores SIGINT, and the recorder needs one to write its metadata.yaml

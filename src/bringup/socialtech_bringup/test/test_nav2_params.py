@@ -42,3 +42,8 @@ assert local["obstacle_layer"]["max_obstacle_height"] == local["obstacle_layer"]
 assert g["min_obstacle_height"] == 0.10 and g["max_obstacle_height"] == gs["max_obstacle_height"] == 1.8, g   # the band of scan.yaml (0.10-1.8 m): above it the cloud would mark door lintels (2.00 m in the sim world)
 assert "expected_update_rate" not in local["obstacle_layer"]["scan"], "the costmap in odom needs no staleness limit: RPP's own plan transform stops it"
 print("ok")
+
+# run_live and nav_full_sim point this path at the package they used (the image's or the overlay's) by rewriting exactly this prefix
+bt = merged["bt_navigator"]["ros__parameters"]["default_nav_to_pose_bt_xml"]
+assert bt.startswith("/opt/socialtech/share/socialtech_nav/behavior_trees/"), bt
+print("ok")

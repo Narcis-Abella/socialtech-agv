@@ -13,7 +13,7 @@
 # drifts while parked, it cancels every Nav2 goal (never publishes a velocity), relocalizes with the robot's own FAST-LIO2 and the 3D prior MAP/prior/map.xyz
 # (made by ops/make_map.sh; built here, in seconds, for a map that has none), and publishes /initialpose only if gn_loc disagrees. It never re-sends a goal. State: /gn_supervisor/state.
 # The image must be the one this checkout builds (ops/image_revision.sh image_freshness: the label of the image against src/, deps/, docker/ and this file): a stale one stops the run,
-# STALE_IMAGE_OK=1 runs it anyway. OVERLAY=1 builds socialtech_bringup from this checkout's src/ at start-up (launch files, scripts and config: no image rebuild for those; C++ still needs one).
+# STALE_IMAGE_OK=1 runs it anyway. OVERLAY=1 builds socialtech_bringup and socialtech_nav from this checkout's src/ at start-up (launch files, scripts, config, the Nav2 parameters and behavior trees: no image rebuild for those; C++ still needs one).
 # env: DDS_IFACE (interface towards PEER; default: the route to PEER, or lo without PEER)  ROS_DOMAIN_ID (53, as the laptop scripts)  LIVOX_HOST_IP / LIVOX_LIDAR_IP  IMAGE (socialtech:robot)  MAP_DIR (~/maps)
 set -eo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -90,7 +90,7 @@ echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} 
 run=(/opt/socialtech/lib/socialtech_bringup/run_live); ovl=()
 if [[ -n ${OVERLAY:-} ]]; then   # the bringup package of this checkout, built over the image's at start-up; /tmp/ov/install first on the ament path, so its run_live, launch files and config win
   ovl=(-v "$REPO/src:/src:ro")
-  run=(bash -c 'mkdir -p /tmp/ov && cd /tmp/ov && colcon build --base-paths /src --packages-select socialtech_bringup --merge-install --install-base /tmp/ov/install >/tmp/ov/build.log 2>&1 || { cat /tmp/ov/build.log >&2; exit 1; }
+  run=(bash -c 'mkdir -p /tmp/ov && cd /tmp/ov && colcon build --base-paths /src --packages-select socialtech_bringup socialtech_nav --merge-install --install-base /tmp/ov/install >/tmp/ov/build.log 2>&1 || { cat /tmp/ov/build.log >&2; exit 1; }
     source /tmp/ov/install/setup.bash && exec /tmp/ov/install/lib/socialtech_bringup/run_live')
 fi
 tty=(); [[ -t 0 ]] && tty=(-t)   # no terminal (a launcher script): docker refuses -t; SIGTERM to the docker client stops the stack as Ctrl-C does

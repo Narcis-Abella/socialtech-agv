@@ -37,8 +37,9 @@ if [ -n "${LEVEL_CORRECTOR:-}" ]; then
   OVERLAY_CMAKE="--cmake-args -DCMAKE_PREFIX_PATH=/sg -DBUILD_TESTING=OFF" src_overlay lc level_corrector || { echo "level_corrector build failed: see $out/build_lc.log" >&2; exit 1; }
   LC_ARG=level_corrector:=true
 fi
-params=/src/navigation/socialtech_nav/config/nav2_params.yaml; [ -f "$params" ] || params=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml
-python3 "$BRINGUP/merge_params.py" "$params" "$BRINGUP_SHARE/config/nav2_robot_overrides.yaml" ${NAV2_OVERLAY:+/tools/nav_sim/params/$NAV2_OVERLAY} > "$out/nav2_params.yaml"   # the checkout's parameters when mounted
+nav=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav; params=$nav/config/nav2_params.yaml   # the image's, or the overlay of /src: the robot reads the package's too (run_live)
+python3 "$BRINGUP/merge_params.py" "$params" "$BRINGUP_SHARE/config/nav2_robot_overrides.yaml" ${NAV2_OVERLAY:+/tools/nav_sim/params/$NAV2_OVERLAY} > "$out/nav2_params.yaml"
+sed -i "s#/opt/socialtech/share/socialtech_nav/#$nav/#" "$out/nav2_params.yaml"   # the behavior tree path is absolute in the file: follow the package that was used (the overlay's)
 if [ -n "${SUPERVISOR:-}" ]; then
   python3 /tools/sim_realism/tris_to_prior.py /pat/loyola.tris "$out/prior.xyz" 0.2 0.1 > "$out/prior.log"; mkdir -p "$out/runs"; export SUP_PRIOR="$out/prior.xyz"
 fi
