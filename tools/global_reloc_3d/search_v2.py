@@ -140,8 +140,6 @@ def global_hypotheses(field, map_points, batch, batch_path, other, other_path, m
             continue
         row = {'id': f'{prefix}_{i:02d}', 'correlative': {k: c[k] for k in ('score', 'yaw_rad', 'xyz')}, 'run': log}
         if result is not None:
-            # The generator replaces KISS; keep verify.decide()'s interface.
-            result['kiss_valid'] = True
             row['result'] = result
             if result['gicp_converged'] and not late:
                 t_s = time.monotonic()

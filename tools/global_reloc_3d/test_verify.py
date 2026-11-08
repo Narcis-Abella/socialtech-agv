@@ -10,7 +10,7 @@ class VerifyTest(unittest.TestCase):
         pts = np.array([[x, y, z] for x in range(4) for y in range(4) for z in range(2)], float)
         g = score(pts, pts, np.eye(4))
         self.assertEqual(g['support_015'], 1.)
-        solver = {'kiss_valid': True, 'gicp_converged': True}
+        solver = {'gicp_converged': True}
         self.assertEqual(decide(solver, g), 'ambiguous_no_alternative_margin')
         self.assertEqual(decide(solver, g, .11), 'ambiguous_no_temporal_confirmation')
         self.assertEqual(decide(solver, g, .11, True), 'accepted')

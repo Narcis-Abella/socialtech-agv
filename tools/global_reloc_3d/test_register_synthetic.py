@@ -10,7 +10,7 @@ import numpy as np
 
 
 class SyntheticRegistration(unittest.TestCase):
-    def test_global_transform_without_seed(self):
+    def test_refines_a_nearby_initial_transform(self):
         binary=os.environ.get('REGISTER_BINARY')
         if not binary:
             self.skipTest('set REGISTER_BINARY to the built aarch64 caller')
@@ -26,24 +26,43 @@ class SyntheticRegistration(unittest.TestCase):
         R=np.array([[np.cos(theta),-np.sin(theta),0],[np.sin(theta),np.cos(theta),0],[0,0,1]])
         t=np.array([4.,-3.,.5])
         source=(target-t)@R + rng.normal(0,.005,target.shape)
+        # the candidate the correlative search hands over: a few degrees and a few tens of centimetres off
+        dth=np.deg2rad(3.)
+        Rd=np.array([[np.cos(dth),-np.sin(dth),0],[np.sin(dth),np.cos(dth),0],[0,0,1]])
+        init=np.eye(4); init[:3,:3]=Rd@R; init[:3,3]=t+[.3,-.2,.0]
         with tempfile.TemporaryDirectory() as d:
             d=Path(d)
             for name,pts in [('map',target),('fit',source),('check',source)]:
                 np.savetxt(d/(name+'.xyz'),pts,fmt='%.6f')
-            proc=subprocess.run([binary,str(d/'map.xyz'),str(d/'fit.xyz'),str(d/'check.xyz'),'.30',str(d/'result.json')],
+            np.savetxt(d/'init.txt',init)
+            proc=subprocess.run([binary,str(d/'map.xyz'),str(d/'fit.xyz'),str(d/'check.xyz'),'.30',str(d/'result.json'),'--init',str(d/'init.txt')],
                                 capture_output=True,text=True,timeout=30)
             self.assertEqual(proc.returncode,0,proc.stdout+'\n'+proc.stderr)
             result=json.loads((d/'result.json').read_text())
-            self.assertTrue(result['kiss_valid'])
+            self.assertNotIn('kiss_valid',result)
             self.assertTrue(result['gicp_converged'])
             T=np.array(result['T_map_lidar_refined'])
             self.assertLess(np.linalg.norm(T[:3,3]-t),.10)
             self.assertLess(np.linalg.norm(T[:3,:3]-R),.05)
 
+    def test_a_call_without_an_initial_transform_is_refused(self):
+        binary=os.environ.get('REGISTER_BINARY')
+        if not binary:
+            self.skipTest('set REGISTER_BINARY to the built aarch64 caller')
+        with tempfile.TemporaryDirectory() as d:
+            d=Path(d)
+            pts=np.random.default_rng(1).uniform(-3,3,(50,3))
+            for name in ('map','fit','check'):
+                np.savetxt(d/(name+'.xyz'),pts,fmt='%.6f')
+            proc=subprocess.run([binary,str(d/'map.xyz'),str(d/'fit.xyz'),str(d/'check.xyz'),'.30',str(d/'result.json')],capture_output=True,text=True,timeout=30)
+            self.assertNotEqual(proc.returncode,0)
+            self.assertIn('--init',proc.stderr)
+            self.assertFalse((d/'result.json').exists())
+
 
 class BatchEqualsLoneRuns(unittest.TestCase):
     """--init-list must give, for every matrix, exactly what a lone --init run gives (same preprocessing)."""
-    KEYS=('gicp_converged','gicp_iterations','gicp_inliers','gicp_error','T_map_lidar_refined','T_map_lidar_kiss',
+    KEYS=('gicp_converged','gicp_iterations','gicp_inliers','gicp_error','T_map_lidar_refined','T_map_lidar_init',
           'source_points','target_points','check_points','config')
 
     def test_every_result_is_the_lone_run_result(self):
