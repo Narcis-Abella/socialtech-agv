@@ -104,7 +104,6 @@ print("ok scan height")
 ctx.launch_configurations.update(map="MAP", sim_time="false")
 assert any(type(e) is ExecuteProcess and any("local_frame_aligner" in perform_substitutions(ctx, c) for c in e.cmd) for e in launch.generate_launch_description().entities), "no local_frame_aligner: the local costmap has no frame"
 print("ok aligner")
-print("ok scan")
 
 
 # level_corrector: off by default (planar_odom keeps the static level), on = planar_odom listens to the correction and the node starts with the same level
@@ -137,9 +136,8 @@ print("ok respawn corrector")
 # the lidar offset in the body is copied in the launch and in sim_up.sh: it must be FAST-LIO2's extrinsic_T of the image (nav_live.sh edits the config but not that key)
 import re
 from ament_index_python.packages import get_package_share_directory
-import yaml as _yaml
-fl = _yaml.safe_load(open(os.path.join(get_package_share_directory("fast_lio"), "config", "mid360.yaml")))
-ext = [v for v in (fl["/**"]["ros__parameters"]["mapping"]["extrinsic_T"] if "/**" in fl else [])]
+fl = yaml.safe_load(open(os.path.join(get_package_share_directory("fast_lio"), "config", "mid360.yaml")))
+ext = list(fl["/**"]["ros__parameters"]["mapping"]["extrinsic_T"])
 assert ext == launch.LIDAR_IN_BODY, f"launch LIDAR_IN_BODY {launch.LIDAR_IN_BODY} != FAST-LIO2 extrinsic_T {ext}"
 sim_up = open(os.path.join(here, "..", "tools", "nav_sim", "sim_up.sh")).read()
 m = re.search(r"lidar_in_body:=\"\[([^\]]*)\]\"", sim_up)
