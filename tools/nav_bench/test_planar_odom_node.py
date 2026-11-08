@@ -3,6 +3,7 @@
 import subprocess
 import sys
 import time
+import unittest
 
 import numpy as np
 
@@ -13,6 +14,16 @@ LEVEL = list(np.array([0.2, -0.3, 0.1, 0.92]) / np.linalg.norm([0.2, -0.3, 0.1, 
 LIDAR = [-0.011, -0.02329, 0.04412]
 
 
+def need_the_node():
+    """Skip (not fail, not silently pass) where the node cannot run: a laptop without the built package, or without rclpy."""
+    try:
+        import rclpy  # noqa: F401
+        from ament_index_python.packages import get_package_prefix
+        get_package_prefix("planar_odom")
+    except Exception as e:
+        raise unittest.SkipTest(f"needs the robot image (rclpy and the built planar_odom package): {e}")
+
+
 def binary():
     """The executable itself: `ros2 run` is a wrapper, a signal to it leaves the node running (and the next test would hear two publishers)."""
     import os
@@ -21,6 +32,7 @@ def binary():
 
 
 def test_node_matches_the_python_reference_and_publishes_the_level_transform():
+    need_the_node()
     import rclpy
     from nav_msgs.msg import Odometry
     from rclpy.node import Node
@@ -72,6 +84,7 @@ def test_node_matches_the_python_reference_and_publishes_the_level_transform():
 
 
 def test_with_a_correction_topic_camera_init_is_dynamic_and_both_transforms_use_c_times_the_level():
+    need_the_node()
     import rclpy
     from geometry_msgs.msg import QuaternionStamped
     from nav_msgs.msg import Odometry
@@ -143,6 +156,7 @@ def test_with_a_correction_topic_camera_init_is_dynamic_and_both_transforms_use_
 
 
 def test_without_corrections_for_correction_timeout_s_the_plain_level_comes_back():
+    need_the_node()
     import rclpy
     from geometry_msgs.msg import QuaternionStamped
     from nav_msgs.msg import Odometry

@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -117,7 +118,7 @@ def test_a_second_run_in_the_same_output_dir_works():
 
 def test_a_run_directory_that_cannot_be_removed_stops_at_its_own_step():
     if os.geteuid() == 0:
-        return      # root can remove anything
+        raise unittest.SkipTest("root can remove anything")
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "o"
         (out / "vs" / "run").mkdir(parents=True)
