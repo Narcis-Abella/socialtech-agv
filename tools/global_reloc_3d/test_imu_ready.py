@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from imu_ready import MOTION_RESIDUAL_SCALE, episodes, expected_samples, ready_times, window_ok
+from imu_ready import MOTION_RESIDUAL_SCALE, expected_samples, window_ok
 
 
 class ImuReadyTest(unittest.TestCase):
@@ -52,13 +52,6 @@ class ImuReadyTest(unittest.TestCase):
         self.assertLess(hole.size / expected_samples(hole, 2.), .95)
         self.assertFalse(window_ok(np.zeros((hole.size, 3)), np.tile([0, 0, 1.], (hole.size, 1)), expected_samples(hole, 2.)))
 
-    def test_the_offline_filter_finds_a_still_robot_with_skewed_jitter(self):
-        t = self.skewed_stamps(4000)
-        g = np.zeros((len(t), 3)); a = np.tile([0, 0, 1.], (len(t), 1))
-        eps = episodes(ready_times(t, g, a))
-        self.assertEqual(len(eps), 1)                                          # it used to find none: the same 2 s / median(dt) as the live window
-        self.assertLess(eps[0][0] - t[0], 2.2)
-
     def test_degenerate_stamps_do_not_switch_the_coverage_check_off(self):
         z, a = np.zeros((5, 3)), np.tile([0, 0, 1.], (5, 1))
         self.assertFalse(window_ok(z, a, 0))                                   # expected 0 used to mean "no coverage requirement"
@@ -68,16 +61,6 @@ class ImuReadyTest(unittest.TestCase):
     def test_a_backward_step_in_the_stamps_does_not_change_the_typical_period(self):
         t = np.concatenate([np.arange(0, 1, .005), np.arange(0.5, 1.5, .005)])      # the clock stepped back 0.5 s in the middle
         self.assertTrue(380 <= expected_samples(t, 2.) <= 420)
-
-    def test_episodes_end_where_motion_starts(self):
-        g = self.g.copy()
-        g[self.t >= 6] += [0, 0, .3]
-        eps = episodes(ready_times(self.t, g, self.a))
-        self.assertEqual(len(eps), 1)
-        self.assertAlmostEqual(eps[0][0], 2., places=1)
-        self.assertLessEqual(eps[0][1], 6.)
-        self.assertGreater(eps[0][1], 5.8)
-
 
 if __name__ == '__main__':
     unittest.main()

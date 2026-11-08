@@ -22,12 +22,42 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from correlative_search import MIN_SOURCE_POINTS, MapField, SparseSource, crop_source, search, z_cell_range
-from search_tiles import agreement, distinct, pose_difference, temporal_evidence
+from lio_submap import FIT_FRACTION
 from verify import decide, score
 
 DEADLINE_S = 60.
 STAGE_S = {'gicp': 0., 'score': 0., 'confirm_total': 0.}  # additive instrumentation, no effect on decisions
 STAGE_LOCK = threading.Lock()                               # the primary and the confirmation searches add to it at the same time
+
+
+# Policy over several hypotheses: when two poses are one place, and whether the exposure spans enough time to confirm.
+def yaw(T):
+    return math.atan2(T[1, 0], T[0, 0])
+
+
+def pose_difference(a, b):
+    xy = np.linalg.norm(a[:2, 3]-b[:2, 3])
+    d = yaw(a)-yaw(b)
+    return float(xy), abs(math.degrees(math.atan2(math.sin(d), math.cos(d))))
+
+
+def distinct(a, b):
+    xy, deg = pose_difference(a, b)
+    return xy > .30 or deg > 8.
+
+
+def agreement(a, b):
+    xy, deg = pose_difference(a, b)
+    return xy <= .20 and deg <= 5.
+
+
+def temporal_evidence(stamps, start, duration):
+    fit=[t for t in stamps if t < start+duration*FIT_FRACTION]
+    check=[t for t in stamps if t >= start+duration*FIT_FRACTION]
+    if not fit or not check:
+        return False, None
+    separation=float(np.median(check)-np.median(fit))
+    return separation >= .5 and check[-1]-fit[0] >= 1., separation
 
 
 def run_concurrently(f, g):

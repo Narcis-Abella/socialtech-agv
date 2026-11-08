@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from correlative_search import pose
-from search_v2 import rank, run_concurrently, source_reach_z, tilt_deg
+from search_v2 import agreement, distinct, rank, run_concurrently, source_reach_z, temporal_evidence, tilt_deg
 
 
 def row(i, support, T):
@@ -55,6 +55,20 @@ class SearchV2Test(unittest.TestCase):
         c, s = math.cos(math.radians(10)), math.sin(math.radians(10))
         T[1:3, 1:3] = [[c, -s], [s, c]]
         self.assertAlmostEqual(tilt_deg(T), 10., places=6)
+
+    def test_distinct_and_agreement(self):
+        a = np.eye(4)
+        b = np.eye(4)
+        b[0, 3] = .21
+        self.assertFalse(distinct(a, b))
+        self.assertFalse(agreement(a, b))
+        b[0, 3] = .31
+        self.assertTrue(distinct(a, b))
+        self.assertTrue(agreement(a, np.eye(4)))
+
+    def test_one_second_ablation_cannot_accept(self):
+        self.assertFalse(temporal_evidence([.0, .1, .2, .3, .4, .5, .6, .7, .8, .9], 0., 1.)[0])
+        self.assertTrue(temporal_evidence([.0, .5, 1., 1.5, 2., 2.5, 2.9], 0., 3.)[0])
 
 
 class WorkerExitCodeTest(unittest.TestCase):

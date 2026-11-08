@@ -13,6 +13,8 @@ from scipy.spatial.transform import Rotation, Slerp
 
 from offline_s2 import transform, voxel, write_xyz
 
+FIT_FRACTION = 2 / 3   # the first part of an exposure is the fit batch, the rest the check batch (search_v2.temporal_evidence relies on the same split)
+
 
 def pose(msg):
     p=msg.pose.pose.position
@@ -173,8 +175,8 @@ def assemble(odom,clouds,imu,map_xyz,start,duration,out,voxel_size=.20,max_radiu
         levelling={'source':imu_source+' mean specific force in first local frame','samples':n,'samples_in_odom_gaps':skipped,
                    'median_sample_angle_to_mean_deg':spread,
                    'tilt_removed_deg':float(np.degrees(np.arccos(np.clip(up[2],-1,1))))}
-    fit=[p for t,p in zip(stamps,local) if t<start+duration*2/3]
-    check=[p for t,p in zip(stamps,local) if t>=start+duration*2/3]
+    fit=[p for t,p in zip(stamps,local) if t<start+duration*FIT_FRACTION]
+    check=[p for t,p in zip(stamps,local) if t>=start+duration*FIT_FRACTION]
     if not fit or not check:
         raise ValueError('fit/check batch missing')
     fit=voxel(np.concatenate(fit),voxel_size)
