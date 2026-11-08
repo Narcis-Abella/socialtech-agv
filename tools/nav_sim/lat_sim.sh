@@ -1,7 +1,7 @@
 #!/bin/bash
 # Does a relocalizer search disturb FAST-LIO? Same stack as sup_sim.sh, in MONITOR; lat_ab.py runs the search worker by hand (plain and under nice) and measures the latency and gaps of /Odometry.
 # usage: lat_sim.sh <out dir> [reps] [idle_s]   the search input is mounted at /lat_input (a runs/gn_supervisor/reloc*/input of an earlier sup run); CPUSET of agx_full.sh limits the cores of the container
-# mounts: repo tools/ at /tools and /greloc/tools, ops/ at /ops, docker/ros_loc/gn_loc at /locsrc (optional), GRELOC_BUILD (register_v2, libsmall_gicp.so, libcorr_search.so) at /greloc/build, out at /out, as lio_sim.sh (SIM_SRC, /pat, /navsrc)
+# mounts: repo tools/ at /tools and /greloc/tools, ops/ at /ops, src/ at /src (optional), GRELOC_BUILD (register_v2, libsmall_gicp.so, libcorr_search.so) at /greloc/build, out at /out, as lio_sim.sh (SIM_SRC, /pat, /src)
 # env: ROS_DOMAIN_ID (55), SPAWN, SEED, SIM_WAIT, PROD=1 (viz:=false: the deployed configuration)
 set -eo pipefail
 out=${1:?out dir}; reps=${2:-4}; idle_s=${3:-30}

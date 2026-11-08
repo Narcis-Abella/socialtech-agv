@@ -11,6 +11,6 @@ run() {   # run SOURCE INCLUDE_DIR
   g++ -std=c++17 -O1 -I "$here/$2" -I /usr/include/eigen3 "$here/$1" -lgtest -lgtest_main -pthread -o "$out/$name"
   echo "== $name"; "$out/$name" | grep -E '^\[  (PASSED|FAILED)'
 }
-run ros_loc/gn_loc/test/test_gn_core.cpp ros_loc/gn_loc/include
-run ros_loc/level_corrector/test/test_core.cpp ros_loc/level_corrector/include
-run ros_loc/level_corrector/test/test_map_io.cpp ros_loc/level_corrector/include
+run ../src/localization/gn_loc/test/test_gn_core.cpp ../src/localization/gn_loc/include
+run ../src/localization/level_corrector/test/test_core.cpp ../src/localization/level_corrector/include
+run ../src/localization/level_corrector/test/test_map_io.cpp ../src/localization/level_corrector/include

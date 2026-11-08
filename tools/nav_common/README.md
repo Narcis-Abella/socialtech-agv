@@ -5,7 +5,7 @@ Shared pieces of the localization/navigation stack that outlived the AMCL bench 
 | File | What |
 |---|---|
 | `map_frame.py` | `level` (the one command `ops/nav_live.sh` calls: `qx qy qz qw` of R_L, FAST-LIO2's world frame to the floor-levelled, wall-aligned frame) and the helpers `planar_odom.py` and `live/live_paths.py` import (quaternions, poses, `read_map_yaml`, `reference_map`). numpy only; test: `test_map_frame.py` |
-| `planar_odom.py` | Python reference of the `odom -> base_footprint` maths (x, y, yaw of the body, z = body z - sensor height, no roll/pitch). The robot runs the C++ node `docker/ros/planar_odom`, checked against it by `test_planar_odom_node.py` (inside the image); `test_planar_odom.py` |
+| `planar_odom.py` | Python reference of the `odom -> base_footprint` maths (x, y, yaw of the body, z = body z - sensor height, no roll/pitch). The robot runs the C++ node `src/localization/planar_odom`, checked against it by `test_planar_odom_node.py` (inside the image); `test_planar_odom.py` |
 | `procmon.py` | CPU/RAM sampler of the sim runs (`tools/nav_sim`); `test_procmon.py` |
 | `config/scan.yaml` | the `/scan` cut (0.10 - 1.80 m above the floor): the obstacle band of the map, in sync with `grid2d.rasterize` (floor band 0.10 m, `CEIL` of `make_map.sh`); the base of the cut read by `ops/nav_live.launch.py` and `tools/nav_sim/sim_up.sh` (they override `target_frame` and the heights); `nav2_params.yaml` cites its floor cut |
 | `live/live_paths.py`, `live/laptop_env.sh`, `live/bench_a.rviz` | the paths node `ops/nav_live.launch.py` starts (`/gn_path` etc.), and the laptop's ROS environment and rviz config used by `ops/rviz_live.sh` |
