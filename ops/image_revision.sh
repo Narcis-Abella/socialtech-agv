@@ -17,7 +17,8 @@ checkout_dirty() {
   local repo top
   repo=$(cd "$1" && pwd -P)
   top=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)
-  [[ -n $top && $(cd "$top" && pwd -P) == "$repo" && -n $(git -C "$repo" status --porcelain 2>/dev/null) ]]
+  # shortcut: only what the image is built from counts (untracked runs/ or out/ must not mark every build dirty); a plain copy (no .git) edited by hand after git archive is not seen, when to upgrade: hash the context
+  [[ -n $top && $(cd "$top" && pwd -P) == "$repo" && -n $(git -C "$repo" status --porcelain -- docker deps src 2>/dev/null) ]]
 }
 
 # image_freshness IMAGE REPO: is the image built from what this checkout holds? Replaces a guard per feature ("an older image runs without /scan and without an error").
@@ -28,6 +29,7 @@ image_freshness() {
   local image=$1 repo=$2 label sha cur top
   label=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image" 2>/dev/null || true)
   sha=${label%-dirty}
+  [[ $label == *-dirty ]] && { echo "$image was built from a tree with uncommitted edits ($label): nothing says what it holds; rebuild from a clean tree, or STALE_IMAGE_OK=1"; return 2; }
   [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "$image carries no revision label (built by hand, or before ops/build_image.sh labelled images)"; return 2; }
   cur=$(checkout_revision "$repo")
   [[ -n $cur ]] || { echo "this checkout does not know its commit (no .git and no filled REVISION)"; return 2; }

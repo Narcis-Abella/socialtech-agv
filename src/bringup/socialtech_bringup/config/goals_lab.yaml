@@ -1,5 +1,5 @@
 # Goals the operator sent in rviz2 on lab_test_01 (map frame, from the bt_navigator log of 2026-10-07; the log keeps x, y only, no yaw).
-# ops/send_goal.py points each one along its own direction of travel.
+# socialtech_bringup/scripts/send_goal.py points each one along its own direction of travel.
 - {name: G1, x: 3.24, y: -0.23}
 - {name: G2, x: 0.46, y: 1.74}
 - {name: G3, x: 4.45, y: -0.38}

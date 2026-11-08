@@ -11,21 +11,28 @@ source "$HERE/fastlio_config.sh"
 source /cyclone_uri.sh
 normalize_flags NAV BASE SUPERVISOR PROD LEVEL_CORRECTOR HEAVY_DDS
 
+# the C++ of the image must be new enough for these launch files (OVERLAY=1 swaps only the Python, launch and config): the failures these catch run without an error
+grep -q lidar_level "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" && grep -q gn_loc/pose "$(ros2 pkg prefix gn_loc)/lib/gn_loc/gn_loc_node" || { echo "FAIL: planar_odom or gn_loc of the image predates these launch files (no lidar_level / gn_loc/pose): rebuild the image (ops/build_image.sh robot)" >&2; exit 1; }
+[[ -z ${LEVEL_CORRECTOR:-} ]] || grep -q correction_topic "$(ros2 pkg prefix planar_odom)/lib/planar_odom/planar_odom" || { echo "FAIL: the planar_odom of the image ignores the correction: the level corrector would change nothing (rebuild the image, or LEVEL_CORRECTOR=0)" >&2; exit 1; }
 if [[ -n ${LEVEL_CORRECTOR:-} ]]; then
   ros2 run level_corrector level_corrector_node --ros-args -p map_dir:=/map -p check_only:=true >/tmp/lc_check.log 2>&1 || { echo "FAIL: level_corrector cannot load /map (map.ply: binary little-endian, float x y z only; map.yaml: the four T_map_world rows): $(tail -2 /tmp/lc_check.log | tr '\n' ' ') -- or LEVEL_CORRECTOR=0" >&2; exit 1; }
 fi
 if [[ -n ${SUPERVISOR:-} ]]; then   # on by default: what it needs is checked here, not found out by a respawn loop
-  [[ -f /map/prior/map.xyz ]] || { echo "FAIL: /map/prior/map.xyz (the 3D prior the supervisor relocalizes in) is missing: ops/nav_live.sh builds it for a map that has none; or SUPERVISOR=0" >&2; exit 1; }
+  [[ -f /map/prior/map.xyz && -f /map/prior/map_manifest.json ]] || { echo "FAIL: /map/prior/map.xyz (the 3D prior the supervisor relocalizes in) is missing: ops/nav_live.sh builds it for a map that has none; or SUPERVISOR=0" >&2; exit 1; }
   export SUP_PRIOR=/map/prior/map.xyz
   python3 -B - <<'PY' || { echo "FAIL: the supervisor cannot start in this image (see above); SUPERVISOR=0 runs without it" >&2; exit 1; }
 import os, sys
 import numpy, scipy, rclpy, action_msgs.msg, diagnostic_msgs.msg
 from rclpy.experimental import EventsExecutor
+import subprocess
 dirs = [os.path.join(p, "lib", "gn_supervisor") for p in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep)]
 node = next((d for d in dirs if os.path.isfile(os.path.join(d, "gn_supervisor_node.py"))), None)
-lib = next((d for d in dirs if os.path.isfile(os.path.join(d, "libcorr_search.so"))), None)
+lib = next((d for d in dirs if os.access(os.path.join(d, "register_v2"), os.X_OK) and os.path.isfile(os.path.join(d, "libcorr_search.so"))), None)   # the launch's criterion (supervisor_lib_dir)
 if not node or not lib:
-    sys.exit(f"no lib/gn_supervisor with gn_supervisor_node.py and libcorr_search.so on the ament path ({dirs})")
+    sys.exit(f"no lib/gn_supervisor with gn_supervisor_node.py, and one with register_v2 and libcorr_search.so, on the ament path ({dirs})")
+r = subprocess.run([os.path.join(lib, "register_v2")], capture_output=True, text=True)      # no arguments: it prints its usage (2) if it loads; a missing library or RUNPATH is another code
+if r.returncode != 2 or "usage: register_v2" not in r.stderr:
+    sys.exit(f"{lib}/register_v2 does not start (rc {r.returncode}): {r.stderr.strip()[-300:]}")
 sys.path.insert(0, node)
 import gn_supervisor_node, corr_cpp
 corr_cpp.load(os.path.join(lib, "libcorr_search.so"))
@@ -41,7 +48,11 @@ fastlio_yaml /tmp/fastlio.yaml
 echo "sensor height $h m; level quaternion $qx $qy $qz $qw; DDS ${DDS_IFACE:-lo} -> ${PEER:-no peer} (domain $ROS_DOMAIN_ID)"
 launch=nav_live; extra=()
 if [[ -n ${NAV:-} ]]; then   # navigation: Nav2 params of the sim + the real robot's differences
-  python3 "$HERE/merge_params.py" "$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml" "$SHARE/config/nav2_robot_overrides.yaml" >/tmp/nav2_params.yaml
+  nav=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav   # the image's, or the overlay's with OVERLAY=1: the simulation reads the package's too
+  python3 "$HERE/merge_params.py" "$nav/config/nav2_params.yaml" "$SHARE/config/nav2_robot_overrides.yaml" >/tmp/nav2_params.yaml
+  sed -i "s#/opt/socialtech/share/socialtech_nav/#$nav/#" /tmp/nav2_params.yaml   # the behavior tree path is absolute in the file: follow the package that was used
+  bt=$(sed -n 's/^ *default_nav_to_pose_bt_xml: *//p' /tmp/nav2_params.yaml)
+  [[ $bt == "$nav"/behavior_trees/*.xml && -f $bt ]] || { echo "FAIL: the behavior tree of the merged Nav2 parameters is '$bt', not a file of $nav/behavior_trees (the rewrite of the prefix did not apply)" >&2; exit 1; }
   lc_topics=(); [[ -z ${LEVEL_CORRECTOR:-} ]] || lc_topics=(/level_corrector/status /level_corrector/correction)   # its state per cycle (gate reasons, measured tilt, C) and the correction planar_odom applies
   sup_topics=(); [[ -z ${SUPERVISOR:-} ]] || sup_topics=(/gn_loc/status /gn_loc/scan_fit /gn_loc/need_reloc /gn_supervisor/state /initialpose /navigate_through_poses/_action/status)   # only where they exist
   set -m   # job control: a background job of a non-interactive shell ignores SIGINT, and the recorder needs one to write its metadata.yaml

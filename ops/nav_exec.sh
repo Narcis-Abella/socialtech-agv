@@ -12,4 +12,4 @@ else
   iface=${DDS_IFACE:-lo}
 fi
 # the same URI as run_live (the stack only listens on lo + iface, unicast): stack_cyclone_uri of docker/cyclone_uri.sh, then set_cyclone_uri adds the receive buffer
-exec docker exec -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e DDS_IFACE="$iface" -e PEER="$PEER" "$c" bash -c 'source /ros_env.sh; export CYCLONEDDS_URI=$(stack_cyclone_uri "$DDS_IFACE" "$PEER"); set_cyclone_uri; exec "$@"' _ "$@"
+exec docker exec -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e DDS_IFACE="$iface" -e PEER="$PEER" "$c" bash -c 'source /ros_env.sh; type stack_cyclone_uri >/dev/null 2>&1 || { echo "FAIL: this container predates stack_cyclone_uri (an older image): restart the stack from a current image" >&2; exit 1; }; export CYCLONEDDS_URI=$(stack_cyclone_uri "$DDS_IFACE" "$PEER"); set_cyclone_uri; exec "$@"' _ "$@"

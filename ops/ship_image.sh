@@ -10,9 +10,13 @@ rev=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.
 [[ -n $rev ]] || { echo "socialtech:$TARGET has no revision label: build it with ops/build_image.sh" >&2; exit 1; }
 sha=${rev%-dirty}; tag=$TARGET-${sha:0:7}; [[ $rev != *-dirty ]] || tag+=-dirty
 ssh_opts=(-o ConnectTimeout=10 ${SSH_KEY:+-i "$SSH_KEY"})
+id=$(docker image inspect -f '{{.Id}}' "socialtech:$tag"); arch=$(docker image inspect -f '{{.Architecture}}' "socialtech:$tag")
 for host in "$@"; do
-  if ssh "${ssh_opts[@]}" "$host" "docker image inspect socialtech:$tag >/dev/null 2>&1"; then echo "$host: socialtech:$tag is already there"
-  else echo "$host: sending socialtech:$tag"; docker save "socialtech:$tag" | ssh "${ssh_opts[@]}" "$host" "docker load"; fi
+  harch=$(ssh "${ssh_opts[@]}" "$host" "docker info -f '{{.Architecture}}'" | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+  [[ $harch == "$arch" ]] || { echo "$host: it runs $harch and socialtech:$tag is $arch (built on a laptop? build on a board): not sent" >&2; exit 1; }
+  # same NAME is not same IMAGE (a -dirty tag is rebuilt under one name): the content id decides
+  if [[ $(ssh "${ssh_opts[@]}" "$host" "docker image inspect -f '{{.Id}}' socialtech:$tag 2>/dev/null") == "$id" ]]; then echo "$host: socialtech:$tag is already there"
+  else echo "$host: sending socialtech:$tag"; docker save "socialtech:$tag" | gzip | ssh "${ssh_opts[@]}" "$host" "gunzip | docker load"; fi
   ssh "${ssh_opts[@]}" "$host" "docker tag socialtech:$tag socialtech:$TARGET"
   echo "$host: socialtech:$TARGET -> $tag"
 done

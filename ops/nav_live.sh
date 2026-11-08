@@ -13,7 +13,7 @@
 # drifts while parked, it cancels every Nav2 goal (never publishes a velocity), relocalizes with the robot's own FAST-LIO2 and the 3D prior MAP/prior/map.xyz
 # (made by ops/make_map.sh; built here, in seconds, for a map that has none), and publishes /initialpose only if gn_loc disagrees. It never re-sends a goal. State: /gn_supervisor/state.
 # The image must be the one this checkout builds (ops/image_revision.sh image_freshness: the label of the image against src/, deps/, docker/ and this file): a stale one stops the run,
-# STALE_IMAGE_OK=1 runs it anyway. OVERLAY=1 builds socialtech_bringup from this checkout's src/ at start-up (launch files, scripts and config: no image rebuild for those; C++ still needs one).
+# STALE_IMAGE_OK=1 runs it anyway. OVERLAY=1 builds socialtech_bringup and socialtech_nav from this checkout's src/ at start-up (launch files, scripts, config, the Nav2 parameters and behavior trees: no image rebuild for those; C++ still needs one).
 # env: DDS_IFACE (interface towards PEER; default: the route to PEER, or lo without PEER)  ROS_DOMAIN_ID (53, as the laptop scripts)  LIVOX_HOST_IP / LIVOX_LIDAR_IP  IMAGE (socialtech:robot)  MAP_DIR (~/maps)
 set -eo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -44,7 +44,7 @@ docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image $IMAGE not found"
 fresh=0; why=$(image_freshness "$IMAGE" "$REPO") || fresh=$?
 case $fresh in
   1) if [[ -n ${OVERLAY:-} || -n ${STALE_IMAGE_OK:-} ]]; then echo "WARN: $why" >&2
-     else die "$why: build or ship the image (ops/build_image.sh robot, ops/ship_image.sh), or OVERLAY=1 (launch files, scripts and config from this checkout), or STALE_IMAGE_OK=1"; fi ;;
+     else die "$why: build or ship the image (ops/build_image.sh robot, ops/ship_image.sh), or OVERLAY=1 (launch files, scripts, config, Nav2 parameters and behavior trees from this checkout), or STALE_IMAGE_OK=1"; fi ;;
   2) echo "WARN: cannot compare the image with this checkout: $why" >&2 ;;
 esac
 [[ -z ${LEVEL_CORRECTOR:-} ]] || { [[ -f $MAP/map.ply ]] && grep -q '^# \[' "$MAP/map.yaml"; } || die "LEVEL_CORRECTOR needs $MAP/map.ply and the T_map_world rows of $MAP/map.yaml (both written by ops/make_map.sh): regenerate the map, or run with LEVEL_CORRECTOR=0"
@@ -56,11 +56,11 @@ ping -c1 -W2 "$LIDAR_IP" >/dev/null 2>&1 || die "Livox $LIDAR_IP does not answer
 
 if [[ -n ${SUPERVISOR:-} ]]; then   # validated first: an error must not come after the "a goal MOVES THE ROBOT" banner
   [[ -z ${HEAVY_DDS:-} ]] || die "HEAVY_DDS=1 puts the driver on a loopback-only DDS URI that the supervisor (default URI) is not known to receive the raw lidar and IMU on: untested together, use SUPERVISOR=0 with HEAVY_DDS=1"
-  if [[ ! -f $MAP/prior/map.xyz ]]; then   # a map made before the prior was part of the mapping run: built now from its own cleaned cloud
-    [[ -f $MAP/map_clean.ply && -f $MAP/report.json ]] || die "$MAP has no prior/map.xyz and no map_clean.ply to build it from: make the map again with ops/make_map.sh (REUSE_SLAM=1 redoes it from the existing SLAM run in seconds), or SUPERVISOR=0"
+  if [[ ! -f $MAP/prior/map.xyz || ! -f $MAP/prior/map_manifest.json ]]; then   # none, or an interrupted one (the manifest is written last): built now from the cleaned cloud of the map
+    [[ -f $MAP/map_clean.ply && -f $MAP/report.json ]] || die "$MAP has no prior/map.xyz and no map_clean.ply to build it from: make the map again with ops/make_map.sh (REUSE_SLAM=1 redoes it from the existing SLAM run in seconds), or SUPERVISOR=0 to run without the supervisor"
     echo "no 3D prior in $MAP/prior: building it from map_clean.ply"
     docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$MAP:/m" "$IMAGE" python3 -B /opt/socialtech/lib/gn_supervisor/prepare_map.py --map-dir /m --out /m/prior >"$MAP/prior.log" 2>&1 \
-      || die "the 3D prior of $MAP could not be built ($(tail -1 "$MAP/prior.log")): see $MAP/prior.log"
+      || die "the 3D prior of $MAP could not be built ($(tail -1 "$MAP/prior.log")): see $MAP/prior.log (a map made before pipeline 2 needs REUSE_SLAM=1 ops/make_map.sh; or SUPERVISOR=0)"
   fi
   echo "SUPERVISOR: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
 fi
@@ -79,18 +79,18 @@ if [[ -n ${NAV:-} && -z ${PROD:-} ]]; then   # the DEV recorder writes raw /livo
   free_gb=$(df --output=avail -BG "$RUN" | tail -1 | tr -dc 0-9)
   (( free_gb >= ${MIN_FREE_GB:-20} )) || die "only ${free_gb} GB free in $RUN (the bag needs MIN_FREE_GB=${MIN_FREE_GB:-20}); free space, or PROD=1 to run without recording"
 fi
-{   # what ran: the image (its tag moves; the label is its commit), this checkout, and with OVERLAY=1 the bringup package built from it
+{   # what ran: the image (its tag moves; the label is its commit), this checkout, and whether OVERLAY=1 built socialtech_bringup and socialtech_nav from it
   echo "checkout: $(git -C "$REPO" describe --always --dirty 2>/dev/null || echo unknown)"
   { git -C "$REPO" status --porcelain 2>/dev/null || true; } | sed 's/^/  /'   # the board's checkout is often a plain copy, not a repository: git fails and set -e/pipefail would end the script
   img_id=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
-  echo "image: $IMAGE ${img_id:-unknown} revision $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE" 2>/dev/null || echo unknown)"
-  echo "supervisor: $([[ -n ${SUPERVISOR:-} ]] && echo on || echo off)"
+  echo "image: $IMAGE ${img_id:-unknown} revision $(rev=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE" 2>/dev/null); echo "${rev:-unknown}")"
+  echo "supervisor: $([[ -n ${SUPERVISOR:-} ]] && echo on || echo off); overlay: $([[ -n ${OVERLAY:-} ]] && echo "bringup+nav from this checkout" || echo none)"
 } > "$RUN/provenance.txt"
 echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} ]] && echo " and bag") in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
 run=(/opt/socialtech/lib/socialtech_bringup/run_live); ovl=()
-if [[ -n ${OVERLAY:-} ]]; then   # the bringup package of this checkout, built over the image's at start-up; /tmp/ov/install first on the ament path, so its run_live, launch files and config win
+if [[ -n ${OVERLAY:-} ]]; then   # socialtech_bringup and socialtech_nav of this checkout, built over the image's at start-up; /tmp/ov/install first on the ament path, so its run_live, launch files and config win
   ovl=(-v "$REPO/src:/src:ro")
-  run=(bash -c 'mkdir -p /tmp/ov && cd /tmp/ov && colcon build --base-paths /src --packages-select socialtech_bringup --merge-install --install-base /tmp/ov/install >/tmp/ov/build.log 2>&1 || { cat /tmp/ov/build.log >&2; exit 1; }
+  run=(bash -c 'mkdir -p /tmp/ov && cd /tmp/ov && colcon build --base-paths /src --packages-select socialtech_bringup socialtech_nav --merge-install --install-base /tmp/ov/install >/tmp/ov/build.log 2>&1 || { cat /tmp/ov/build.log >&2; exit 1; }
     source /tmp/ov/install/setup.bash && exec /tmp/ov/install/lib/socialtech_bringup/run_live')
 fi
 tty=(); [[ -t 0 ]] && tty=(-t)   # no terminal (a launcher script): docker refuses -t; SIGTERM to the docker client stops the stack as Ctrl-C does
