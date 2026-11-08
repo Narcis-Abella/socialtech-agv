@@ -28,7 +28,7 @@ def test_the_obstacle_band_is_the_same_for_the_scan_the_costmap_and_the_map():
     lo_f, hi_f = (float(v) for v in re.search(r"OBST_LO, OBST_HI = ([\d.]+), ([\d.]+)", text("tools/slam_bench/floor_level.py")).groups())
     assert (lo_f, hi_f) == (lo, hi), "floor_level.OBST_LO/HI (the band the map is rasterized with) vs scan.yaml"
     assert float(find("tools/slam_bench/make_map.sh", r'"\$\{CEIL:=([\d.]+)\}"')) == hi, "make_map.sh CEIL default vs the top of the band"
-    gc = yaml.safe_load(text("docker/ros_nav/socialtech_nav/config/nav2_params.yaml"))["global_costmap"]["global_costmap"]["ros__parameters"]["obstacle_layer"]
+    gc = yaml.safe_load(text("src/navigation/socialtech_nav/config/nav2_params.yaml"))["global_costmap"]["global_costmap"]["ros__parameters"]["obstacle_layer"]
     assert (gc["min_obstacle_height"], gc["max_obstacle_height"]) == (lo, hi), "the global costmap's marking cut vs the band"
 
 

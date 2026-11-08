@@ -1,4 +1,4 @@
-"""Checks the C++ planar_odom node (docker/ros/planar_odom) against planar_odom.footprint, the Python reference. Needs ROS 2 and the built package
+"""Checks the C++ planar_odom node (src/localization/planar_odom) against planar_odom.footprint, the Python reference. Needs ROS 2 and the built package
 (run inside the robot image: python3 test_planar_odom_node.py); skips without rclpy. Run the unit tests of the reference with test_planar_odom.py."""
 import subprocess
 import sys

@@ -30,7 +30,7 @@ Not measured: behaviour while the robot moves live (the offline simulation of th
 
 ## Build and tests
 
-small_gicp is not an apt package: the image builds the commit `register_v2` uses (Dockerfile, `SMALL_GICP_COMMIT`) into `/usr/local`. Built with the rest of `ros_loc` (tests off). With tests:
+small_gicp is not an apt package: the image builds the commit `register_v2` uses (Dockerfile, `SMALL_GICP_COMMIT`) into `/usr/local`. Built with the rest of `src/localization` (tests off). With tests:
 
 ```
 colcon build --packages-select level_corrector --cmake-args -DBUILD_TESTING=ON

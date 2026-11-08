@@ -7,7 +7,7 @@
 # PROD=1 (default off = DEV): the robot as deployed. No bag recorder (DEV records the speeds, the odometry and the raw /livox/lidar + /livox/imu of every NAV run) and no live_paths.py (a
 # rviz aid); the ROS node logs still persist in $RUN/log.
 # HEAVY_DDS=1 (default off): driver and FAST-LIO2 talk on loopback with 64 kB DDS datagrams (see heavy_env in nav_live.launch.py: not measured on the Nano yet).
-# LEVEL_CORRECTOR (default ON; LEVEL_CORRECTOR=0 turns it off): level_corrector registers FAST-LIO2's cloud against the map's 3D points every 2 s and planar_odom levels odom with it (docker/ros_loc/level_corrector/README.md). Off = the static level of the mapping run.
+# LEVEL_CORRECTOR (default ON; LEVEL_CORRECTOR=0 turns it off): level_corrector registers FAST-LIO2's cloud against the map's 3D points every 2 s and planar_odom levels odom with it (src/localization/level_corrector/README.md). Off = the static level of the mapping run.
 # SUPERVISOR=1 (default off) adds gn_supervisor (tools/global_reloc_3d; the binaries and the 3D prior are staged in GRELOC=~/greloc): when gn_loc is lost, starved of scans, silent, or
 # drifts while parked, it cancels every Nav2 goal (never publishes a velocity), relocalizes with the robot's own FAST-LIO2 and the 3D prior
 # GRELOC/prior/MAP_NAME/prior/map.xyz, and publishes /initialpose only if gn_loc disagrees. It never re-sends a goal. State: /gn_supervisor/state.

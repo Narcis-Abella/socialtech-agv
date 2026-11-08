@@ -21,7 +21,7 @@ Starts `map_server`, `gn_loc` and a lifecycle manager for both. The live stack s
 
 ## Build and tests
 
-The image builds it in its own colcon step after the Nav2 packages (`/opt/socialtech_loc`), without tests. The 13 gtests of the core run in a separate build:
+The image builds it in its own colcon step after the Nav2 packages (`/opt/socialtech`), without tests. The 13 gtests of the core run in a separate build:
 
 ```
 colcon build --packages-select gn_loc --cmake-args -DBUILD_TESTING=ON && ./build/gn_loc/test_gn_core

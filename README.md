@@ -8,13 +8,14 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | Path | What |
 |---|---|
 | `host/` | One-time Jetson host setup: everything that cannot live in a container (kernel modules, udev, networking, power) |
-| `docker/` | Layered images built from one `Dockerfile` (`base` → `robot` → `sim` or `mapper`) |
+| `docker/` | The `Dockerfile` (layered stages `base` → `robot` → `sim` or `mapper`), the entrypoint and the ROS/DDS environment scripts |
 | `deps/` | Third-party sources, pinned by commit, and the fixes we apply to them: `robot/` (`robot.repos` + `patches/<repo>/*.patch`, see its README), `nav2/` (the Nav2 source the patched controller is built from + its patch), `mapper/` (`mapper.repos`), `fetch_repos.py` (the shallow fetch all three use) |
-| `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
 | `docker/run_cpp_tests.sh` | Runs the C++ gtests that need only Eigen and GoogleTest (gn_core, level_corrector core and map_io); the image builds without tests |
-| `docker/ros_mapper/` | Our packages built only into the `mapper` image (`socialtech_mapping`: the beam counting of `tools/slam_bench/ghosts.py` in C++) |
-| `docker/ros_loc/` | The localizer and what levels it: `gn_loc` (scan-to-map Gauss-Newton, `map -> odom`) and `level_corrector` (slow roll/pitch correction of FAST-LIO2's odom frame against the map's 3D points; on by default in `ops/nav_live.sh`, `LEVEL_CORRECTOR=0` turns it off; small_gicp is built in the `robot` stage); each has its README |
-| `docker/ros_nav/` | Nav2 on top of the localizer: `socialtech_nav` (parameters, behavior trees), `socialtech_costmap` (`DecayObstacleLayer`, height-band clearing), the patched controller; the sim-only packages |
+| `src/` | Our own ROS 2 packages, by role; the image builds them on top of the third-party workspace, one layer per role, into `/opt/socialtech` (see Images) |
+| `src/localization/` | `gn_loc` (scan-to-map Gauss-Newton, `map -> odom`), `level_corrector` (slow roll/pitch correction of FAST-LIO2's odom frame against the map's 3D points; on by default in `ops/nav_live.sh`, `LEVEL_CORRECTOR=0` turns it off; small_gicp is built in the `robot` stage) and `planar_odom` (FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF); each has its README or header |
+| `src/navigation/` | Nav2 on top of the localizer: `socialtech_nav` (parameters, behavior trees) and `socialtech_costmap` (`DecayObstacleLayer`, height-band clearing); the patched controller is built from `deps/nav2` |
+| `src/simulation/` | `socialtech_livox_sim`, `socialtech_simreal`: built only into the `sim` image |
+| `src/mapping/` | `socialtech_mapping`: the beam counting of `tools/slam_bench/ghosts.py` in C++, built only into the `mapper` image |
 | `ops/` | Running the robot: `nav_live.sh` (localization + Nav2; flags `NAV`, `BASE`, `SUPERVISOR`, `PROD`, `LEVEL_CORRECTOR`), `record_bag.sh` (the operator's recorder), `rviz_live.sh` (rviz on the laptop against the board), the launch files, the map helpers (`make_map.sh`), `send_goal.py` (one recorded goal to Nav2, measures how the robot sets off), base-layer checks run by hand (`tracer_test.sh` + `can_latency.py`: wheels in the air; `nav_exec.sh`: a command in the nav container), and the tests of all that (`test_*.py`, `test_flags.sh`) |
 | `tools/global_reloc_3d/` | The global relocalizer and the supervisor that calls it (everything in it runs on the robot; the AMCL-era pipeline was removed on 2026-11-08) |
 | `tools/nav_sim/`, `tools/sim_realism/` | Full-chain simulation (simulated Mid-360 + real FAST-LIO2 + Nav2) on the AGX and its runners |
@@ -74,7 +75,7 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 
 - `tools/slam_bench/`: map building from a bag (`make_map.sh`), Voxel-SLAM cost measurements on the Jetsons; see its `README.md`.
 - `tools/slam_bench/bag_check.py`: gaps in the LiDAR and IMU streams of a bag, from the recording times; run it right after recording (a scan lost while recording is gone for good and nothing warns about it).
-- `tools/slam_bench/make_map.sh`: bag to map in one command inside the `mapper` image: Voxel-SLAM replay (2x) and then `make_map.py`, one process that levels the floor, removes the ghosts the beams go through, writes `map.ply` (raw SLAM cloud), `map_clean.ply` (ghost-free, whole height), `map.pgm` + `map.yaml` (2D, from the band 0.10-1.80 m of the clean cloud, unknown cells the beams crossed freed) and `report.json`. The modules are `cloud_io.py`, `floor_level.py`, `ghosts.py` (beam counting in C++, `docker/ros_mapper/socialtech_mapping`), `grid2d.py`; the relocalizer prior is built from `map_clean.ply` by `tools/global_reloc_3d/prepare_map.py`. See `tools/slam_bench/README.md`.
+- `tools/slam_bench/make_map.sh`: bag to map in one command inside the `mapper` image: Voxel-SLAM replay (2x) and then `make_map.py`, one process that levels the floor, removes the ghosts the beams go through, writes `map.ply` (raw SLAM cloud), `map_clean.ply` (ghost-free, whole height), `map.pgm` + `map.yaml` (2D, from the band 0.10-1.80 m of the clean cloud, unknown cells the beams crossed freed) and `report.json`. The modules are `cloud_io.py`, `floor_level.py`, `ghosts.py` (beam counting in C++, `src/mapping/socialtech_mapping`), `grid2d.py`; the relocalizer prior is built from `map_clean.ply` by `tools/global_reloc_3d/prepare_map.py`. See `tools/slam_bench/README.md`.
 
 ## Tests
 
@@ -85,8 +86,8 @@ The robot's SLAM is **Voxel-SLAM** (chosen 2026-10-01 after comparing it with GL
 | Change | Where |
 |---|---|
 | Fix so upstream code builds/runs | `deps/robot/patches/<repo>/*.patch` |
-| Our configuration (params, launch args) | `ops/` (launch files and overrides, merged over `docker/ros_nav/socialtech_nav/config/nav2_params.yaml`), never upstream configs |
-| Our own nodes | an ament package under `docker/ros`, `docker/ros_loc`, `docker/ros_nav` or `docker/ros_mapper` (by role, see Layout); a Python reference + test in `tools/nav_common` if it replaces one |
+| Our configuration (params, launch args) | `ops/` (launch files and overrides, merged over `src/navigation/socialtech_nav/config/nav2_params.yaml`), never upstream configs |
+| Our own nodes | an ament package under `src/<role>/` (see Layout); a Python reference + test in `tools/nav_common` if it replaces one |
 | New logic in upstream code | a fork, pinned in `deps/robot/robot.repos` |
 
 ## License

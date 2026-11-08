@@ -1,15 +1,17 @@
 # sourced by lio_sim.sh, sup_sim.sh, lat_sim.sh and clock_sim.sh (inside the `sim` image): the simulator with the realism models and the simulated Mid-360, no localization yet.
-#   needs: $out; mounts /tools, optionally /navsrc (docker/ros_nav newer than the image's), SIM_SRC (hospital-agv-sim 'sim-realism'), /pat (ours.lvm, loyola.tris)
+#   needs: $out; mounts /tools, optionally /src (the checkout's src/, newer than the image's), SIM_SRC (hospital-agv-sim 'sim-realism'), /pat (ours.lvm, loyola.tris)
 #   env: SPAWN ("-13.0 0.0 0.0" x y yaw), SEED (1), SIM_WAIT (30 s: the model falls 0.3 m at spawn and FAST-LIO2 must not take its gravity from that)
 mkdir -p "$out"
 trap 'kill $(jobs -p) 2> /dev/null || true' EXIT
-if [ -d /navsrc ]; then   # socialtech_simreal / socialtech_livox_sim / socialtech_costmap newer than the image's: built into an overlay
-  mkdir -p /tmp/navws && (cd /tmp/navws && colcon build --base-paths /navsrc --packages-select socialtech_simreal socialtech_livox_sim socialtech_costmap --merge-install --install-base /tmp/nav_install > "$out/build_nav.log" 2>&1)
-  source /tmp/nav_install/setup.bash
-fi
-if [ -d /odomsrc ]; then   # planar_odom newer than the image's: overlay
-  mkdir -p /tmp/odomws && (cd /tmp/odomws && colcon build --base-paths /odomsrc --packages-select planar_odom --merge-install --install-base /tmp/odom_install > "$out/build_odom.log" 2>&1)
-  source /tmp/odom_install/setup.bash
+# src_overlay NAME PKG...: those of OUR packages from the mounted /src (the checkout's src/) built into an overlay /tmp/NAME_install and sourced: the run tests the checkout, not the image's copy.
+# OVERLAY_CMAKE="--cmake-args ..." adds CMake arguments. Used here and by the scripts that source this one.
+src_overlay() {
+  local name=$1; shift
+  mkdir -p "/tmp/ws_$name" && (cd "/tmp/ws_$name" && colcon build --base-paths /src --packages-select "$@" --merge-install --install-base "/tmp/${name}_install" ${OVERLAY_CMAKE:-} > "$out/build_$name.log" 2>&1) || return 1
+  source "/tmp/${name}_install/setup.bash"
+}
+if [ -d /src ]; then   # socialtech_simreal / socialtech_livox_sim / socialtech_costmap / planar_odom newer than the image's
+  src_overlay ours socialtech_simreal socialtech_livox_sim socialtech_costmap planar_odom
 fi
 if ! ros2 pkg prefix hospital-agv-sim > /dev/null 2>&1; then
   mkdir -p /tmp/ws/src && ln -sfn "${SIM_SRC:?hospital-agv-sim is not in the image: set SIM_SRC}" /tmp/ws/src/hospital-agv-sim
@@ -62,11 +64,10 @@ chain_map() {
 }
 
 # The robot's own ops/nav_live.launch.py (driver off, sim time) with gn_loc and the supervisor over the simulator, 10 s to come up (sup_sim.sh, lat_sim.sh). PROD (normalised by the caller): viz:=false.
-# mounts: docker/ros_loc/gn_loc at /locsrc (optional), ops/ at /ops, GRELOC_BUILD (register_v2, libsmall_gicp.so, libcorr_search.so) at /greloc/build
+# mounts: src/ at /src (optional), ops/ at /ops, GRELOC_BUILD (register_v2, libsmall_gicp.so, libcorr_search.so) at /greloc/build
 stack_up() {
-  if [ -d /locsrc ]; then   # gn_loc newer than the image's (gn_loc/scan_fit, which the supervisor confirms with): overlay
-    mkdir -p /tmp/locws && (cd /tmp/locws && colcon build --base-paths /locsrc --packages-select gn_loc --merge-install --install-base /tmp/loc_install > "$out/build_loc.log" 2>&1)
-    source /tmp/loc_install/setup.bash
+  if [ -d /src ]; then   # gn_loc newer than the image's (gn_loc/scan_fit, which the supervisor confirms with): overlay
+    src_overlay loc gn_loc
   fi
   fastlio_yaml "$out/fastlio.yaml"
   python3 /tools/sim_realism/tris_to_prior.py /pat/loyola.tris "$out/prior.xyz" 0.2 0.1 > "$out/prior.log"

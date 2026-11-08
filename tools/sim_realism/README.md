@@ -4,7 +4,7 @@ Models of what the real Tracer + Mid-360 do, calibrated on real bags, for the Na
 
 | Piece | Where | What |
 |---|---|---|
-| `docker/ros_nav/socialtech_simreal` | built into the `sim` image with the other `ros_nav` packages | four nodes: `sim_base_model`, `sim_wheel_odom`, `sim_scan_model`, `sim_imu_model`; the models are in `models.hpp` (no ROS) with gtests |
+| `src/simulation/socialtech_simreal` | built into the `sim` image with the other packages of `src/simulation` | four nodes: `sim_base_model`, `sim_wheel_odom`, `sim_scan_model`, `sim_imu_model`; the models are in `models.hpp` (no ROS) with gtests |
 | `calibration.json` | here | every number with its source |
 | `scan_selfcheck.py` | here | check the running simulation's /scan against the calibration |
 | estimators from real bags (`lidar_noise_from_scan`, `base_response_from_bag`, `slip_structure`, `caster_kick`), `livox_sim_geom`, `livox_pattern_compare` | SocialTech `notes/sim_realism/` (removed here 2026-11-08) | one-off estimation and validation |
@@ -27,7 +27,7 @@ whole chain /cmd_vel -> base model -> Gazebo: linear dead time 0.060 s, lag 0.10
 Gazebo alone (/cmd_vel_gz): dead time 0.02 s, gain 1.000, so everything above comes from the models. `scan_selfcheck.py` in the hospital world: core sigma, dropout and jump rate per range bin within the real values.
 Pitfalls found: a test in wall time against a simulator under real time; a command profile that drives into the walls of the hospital world.
 
-## Livox Mid-360 (non-repetitive, `docker/ros_nav/socialtech_livox_sim`)
+## Livox Mid-360 (non-repetitive, `src/simulation/socialtech_livox_sim`)
 `livox_mid360_sim` ray casts a closed-form scan model on the world triangles (Embree) and publishes `livox_ros_driver2/CustomMsg` (`/livox/lidar`) and, optionally, the driver's PointCloud2 (`xfer_format 0`, PointXYZRTLT) with per-point `offset_time`. Every point is cast from the ground-truth pose (`/odom_gt_raw`, world frame) at the point's own time (motion distortion as on the real unit). The point stream is continuous on the slot clock (5.000 us per point, 96-point packets, frames of whole packets: 19968 / 20064 points); slots without a return are zero points as in the driver. `jitter_std` (s, default 0) adds the real driver's per-packet reported-time error (AR(1) 0.65; real ~0.0005).
 
 Model (notes/sim_realism/livox_modelo_matematico.md): slot k, line l = k % 4, t = 5 us k, rotor a = phi0 + 2 pi f_a t, oscillator z = psi + 2 pi f_z t; azimuth = deg(a) + l + B.c_az, zenith = B.c_ze, 24 basis terms (nutation circle at f_z, harmonics, 4-beam fan turning with the rotor). 48 coefficients + 4 constants per unit (~1.5 kB), never repeats. The earlier +-27 deg "azimuth modulation" was packet-timestamp jitter, not optics.

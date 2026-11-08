@@ -1,4 +1,4 @@
-"""Ghost removal: which points of a SLAM cloud the lidar beams go through. numpy; the beam counting is libsocialtech_mapping_beams.so (docker/ros_mapper, all cores).
+"""Ghost removal: which points of a SLAM cloud the lidar beams go through. numpy; the beam counting is libsocialtech_mapping_beams.so (src/mapping, all cores).
 
 A point is HIT in a scan when a beam (nearest return of a 1 degree range-image bin) ends within a margin (+ 1 % of the range) of it, PASSED when the beam ends farther away.
 A voxel of 5 cm (the centroid of its points is tested) with at least MIN_OBS observations and hits / (hits + passed) < MIN_RATIO is a ghost: walls measure ~0.75, isolated specks ~0.01.
