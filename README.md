@@ -14,12 +14,12 @@ Runs on NVIDIA Jetson Orin (AGX Orin, Orin NX, Orin Nano) with JetPack 7.2.1, RO
 | `docker/ros/` | Our own ROS 2 packages, copied to `src/` and built with the third-party ones (`planar_odom`: FAST-LIO2 `/Odometry` to the levelled planar `base_footprint` TF). Under `docker/` because it is the build context |
 | `docker/ros_mapper/` | Our packages built only into the `mapper` image (`socialtech_mapping`: the beam counting of `tools/slam_bench/ghosts.py` in C++) |
 | `docker/ros_loc/` | The localizer and what levels it: `gn_loc` (scan-to-map Gauss-Newton, `map -> odom`) and `level_corrector` (slow roll/pitch correction of FAST-LIO2's odom frame against the map's 3D points; on by default in `ops/nav_live.sh`, `LEVEL_CORRECTOR=0` turns it off; small_gicp is built in the `robot` stage); each has its README |
-| `docker/ros_nav/`, `docker/nav2/` | Nav2 on top of the localizer: `socialtech_nav` (parameters, launch), `socialtech_costmap` (`DecayObstacleLayer`, height-band clearing), the patched controller; the sim-only packages |
+| `docker/ros_nav/`, `docker/nav2/` | Nav2 on top of the localizer: `socialtech_nav` (parameters, behavior trees), `socialtech_costmap` (`DecayObstacleLayer`, height-band clearing), the patched controller; the sim-only packages |
 | `ops/` | Running the robot: `nav_live.sh` (localization + Nav2; flags `NAV`, `BASE`, `SUPERVISOR`, `PROD`, `LEVEL_CORRECTOR`), the launch files, the map and base helpers, and the tests of all that (`test_*.py`, `test_flags.sh`) |
-| `tools/global_reloc_3d/` | The global relocalizer and the supervisor that calls it; **README says which files the robot runs and which are the previous pipeline** |
+| `tools/global_reloc_3d/` | The global relocalizer and the supervisor that calls it (everything in it runs on the robot; the AMCL-era pipeline was removed on 2026-11-08) |
 | `tools/nav_sim/`, `tools/sim_realism/` | Full-chain simulation (simulated Mid-360 + real FAST-LIO2 + Nav2) on the AGX and its runners |
-| `tools/` | Offline research helpers: SLAM benchmark, 2D map from a PLY, GLIM dump to PLY and config evaluation (see Tools) |
-| `tools/nav_bench/` | Localization bench (stage A): FAST-LIO2 + AMCL over a bag's own map, scored against Voxel-SLAM (see its README) |
+| `tools/nav_bench/` | Shared pieces: the floor-levelling rotation (`map_frame.py`, called by `ops/nav_live.sh`), the Python reference of `planar_odom`, `procmon.py`, the `/scan` cut |
+| `tools/slam_bench/` | Offline: bag to map with Voxel-SLAM (`make_map.sh`), bag checks, Voxel-SLAM cost on the Jetsons (see Tools) |
 
 ## Jetson setup (once per board)
 

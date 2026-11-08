@@ -106,7 +106,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ros-jazzy-nav2-amcl ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan \
+      ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager ros-jazzy-pointcloud-to-laserscan \
       ros-jazzy-bondcpp \
       python3-scipy
 # python3-scipy: the global relocalizer that gn_supervisor starts (tools/global_reloc_3d/search_v2.py: FFT, KD-tree); ops/nav_live.sh SUPERVISOR=1 refuses an image without it.

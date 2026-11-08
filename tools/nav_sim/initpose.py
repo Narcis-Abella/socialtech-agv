@@ -1,4 +1,4 @@
-"""Deterministic perturbation of the initial pose given to AMCL (stdlib only: it runs inside the sim image, which has no scipy)."""
+"""Deterministic perturbation of the initial pose given to the localizer (stdlib only: it runs inside the sim image, which has no scipy)."""
 import math
 
 

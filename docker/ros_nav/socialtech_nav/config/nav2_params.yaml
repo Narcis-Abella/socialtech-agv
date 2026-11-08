@@ -1,59 +1,13 @@
 # Nav2 parameters for the simulated Tracer. Base: nav2_bringup/params/nav2_params.yaml of Jazzy 1.3.13 (MPPI + Navfn, TurtleBot3).
 # Deviations: RPP instead of MPPI; Smac2D instead of Navfn; footprint 0.70 x 0.58 m (base_link mesh of the sim, rounded up; the sim collision box is 0.60 x 0.40);
 # frames base_footprint; 2D ObstacleLayer on /scan (local and global), static + inflation (global); inflation 0.70 m local and 1.2 m global (above the 1.0 m outer slowdown zone, so sensor noise at open spaces does not trigger it) (global costmap 2 Hz, marking and raytrace to 10 m, BT replanning 2 Hz: obstacles that appear reach the plan sooner, sim dyn_hall contacts 3/5 -> 0/5; Smac2D asks for >= half the largest cross-section; 0.70 keeps mid-route footprint clearance >= 20 cm in the sim hospital, 0.55 gave 5-11 cm);
-# speeds for ~0.3 m/s; AMCL limited to the sim LiDAR (12 m). route_server and docking_server keep the bringup defaults: navigation_launch.py always starts them.
-# amcl.initial_pose = the spawn pose of the simulator in the world frame (the map frame is the world frame).
-# amcl.alpha1..4 = 0.01 (default 0.2): notes/nav2_stack_resultados.md D-1.1; sim loc_err_p95 0.161 -> 0.063 m, real bags eco01/eco03 position p95 7-13 m -> 0.10-0.16 m. Needs an honest initial covariance (>= 0.5 m / 0.26 rad), else a 1 m offset is not recovered.
-# amcl.update_min_d/a = 0.05 (default 0.25 m / 0.2 rad): D-1.2; RP1 reached 1/16 -> 14/16 (AMCL jumps 11/16 -> 0/16), RP2 11/16 -> 14/16, no regression in F2/SC7b nor in 7 real recordings; AMCL CPU in the replay of real recordings at 1x (AGX, no simulator): 2.7 % of one core with these values against 3.2 % with the defaults, so no extra cost (the +13-20 % seen in the simulation is not explained: unverified guess, the sim clock or the particle count). PROVISIONAL: the gain (RP1) is sim-only and the sim is not conclusive for localization; the real recordings show no regression, not a gain; to verify on the robot (ledger LAB-13).
-# amcl.sigma_hit = 0.1 (default 0.2): D-1.3, part of the stack on the strength of the real recordings (5 recordings, position p95 -3.0 cm [-4.9, -1.6] at 5 cm map, better in all 5, also in the long symmetric corridor; the reference is the Voxel-SLAM run of the same map, not an independent truth). The sim is not conclusive for localization (F2/SC7b/RP1/RP2 loc_err_p95 +1 to +12 cm, exact map and LiDAR). To verify on the robot (ledger LAB-13).
+# speeds for ~0.3 m/s. route_server and docking_server keep the bringup defaults: navigation_launch.py always starts them.
 # global_costmap.obstacle_layer (scan, mark 5 m, clear 6 m): D-2.1, adopted by Narcis 2026-10-24. Without it the global planner cannot see anything unmapped (an unmapped box in an empty hall aborted the robot, 0/3 -> 3/3 with the layer); no regression in SC7b/RP1/RP2 (clearance +2.6 to +5.0 cm, smoother, +1 goal reached in RP1 and RP2), +1.9 s per 30 s trip in dyn_hall, CPU/RAM cost negligible. Does not fix a pedestrian stepping in from the side.
 # Initial values, tuned in the evaluation (notes/nav2_sim_resultados_*.md). use_sim_time comes from the launch (SetParameter).
 # bond_heartbeat_period 1.0 (default 0.1): node side of the lifecycle_manager bonds; detection stays the 4 s bond_timeout. The manager side keeps its hard-coded 0.1 s, so /bond traffic drops by about half (arithmetic, ledger lever 4).
 /**:
   ros__parameters:
     bond_heartbeat_period: 1.0
-amcl:
-  ros__parameters:
-    alpha1: 0.01
-    alpha2: 0.01
-    alpha3: 0.01
-    alpha4: 0.01
-    alpha5: 0.2
-    base_frame_id: base_footprint
-    beam_skip_distance: 0.5
-    beam_skip_error_threshold: 0.9
-    beam_skip_threshold: 0.3
-    do_beamskip: false
-    global_frame_id: map
-    lambda_short: 0.1
-    laser_likelihood_max_dist: 2.0
-    laser_max_range: 12.0
-    laser_min_range: 0.15
-    laser_model_type: likelihood_field
-    max_beams: 120
-    max_particles: 2000
-    min_particles: 500
-    odom_frame_id: odom
-    pf_err: 0.05
-    pf_z: 0.99
-    recovery_alpha_fast: 0.0
-    recovery_alpha_slow: 0.0
-    resample_interval: 1
-    robot_model_type: nav2_amcl::DifferentialMotionModel
-    save_pose_rate: 0.5
-    sigma_hit: 0.1
-    tf_broadcast: true
-    transform_tolerance: 1.0
-    update_min_a: 0.05
-    update_min_d: 0.05
-    z_hit: 0.5
-    z_max: 0.05
-    z_rand: 0.5
-    z_short: 0.05
-    scan_topic: scan
-    set_initial_pose: true
-    always_reset_initial_pose: false
-    initial_pose: {x: -13.0, y: 5.0, z: 0.0, yaw: -1.5708}
 bt_navigator:
   ros__parameters:
     global_frame: map
