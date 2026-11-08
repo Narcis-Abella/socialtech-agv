@@ -5,6 +5,7 @@ Not deployment code: tooling run by hand on a laptop and a Jetson.
 
 | File | Purpose |
 |---|---|
+| `m3dgr_convert.py` | M3DGR ROS 1 bag -> ROS 2 mcap with the Mid-360 as `PointCloud2` + IMU; with `pc2_to_custom.py` it makes the `benchmarks/m3dgr_*_custom` bags that `agx/jetson_cost_queue.sh` and `jetson_cost_long.sh` run on |
 | `pc2_to_custom.py` | Mid-360 `PointCloud2` bag -> `livox_ros_driver2/CustomMsg` bag, for old bags recorded as `PointCloud2` (the robot records `CustomMsg` since `xfer_format 1`; FAST-LIO2 ignores per-point time in `PointCloud2`) |
 | `voxelslam_run.sh` | run Voxel-SLAM on one bag inside an image (workspace at `/ws`, tools at `/tools`, output at `/out`) in `socialtech:mapper` |
 | `make_map.sh` | Bag -> map in one command, inside the `mapper` image: Voxel-SLAM replay at 2x (`degrade_bound` 100000; the end is the file `vs/edge.txt`) and then `make_map.py`. `--reuse-slam` redoes everything after the SLAM of an earlier run in seconds. Leaves `map.pgm` + `map.yaml` (with `T_map_world`), `map.ply` (the raw Voxel-SLAM cloud), `map_clean.ply` (ghost-free, whole height), `report.json` and `vs/run/alidarState.txt` (the reference for `pose_eval`) |

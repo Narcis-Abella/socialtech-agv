@@ -1,5 +1,7 @@
 """Run: python3 -B test_analyze.py   (offline: numpy and scipy)"""
 
+import os
+
 import numpy as np
 
 import analyze as a
@@ -197,17 +199,25 @@ def test_compare_pairs_by_id_and_tag():
     assert out["_success"]["only_base"] == 1 and out["_success"]["only_cand"] == 0
 
 
+def test_a_run_is_scored_on_its_own_chain_map_and_the_old_map_only_with_a_notice():
+    import contextlib
+    import io
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert a.default_map(d) == a.OLD_2D_MAP
+        assert "not comparable" in err.getvalue()
+        open(os.path.join(d, a.CHAIN_MAP), "w").write("image: x.pgm\n")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert a.default_map(d) == os.path.join(d, a.CHAIN_MAP)
+        assert err.getvalue() == ""
+    assert a.FOOTPRINT == (0.66, 0.54)       # ops/nav2_robot_overrides.yaml
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
             fn()
     print("ok")
-
-
-def test_a_run_is_scored_on_its_own_chain_map_and_the_old_map_only_with_a_notice(tmp_path, capsys):
-    assert a.default_map(str(tmp_path)) == a.OLD_2D_MAP
-    assert "not comparable" in capsys.readouterr().err
-    (tmp_path / a.CHAIN_MAP).write_text("image: x.pgm\n")
-    assert a.default_map(str(tmp_path)) == str(tmp_path / a.CHAIN_MAP)
-    assert capsys.readouterr().err == ""
-    assert a.FOOTPRINT == (0.66, 0.54)       # ops/nav2_robot_overrides.yaml

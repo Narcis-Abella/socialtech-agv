@@ -198,7 +198,11 @@ def parse(argv):
 
 def main(argv):
     pos, opts = parse(argv)
-    ctx = context(opts["--map"] or default_map(pos[1]), float(opts["--tol"]))
+    tol = float(opts["--tol"])
+    maps = [opts["--map"] or default_map(run) for run in pos[1:3]]       # each run is scored on its own map unless --map says otherwise
+    ctx, ctx_cand = context(maps[0], tol), context(maps[-1], tol)
+    if pos[0] == "compare" and maps[0] != maps[1]:
+        print(f"analyze: base and candidate are scored on different maps ({maps[0]} / {maps[1]}): clearance and collisions are not paired on the same walls", file=sys.stderr)
     first = int(opts["--first"]) if opts["--first"] else None
     excl = opts["--exclude"].split(",") if opts["--exclude"] else None
     if pos[0] == "summarize":
@@ -208,7 +212,7 @@ def main(argv):
             keys = sorted({k for r in rows for k in r})
             open(opts["--csv"], "w").write(",".join(keys) + "\n" + "\n".join(",".join(str(r.get(k, "")) for k in keys) for r in rows) + "\n")
     elif pos[0] == "compare":
-        b, c = (select(exclude([trial_metrics(r, ctx) for r in load_trials(p)], excl), first) for p in pos[1:3])
+        b, c = (select(exclude([trial_metrics(r, cx) for r in load_trials(p)], excl), first) for p, cx in ((pos[1], ctx), (pos[2], ctx_cand)))
         res = compare(b, c, COMPARED)
         s = res["_success"]
         print(f"pairs={s['pairs']}  reached only by base={s['only_base']}  only by candidate={s['only_cand']}  McNemar exact p={s['p']:.3g}")

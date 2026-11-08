@@ -31,6 +31,7 @@ free_gb=$(df --output=avail -BG "$MAP_ROOT" | tail -1 | tr -dc 0-9)
 "$PY" "$REPO/tools/slam_bench/bag_check.py" "$BAG_ROOT/$BAG_NAME" || die "bag_check failed: a bag that lost scans does not map reliably"
 
 echo "mapping $BAG_ROOT/$BAG_NAME -> $MAP_ROOT/$MAP_NAME"
+for v in PLAY_RATE CEIL LIDAR IMU RES VOXEL DEGRADE_BOUND; do [[ -z ${!v:-} ]] || echo "  $v=${!v} (from your environment)"; done
 docker run --rm --init --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/tmp/roslog \
   -e ROS_DOMAIN_ID=78 -e ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST -e DDS_IFACE=lo \
   -e PLAY_RATE -e CEIL -e LIDAR -e IMU -e RES -e VOXEL -e DEGRADE_BOUND -e MAKE_MAP_COMMIT="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)" \

@@ -33,6 +33,17 @@ class SearchV2Test(unittest.TestCase):
         far = row('far', .7, pose(0., [5, 0, 0]))
         self.assertEqual([r['id'] for r in rank([far, same, a])], ['a', 'far'])
 
+    def test_an_exact_rmse_of_zero_is_a_measured_rmse_not_a_missing_one(self):
+        """`rmse or 9.` ranked an rmse of 0.0 behind every other candidate of equal support; None (nothing matched) still goes last."""
+        T = np.eye(4)
+        rows = [row('none', .5, T), row('exact', .5, T), row('worse', .5, T)]
+        rows[0]['geometry']['matched_rmse_m'] = None
+        rows[1]['geometry']['matched_rmse_m'] = 0.0
+        rows[2]['geometry']['matched_rmse_m'] = .05
+        for r, shift in zip(rows, (0., 3., 6.)):                  # distinct places, so rank keeps all three
+            r['result']['T_map_lidar_refined'] = [[1, 0, 0, shift], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+        self.assertEqual([r['id'] for r in rank(rows)], ['exact', 'worse', 'none'])
+
     def test_the_two_searches_run_at_the_same_time_and_both_results_come_back(self):
         barrier = threading.Barrier(2, timeout=5)                     # each waits for the other: a sequential run would break the barrier
 

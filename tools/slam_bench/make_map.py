@@ -114,7 +114,7 @@ def main(argv):
         print(warning, file=sys.stderr)
     node_log = Path(a.node_log) if a.node_log else out / "node.log"
     map_report.write_report(out, poses_file=poses_file, node_log=node_log, extra={
-        "pipeline": 2, "commit": commit(), "play_rate": a.play_rate, "scans_in_bag": scans, "lost_scan_ratio": round(1 - len(poses) / scans, 4) if scans else None, "warning": warning,
+        "pipeline": 2, "commit": commit(), "play_rate": a.play_rate, "topic": a.topic, "res_m": a.res, "ceil_m": a.ceil, "scans_in_bag": scans, "lost_scan_ratio": round(1 - len(poses) / scans, 4) if scans else None, "warning": warning,
         "floor_tilt_deg": data["floor_tilt_deg"], "sensor_height_m": data["sensor_height_m"], "ghost_band": data["ghost_band"], "ghost_points": data["ghost_points"], "scans_counted": data["scans_counted"], "rule": RULE})
     return 0
 

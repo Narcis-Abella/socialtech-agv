@@ -64,9 +64,10 @@ set_cyclone_uri
 # every script that exports its own URI inside the container, after /ros_env.sh, replaces the one that carries the buffer request: it must ask again right after
 # (nav_live.sh --inside did not until 2026-11-08: the whole live stack ran without the 10 MB buffer). `docker exec -e CYCLONEDDS_URI` (nav_exec.sh) is fine: ros_env.sh runs after it.
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-for script in "$repo"/ops/nav_live.sh "$repo"/tools/nav_sim/*.sh; do
-  grep -q 'export CYCLONEDDS_URI=' "$script" || continue
-  awk -v f="$script" '/export CYCLONEDDS_URI=/ {pending=1; next} pending && /^[[:space:]]*#/ {next} pending && /^[[:space:]]*\[ -z "\$LIVE_PEER" \] \|\| export CYCLONEDDS_URI=/ {next} pending {if ($0 !~ /set_cyclone_uri/) {print f": an export of CYCLONEDDS_URI is not followed by set_cyclone_uri: " $0; bad=1}; pending=0} END {exit bad}' "$script" || fail "$script replaces the URI without asking for the receive buffer again"
+for script in "$repo"/ops/nav_live.sh "$repo"/tools/nav_sim/*.sh "$repo"/docker/ros_loc/gn_loc/test/shutdown_race/*.sh; do
+  grep -q 'export.*CYCLONEDDS_URI=' "$script" || continue
+  # the last export must be followed, later in the file, by a set_cyclone_uri call
+  awk '/export.*CYCLONEDDS_URI=/ {pending = NR} /^[[:space:]]*set_cyclone_uri/ {pending = 0} END {exit pending != 0}' "$script" || fail "$script replaces the URI without asking for the receive buffer again"
 done
 unset CYCLONEDDS_URI
 echo ok
