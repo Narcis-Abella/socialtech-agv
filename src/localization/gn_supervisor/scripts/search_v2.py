@@ -197,7 +197,7 @@ def main():
     p.add_argument('--gicp-voxel', type=float, default=.3)
     p.add_argument('--deadline-s', type=float, default=60., help='remaining decision budget from this process start')
     p.add_argument('--z-band', type=float, nargs=2, metavar=('LO', 'HI'), help='heights (m, map frame) the sensor can have: the search and the refined poses stay inside it (+- 0.25 m for the latter)')
-    p.add_argument('--corr-backend', choices=('python', 'cpp'), default='cpp', help='the correlative search: cpp_search/libcorr_search.so (build.sh; no fallback when it is missing), or numpy/scipy: the same operations, slower')
+    p.add_argument('--corr-backend', choices=('python', 'cpp'), default='cpp', help='the correlative search: libcorr_search.so (no fallback when it is missing), or numpy/scipy: the same operations, slower')
     p.add_argument('--threads', type=int, default=2, help='OMP_NUM_THREADS of each register_v2 call (small_gicp is built without OpenMP, so GICP runs on one thread whatever this says); the FFT threads are --fft-workers')
     a = p.parse_args()
     global DEADLINE_S

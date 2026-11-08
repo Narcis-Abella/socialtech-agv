@@ -7,7 +7,7 @@ Gauss-Newton scan-to-map localizer. A lifecycle node that stands where `nav2_amc
 | In | `scan` (LaserScan, in a frame straight above the base), `map` (latched OccupancyGrid), `initialpose` (its covariance is the prior), TF `odom -> base_footprint` |
 | Out | TF `map -> odom` (its z puts `base_footprint` on the floor of the map, as `nav2_amcl` does: the costmaps filter the scan by height in `map`), `gn_loc/pose`, `gn_loc/status` (String, 1 Hz), `gn_loc/scan_fit` (String, same text, one per scan: the supervisor confirms a pose with it), `gn_loc/need_reloc` (Bool, latched) |
 | States | TRACKING, LOST. A scan is bad below `min_inliers` (0.25) or `min_tight` (0.50). LOST after `lost_s` (3 s) of bad scans. Recovery needs 10 scans with consistency >= `accept_tight` (0.60). `need_reloc` is set after `reloc_after_s` (15 s) in LOST, for whoever starts a global relocalizer; a new `/initialpose` ends LOST |
-| Limits | A scan with fewer than 20 valid beams is not counted as bad: with a covered lidar GN stays TRACKING at 0/0 and never goes LOST. Watch `gn_loc/status` from outside (see `tools/global_reloc_3d/gn_supervisor_core.py`) |
+| Limits | A scan with fewer than 20 valid beams is not counted as bad: with a covered lidar GN stays TRACKING at 0/0 and never goes LOST. Watch `gn_loc/status` from outside (see `src/localization/gn_supervisor/scripts/gn_supervisor_core.py`) |
 
 Parameters: `ros2 param list /gn_loc` after `configure`; the defaults are declared in `src/gn_loc_node.cpp`.
 

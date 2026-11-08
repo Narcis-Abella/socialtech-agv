@@ -74,7 +74,7 @@ class SupervisorNode(Node):
         self.init_std, self.init_yaw_std = P('init_std_m', .15).value, P('init_yaw_std_deg', 5.).value
         binary, lib = self.get_parameter('register_binary').value, self.get_parameter('lib_dir').value
         missing = [f for f, ok in ((self.reloc.map_xyz, os.path.isfile(self.reloc.map_xyz)), (binary, os.access(binary, os.X_OK)),
-                                   (f'{lib}/libsmall_gicp.so', os.path.isfile(f'{lib}/libsmall_gicp.so')), (f'{lib}/libcorr_search.so', os.path.isfile(f'{lib}/libcorr_search.so'))) if not ok]
+                                   (f'{lib}/libcorr_search.so', os.path.isfile(f'{lib}/libcorr_search.so'))) if not ok]
         if missing:                       # refuse to start: a supervisor that cannot relocalize would only find out at the first stop
             raise SystemExit(f'gn_supervisor: missing {missing} (parameters map_xyz, register_binary, lib_dir)')
         self.mono = time.monotonic

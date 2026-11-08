@@ -1,5 +1,5 @@
-"""ctypes front of cpp_search/libcorr_search.so: CppMapField, a drop-in for correlative_search.MapField whose search loop runs in C++ (search() picks it up through `native`).
-The library is looked for in $CORR_SEARCH_LIB, then next to cpp_search/corr_search.cpp (cpp_search/build.sh makes it), then by name in $LD_LIBRARY_PATH (a staged board: GRELOC/build, the lib_dir of register_v2). Calls release the GIL: two searches run at once on one field."""
+"""ctypes front of libcorr_search.so (src/corr_search.cpp): CppMapField, a drop-in for correlative_search.MapField whose search loop runs in C++ (search() picks it up through `native`).
+The library is looked for in $CORR_SEARCH_LIB, then next to this file (installed: lib/gn_supervisor), then by name in $LD_LIBRARY_PATH (the lib_dir of the worker). Calls release the GIL: two searches run at once on one field."""
 import ctypes as C
 import os
 from pathlib import Path
@@ -13,7 +13,7 @@ _lib = None
 def load(path=None):
     global _lib
     if _lib is None:
-        local = Path(__file__).parent / 'cpp_search' / 'libcorr_search.so'
+        local = Path(__file__).resolve().parent / 'libcorr_search.so'      # installed: next to the scripts (lib/gn_supervisor)
         path = path or os.environ.get('CORR_SEARCH_LIB') or (local if local.exists() else 'libcorr_search.so')
         lib = C.CDLL(str(path))
         lib.cs_field_new.restype = C.c_void_p

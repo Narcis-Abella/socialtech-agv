@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nav2 on the full-chain simulation, inside the `sim` image: the robot's own nav_robot.launch.py of socialtech_bringup (FAST-LIO2 on the simulated Mid-360, planar_odom, pointcloud_to_laserscan, gn_loc,
 # Nav2 with the real robot's overrides, base off: the simulator's base model drives) and trials.py on a scenario. usage: nav_full_sim.sh <out dir> <scenario.json> [reps]
-# mounts and env as sup_sim.sh; SUPERVISOR=1 also runs gn_supervisor (needs /greloc/build and the prior); SCAN_EXTRA=1 adds the calibrated dropout and surface jumps (a stress test: it blocks Nav2 in this empty world); NAV2_OVERLAY=file.yaml (under tools/nav_sim/params) merged last: the A side of an A/B.
+# mounts and env as sup_sim.sh; gn_supervisor runs by default as on the robot (SUPERVISOR=0 turns it off; its prior is built from the world here); SCAN_EXTRA=1 adds the calibrated dropout and surface jumps (a stress test: it blocks Nav2 in this empty world); NAV2_OVERLAY=file.yaml (under tools/nav_sim/params) merged last: the A side of an A/B.
 set -eo pipefail
 out=${1:?out dir}; scenario=${2:?scenario.json}; reps=${3:-1}
 source "${ROS_ENV:-/ros_env.sh}"
@@ -27,6 +27,7 @@ fastlio_yaml "$out/fastlio.yaml"
 # LEVEL_CORRECTOR=1: level_corrector (registers the cloud against the world's own 3D points, written here) built over the image's packages (small_gicp prebuilt in /sg); planar_odom
 # consumes its correction (the overlay of /src, sim_up.sh)
 LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default, as ops/nav_live.sh: the sim runs what the robot runs (LEVEL_CORRECTOR=0 for the stack without it)
+SUPERVISOR=${SUPERVISOR-1}               # on by default, as ops/nav_live.sh (SUPERVISOR=0 for the stack without it)
 normalize_flags LEVEL_CORRECTOR SUPERVISOR   # 0/off/false/no mean off, as in ops/nav_live.sh
 LC_ARG=
 if [ -n "${LEVEL_CORRECTOR:-}" ]; then
@@ -38,7 +39,7 @@ if [ -n "${LEVEL_CORRECTOR:-}" ]; then
 fi
 params=/src/navigation/socialtech_nav/config/nav2_params.yaml; [ -f "$params" ] || params=$(ros2 pkg prefix socialtech_nav)/share/socialtech_nav/config/nav2_params.yaml
 python3 "$BRINGUP/merge_params.py" "$params" "$BRINGUP_SHARE/config/nav2_robot_overrides.yaml" ${NAV2_OVERLAY:+/tools/nav_sim/params/$NAV2_OVERLAY} > "$out/nav2_params.yaml"   # the checkout's parameters when mounted
-if [ "${SUPERVISOR:-0}" != 0 ]; then
+if [ -n "${SUPERVISOR:-}" ]; then
   python3 /tools/sim_realism/tris_to_prior.py /pat/loyola.tris "$out/prior.xyz" 0.2 0.1 > "$out/prior.log"; mkdir -p "$out/runs"; export SUP_PRIOR="$out/prior.xyz"
 fi
 if [ "${SCAN_EXTRA:-0}" != 0 ]; then

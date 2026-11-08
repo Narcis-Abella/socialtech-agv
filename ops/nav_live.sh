@@ -9,9 +9,9 @@
 # rviz aid); the ROS node logs still persist in $RUN/log.
 # HEAVY_DDS=1 (default off): driver and FAST-LIO2 talk on loopback with 64 kB DDS datagrams (see heavy_env in nav_live.launch.py: not measured on the Nano yet).
 # LEVEL_CORRECTOR (default ON; LEVEL_CORRECTOR=0 turns it off): level_corrector registers FAST-LIO2's cloud against the map's 3D points every 2 s and planar_odom levels odom with it (src/localization/level_corrector/README.md). Off = the static level of the mapping run.
-# SUPERVISOR=1 (default off) adds gn_supervisor (tools/global_reloc_3d; the binaries and the 3D prior are staged in GRELOC=~/greloc): when gn_loc is lost, starved of scans, silent, or
-# drifts while parked, it cancels every Nav2 goal (never publishes a velocity), relocalizes with the robot's own FAST-LIO2 and the 3D prior
-# GRELOC/prior/MAP_NAME/prior/map.xyz, and publishes /initialpose only if gn_loc disagrees. It never re-sends a goal. State: /gn_supervisor/state.
+# SUPERVISOR (default ON; SUPERVISOR=0 turns it off) runs gn_supervisor (src/localization/gn_supervisor): when gn_loc is lost, starved of scans, silent, or
+# drifts while parked, it cancels every Nav2 goal (never publishes a velocity), relocalizes with the robot's own FAST-LIO2 and the 3D prior MAP/prior/map.xyz
+# (made by ops/make_map.sh; built here, in seconds, for a map that has none), and publishes /initialpose only if gn_loc disagrees. It never re-sends a goal. State: /gn_supervisor/state.
 # The image must be the one this checkout builds (ops/image_revision.sh image_freshness: the label of the image against src/, deps/, docker/ and this file): a stale one stops the run,
 # STALE_IMAGE_OK=1 runs it anyway. OVERLAY=1 builds socialtech_bringup from this checkout's src/ at start-up (launch files, scripts and config: no image rebuild for those; C++ still needs one).
 # env: DDS_IFACE (interface towards PEER; default: the route to PEER, or lo without PEER)  ROS_DOMAIN_ID (53, as the laptop scripts)  LIVOX_HOST_IP / LIVOX_LIDAR_IP  IMAGE (socialtech:robot)  MAP_DIR (~/maps)
@@ -21,6 +21,7 @@ BRINGUP=$REPO/src/bringup/socialtech_bringup/scripts   # the same files run in t
 source "$BRINGUP/flags.sh"
 source "$REPO/ops/image_revision.sh"
 LEVEL_CORRECTOR=${LEVEL_CORRECTOR-1}   # on by default: only an explicit LEVEL_CORRECTOR=0 (or off/false/no) turns it off
+SUPERVISOR=${SUPERVISOR-1}             # on by default, the same way
 normalize_flags NAV BASE SUPERVISOR PROD LEVEL_CORRECTOR HEAVY_DDS OVERLAY STALE_IMAGE_OK   # NAV=0 / BASE=0 / SUPERVISOR=0 / PROD=0 / LEVEL_CORRECTOR=0 mean off (a non-empty test used to arm Nav2, the Tracer base and the supervisor)
 
 MAP_NAME=${1:?usage: [PEER=<laptop IP>] nav_live.sh MAP_NAME}
@@ -53,18 +54,15 @@ ping -c1 -W2 "$LIDAR_IP" >/dev/null 2>&1 || die "Livox $LIDAR_IP does not answer
 [[ -z $PEER ]] || ping -c1 -W2 "$PEER" >/dev/null 2>&1 || echo "WARN: $PEER does not answer ping (rviz2 may not see the robot)" >&2
 (($(sysctl -n net.core.rmem_max) >= RMEM_WANT)) || echo "WARN: net.core.rmem_max below $RMEM_WANT: scans may be lost (sudo sysctl -w net.core.rmem_max=$RMEM_WANT)" >&2
 
-SUP=()
 if [[ -n ${SUPERVISOR:-} ]]; then   # validated first: an error must not come after the "a goal MOVES THE ROBOT" banner
-  [[ -n ${NAV:-} ]] || die "SUPERVISOR=1 holds Nav2 goals: it needs NAV=1 (alone it would only relocalize beside a manual 2D Pose Estimate)"
-  [[ -z ${HEAVY_DDS:-} ]] || die "HEAVY_DDS=1 puts the driver on a loopback-only DDS URI that the supervisor (default URI) is not known to receive the raw lidar and IMU on: untested together, use one or the other"
-  G=${GRELOC:-$HOME/greloc}
-  for f in tools/global_reloc_3d/gn_supervisor_node.py build/register_v2 build/libsmall_gicp.so build/libcorr_search.so prior/$MAP_NAME/prior/map.xyz; do
-    [[ -f $G/$f ]] || die "$G/$f missing: stage the supervisor tools, register_v2 and the 3D prior of the map into GRELOC (stage_supervisor.sh, in the team's SocialTech workspace repo)"
-  done
-  grep -q gn_loc/pose "$G/tools/global_reloc_3d/gn_supervisor_node.py" || die "$G/tools is older than this checkout (it does not listen to gn_loc/pose, so no pose would ever confirm): stage the supervisor again"
-  docker run --rm -v "$G:/greloc:ro" -w /greloc/tools/global_reloc_3d "$IMAGE" python3 -B -c "import numpy, scipy, rclpy, action_msgs.msg, diagnostic_msgs.msg, gn_supervisor_node, corr_cpp; from rclpy.experimental import EventsExecutor; corr_cpp.load('/greloc/build/libcorr_search.so')" >/dev/null 2>&1 || die "$IMAGE cannot import what the supervisor needs (numpy, scipy, rclpy, action_msgs, diagnostic_msgs, the tools staged in $G, build/libcorr_search.so): run the import of this check by hand to see which"
-  SUP=(-e SUPERVISOR=1 -e "SUP_PRIOR=/greloc/prior/$MAP_NAME/prior/map.xyz" -v "$G:/greloc:ro")
-  echo "SUPERVISOR=1: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
+  [[ -z ${HEAVY_DDS:-} ]] || die "HEAVY_DDS=1 puts the driver on a loopback-only DDS URI that the supervisor (default URI) is not known to receive the raw lidar and IMU on: untested together, use SUPERVISOR=0 with HEAVY_DDS=1"
+  if [[ ! -f $MAP/prior/map.xyz ]]; then   # a map made before the prior was part of the mapping run: built now from its own cleaned cloud
+    [[ -f $MAP/map_clean.ply && -f $MAP/report.json ]] || die "$MAP has no prior/map.xyz and no map_clean.ply to build it from: make the map again with ops/make_map.sh (REUSE_SLAM=1 redoes it from the existing SLAM run in seconds), or SUPERVISOR=0"
+    echo "no 3D prior in $MAP/prior: building it from map_clean.ply"
+    docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$MAP:/m" "$IMAGE" python3 -B /opt/socialtech/lib/gn_supervisor/prepare_map.py --map-dir /m --out /m/prior >"$MAP/prior.log" 2>&1 \
+      || die "the 3D prior of $MAP could not be built ($(tail -1 "$MAP/prior.log")): see $MAP/prior.log"
+  fi
+  echo "SUPERVISOR: gn_supervisor holds Nav2 when gn_loc cannot be trusted; it starts holding until gn_loc confirms the 2D Pose Estimate (state: /gn_supervisor/state)"
 fi
 if [[ -n ${NAV:-} ]]; then
   if [[ -n ${BASE:-} ]]; then
@@ -81,12 +79,12 @@ if [[ -n ${NAV:-} && -z ${PROD:-} ]]; then   # the DEV recorder writes raw /livo
   free_gb=$(df --output=avail -BG "$RUN" | tail -1 | tr -dc 0-9)
   (( free_gb >= ${MIN_FREE_GB:-20} )) || die "only ${free_gb} GB free in $RUN (the bag needs MIN_FREE_GB=${MIN_FREE_GB:-20}); free space, or PROD=1 to run without recording"
 fi
-{   # what ran: the image (its tag moves; the label is its commit), this checkout, and with OVERLAY=1 the bringup package built from it, the supervisor tools (a staged copy)
+{   # what ran: the image (its tag moves; the label is its commit), this checkout, and with OVERLAY=1 the bringup package built from it
   echo "checkout: $(git -C "$REPO" describe --always --dirty 2>/dev/null || echo unknown)"
   { git -C "$REPO" status --porcelain 2>/dev/null || true; } | sed 's/^/  /'   # the board's checkout is often a plain copy, not a repository: git fails and set -e/pipefail would end the script
   img_id=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
   echo "image: $IMAGE ${img_id:-unknown} revision $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE" 2>/dev/null || echo unknown)"
-  [[ -z ${SUPERVISOR:-} ]] || echo "staged supervisor tools: $(cat "${GRELOC:-$HOME/greloc}/tools/COMMIT" 2>/dev/null || echo unknown) (${GRELOC:-$HOME/greloc})"
+  echo "supervisor: $([[ -n ${SUPERVISOR:-} ]] && echo on || echo off)"
 } > "$RUN/provenance.txt"
 echo "localizing on $MAP (Ctrl-C to stop). Logs$([[ -n ${NAV:-} && -z ${PROD:-} ]] && echo " and bag") in $RUN. Keep the robot still ~5 s, then 2D Pose Estimate in rviz2."
 run=(/opt/socialtech/lib/socialtech_bringup/run_live); ovl=()
@@ -96,6 +94,6 @@ if [[ -n ${OVERLAY:-} ]]; then   # the bringup package of this checkout, built o
     source /tmp/ov/install/setup.bash && exec /tmp/ov/install/lib/socialtech_bringup/run_live')
 fi
 tty=(); [[ -t 0 ]] && tty=(-t)   # no terminal (a launcher script): docker refuses -t; SIGTERM to the docker client stops the stack as Ctrl-C does
-exec docker run --rm --init "${tty[@]}" --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e PROD="${PROD:-}" -e LEVEL_CORRECTOR="${LEVEL_CORRECTOR:-}" -e BASE="${BASE:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" \
+exec docker run --rm --init "${tty[@]}" --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ROS_LOG_DIR=/runs/log -e NAV="${NAV:-}" -e PROD="${PROD:-}" -e LEVEL_CORRECTOR="${LEVEL_CORRECTOR:-}" -e BASE="${BASE:-}" -e HEAVY_DDS="${HEAVY_DDS:-}" -e SUPERVISOR="${SUPERVISOR:-}" -e GYR_COV="${GYR_COV:-0.01}" -e FILTER_SIZE_MAP="${FILTER_SIZE_MAP:-}" -e POINT_FILTER_NUM="${POINT_FILTER_NUM:-}" \
   -e DDS_IFACE="$DDS_IFACE" -e PEER="$PEER" -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-53}" -e LIVOX_HOST_IP="$HOST_IP" -e LIVOX_LIDAR_IP="$LIDAR_IP" \
-  -v "$MAP:/map:ro" -v "$RUN:/runs" "${ovl[@]}" "${SUP[@]}" -w /tmp "$IMAGE" "${run[@]}"
+  -v "$MAP:/map:ro" -v "$RUN:/runs" "${ovl[@]}" -w /tmp "$IMAGE" "${run[@]}"

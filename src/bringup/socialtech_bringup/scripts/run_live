@@ -14,6 +14,23 @@ normalize_flags NAV BASE SUPERVISOR PROD LEVEL_CORRECTOR HEAVY_DDS
 if [[ -n ${LEVEL_CORRECTOR:-} ]]; then
   ros2 run level_corrector level_corrector_node --ros-args -p map_dir:=/map -p check_only:=true >/tmp/lc_check.log 2>&1 || { echo "FAIL: level_corrector cannot load /map (map.ply: binary little-endian, float x y z only; map.yaml: the four T_map_world rows): $(tail -2 /tmp/lc_check.log | tr '\n' ' ') -- or LEVEL_CORRECTOR=0" >&2; exit 1; }
 fi
+if [[ -n ${SUPERVISOR:-} ]]; then   # on by default: what it needs is checked here, not found out by a respawn loop
+  [[ -f /map/prior/map.xyz ]] || { echo "FAIL: /map/prior/map.xyz (the 3D prior the supervisor relocalizes in) is missing: ops/nav_live.sh builds it for a map that has none; or SUPERVISOR=0" >&2; exit 1; }
+  export SUP_PRIOR=/map/prior/map.xyz
+  python3 -B - <<'PY' || { echo "FAIL: the supervisor cannot start in this image (see above); SUPERVISOR=0 runs without it" >&2; exit 1; }
+import os, sys
+import numpy, scipy, rclpy, action_msgs.msg, diagnostic_msgs.msg
+from rclpy.experimental import EventsExecutor
+dirs = [os.path.join(p, "lib", "gn_supervisor") for p in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep)]
+node = next((d for d in dirs if os.path.isfile(os.path.join(d, "gn_supervisor_node.py"))), None)
+lib = next((d for d in dirs if os.path.isfile(os.path.join(d, "libcorr_search.so"))), None)
+if not node or not lib:
+    sys.exit(f"no lib/gn_supervisor with gn_supervisor_node.py and libcorr_search.so on the ament path ({dirs})")
+sys.path.insert(0, node)
+import gn_supervisor_node, corr_cpp
+corr_cpp.load(os.path.join(lib, "libcorr_search.so"))
+PY
+fi
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-53}
 export CYCLONEDDS_URI=$(stack_cyclone_uri "${DDS_IFACE:-}" "${PEER:-}")   # lo, DDS_IFACE and the laptop (PEER) if there is one: docker/cyclone_uri.sh
 set_cyclone_uri   # this export replaced the URI of ros_env.sh: ask again for the 10 MB receive buffer (docker/cyclone_uri.sh)

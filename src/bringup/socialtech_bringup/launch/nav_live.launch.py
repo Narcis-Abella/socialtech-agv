@@ -66,20 +66,31 @@ def heavy_env():
     return {"additional_env": {"CYCLONEDDS_URI": HEAVY_URI}} if os.environ.get("HEAVY_DDS", "").lower() not in ("", "0", "false", "no", "off") else {}
 
 
+def supervisor_lib_dir():
+    """lib/gn_supervisor of the first prefix on the ament path that holds the worker's binaries (register_v2 and libcorr_search.so): an overlay of the package's Python alone
+    (-DGN_SUPERVISOR_PYTHON_ONLY=ON, OVERLAY=1 and the simulation scripts) leaves them to the image's."""
+    for prefix in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep):
+        d = os.path.join(prefix, "lib", "gn_supervisor")
+        if os.access(os.path.join(d, "register_v2"), os.X_OK) and os.path.isfile(os.path.join(d, "libcorr_search.so")):
+            return d
+    raise RuntimeError("the supervisor is on but no prefix of AMENT_PREFIX_PATH has lib/gn_supervisor/register_v2 and libcorr_search.so: build the gn_supervisor package "
+                       "(docker/Dockerfile does), or SUPERVISOR=0")
+
+
 def supervisor_nodes():
-    """SUPERVISOR=1 (ops/nav_live.sh): gn_supervisor_node.py staged in /greloc. Respawned: a restarted supervisor comes up in CONFIRMING and holds Nav2 until
+    """The supervisor is ON unless SUPERVISOR is off (ops/nav_live.sh sets it; the rule of flags.sh). Respawned: a restarted supervisor comes up in CONFIRMING and holds Nav2 until
     gn_loc confirms its pose. It reads the robot's own FAST-LIO2 (/Odometry for "is the restarted filter publishing", plus the raw /livox/lidar and /livox/imu): no second FAST-LIO, unlike the AMCL-era reloc_node (PR #14, removed 2026-11-08)."""
     if os.environ.get("SUPERVISOR", "").lower() in ("", "0", "false", "no", "off"):    # the rule of socialtech_bringup/scripts/flags.sh
         return []
     prior = os.environ.get("SUP_PRIOR")
     if not prior:
-        raise RuntimeError("SUPERVISOR is set but SUP_PRIOR (the 3D prior of the map) is not: start it with ops/nav_live.sh, which checks the staged files and sets it")
-    return [ExecuteProcess(name="gn_supervisor", output="screen", respawn=True, respawn_delay=2.0, cmd=[
-        "python3", "-B", "/greloc/tools/global_reloc_3d/gn_supervisor_node.py", "--ros-args",
-        "-p", f"map_xyz:={prior}", "-p", "register_binary:=/greloc/build/register_v2", "-p", "lib_dir:=/greloc/build",
-        "-p", "wheel_topic:=/odom", "-p", "work_dir:=/runs/gn_supervisor", "-p", f"base_from_body_xyyaw:=[{LIDAR_IN_BODY[0]}, {LIDAR_IN_BODY[1]}, 0.0]",
-        "-p", ["sensor_z:=", LC("sensor_height")],
-        "-p", f"lidar_decimate:={int(os.environ.get('POINT_FILTER_NUM') or 2)}"])]      # the density FAST-LIO2 runs with (nav_live.sh point_filter_num); the search was validated with 2, so another value is a change to re-validate     # the mounting height over the floor of the map: the relocalizer searches only +- 0.5 m around it
+        raise RuntimeError("SUPERVISOR is set but SUP_PRIOR (the 3D prior of the map) is not: start it with ops/nav_live.sh, which generates the prior and sets it")
+    lib = supervisor_lib_dir()
+    return [Node(package="gn_supervisor", executable="gn_supervisor_node.py", name="gn_supervisor", output="screen", respawn=True, respawn_delay=2.0, parameters=[{
+        "map_xyz": prior, "register_binary": os.path.join(lib, "register_v2"), "lib_dir": lib,
+        "wheel_topic": "/odom", "work_dir": "/runs/gn_supervisor", "base_from_body_xyyaw": [LIDAR_IN_BODY[0], LIDAR_IN_BODY[1], 0.0],
+        "sensor_z": ParameterValue(LC("sensor_height"), value_type=float),      # the mounting height over the floor of the map
+        "lidar_decimate": int(os.environ.get("POINT_FILTER_NUM") or 2)}])]       # the density FAST-LIO2 runs with (run_live point_filter_num); the search was validated with 2, so another value is a change to re-validate
 
 
 def generate_launch_description():

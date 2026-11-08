@@ -93,7 +93,7 @@ class WorkerExitCodeTest(unittest.TestCase):
         for name, n in zip(('fit', 'check'), points):                         # 5: far under the 50 points of a search
             np.savetxt(run / f'{name}.xyz', rng.uniform(-1., 1., (n, 3)))
         (run / 'manifest.json').write_text(json.dumps({'frame_fit': manifest_frame, 'stamps_s': [0., 3.], 'start_header_s': 0., 'duration_s': 3.}))
-        cmd = [sys.executable, '-B', str(Path(__file__).parent / 'search_v2.py'), '--run', str(run), '--out', str(Path(d.name) / 'o'), '--binary', '/nonexistent', *backend]
+        cmd = [sys.executable, '-B', str(Path(__file__).parent.parent / 'scripts' / 'search_v2.py'), '--run', str(run), '--out', str(Path(d.name) / 'o'), '--binary', '/nonexistent', *backend]
         return subprocess.run(cmd, capture_output=True, text=True, env={**os.environ, **env})
 
     def test_a_scene_too_sparse_can_be_retried(self):

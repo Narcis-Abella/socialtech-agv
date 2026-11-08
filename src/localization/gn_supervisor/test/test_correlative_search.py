@@ -361,11 +361,11 @@ class SameCandidatesTest(unittest.TestCase):
 try:
     import corr_cpp
     corr_cpp.load()
-except OSError:                      # cpp_search/build.sh not run
+except OSError:                      # libcorr_search.so not built here (point CORR_SEARCH_LIB at the image's)
     corr_cpp = None
 
 
-@unittest.skipIf(corr_cpp is None, 'libcorr_search.so not built (cpp_search/build.sh)')
+@unittest.skipIf(corr_cpp is None, 'libcorr_search.so not available (CORR_SEARCH_LIB)')
 class CppBackendTest(unittest.TestCase):
     """The C++ field and search loop do what the numpy ones do: same grid, same candidates (positions and yaws exact, scores to float32 rounding)."""
 
